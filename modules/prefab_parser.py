@@ -56,6 +56,7 @@ class PrefabLibrary:
     """Collection of all parsed prefabs found in a Unity project."""
     prefabs: list[PrefabTemplate] = field(default_factory=list)
     by_name: dict[str, PrefabTemplate] = field(default_factory=dict)
+    referenced_material_guids: set[str] = field(default_factory=set)
 
 
 def _clean_yaml(text: str) -> str:
@@ -107,13 +108,21 @@ def parse_prefabs(unity_project_path: str | Path) -> PrefabLibrary:
             raw_documents=docs,
         )
 
-        # Build nodes from GameObject entries
+        # Build nodes from GameObject entries and extract material refs
         for doc in docs:
             if not isinstance(doc, dict):
                 continue
             if "GameObject" in doc:
                 node = _build_node(doc["GameObject"])
                 template.all_nodes.append(node)
+            # Extract material GUIDs from MeshRenderer / SkinnedMeshRenderer
+            renderer = doc.get("MeshRenderer") or doc.get("SkinnedMeshRenderer")
+            if renderer is not None:
+                for mat_ref in renderer.get("m_Materials", []):
+                    if isinstance(mat_ref, dict):
+                        guid = mat_ref.get("guid", "")
+                        if guid:
+                            library.referenced_material_guids.add(guid)
 
         # First node is treated as root (simplified)
         if template.all_nodes:

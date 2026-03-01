@@ -3,13 +3,23 @@ converter.py — Orchestrator for the Unity → Roblox conversion pipeline.
 
 This is the single entry point that wires all pipeline modules together:
 
-  1. asset_extractor  → discovers and catalogues Unity assets
-  2. material_mapper  → parses .mat files, converts to Roblox materials
-  3. scene_parser     → parses .unity scene files into node trees
-  4. prefab_parser    → parses .prefab files into reusable templates
-  5. code_transpiler  → converts C# MonoBehaviours to Luau scripts
-  6. rbxl_writer      → writes the final .rbxl Roblox place file
-  7. report_generator → produces a JSON + stdout conversion report
+  Phase 1 — Discovery (lightweight YAML reads):
+    1. scene_parser     → parses .unity scene files, extracts material GUIDs
+    2. prefab_parser    → parses .prefab files, extracts material GUIDs
+
+  Phase 2 — Asset inventory:
+    3. asset_extractor  → discovers and catalogues Unity assets
+
+  Phase 3 — Heavy processing (informed by Phase 1):
+    4. material_mapper  → parses .mat files, converts to Roblox materials
+    5. code_transpiler  → converts C# MonoBehaviours to Luau scripts
+
+  Phase 4 — Assembly:
+    6. rbxl_writer      → writes the final .rbxl Roblox place file
+    7. report_generator → produces a JSON + stdout conversion report
+
+Scenes and prefabs are parsed first so material mapping can be filtered to
+only the materials actually referenced by MeshRenderer components.
 
 Data flows linearly: each step's output is passed explicitly to the next.
 No module imports another module — all wiring happens here.
@@ -38,14 +48,40 @@ from modules import (
 # Conversion helpers
 # ---------------------------------------------------------------------------
 
+def _roblox_def_to_surface_appearance(
+    rdef: material_mapper.RobloxMaterialDef,
+) -> rbxl_writer.RbxSurfaceAppearance:
+    """Map a RobloxMaterialDef to an RbxSurfaceAppearance for the rbxl writer."""
+    return rbxl_writer.RbxSurfaceAppearance(
+        color_map=rdef.color_map,
+        normal_map=rdef.normal_map,
+        metalness_map=rdef.metalness_map,
+        roughness_map=rdef.roughness_map,
+        emissive_mask=rdef.emissive_mask,
+        emissive_strength=rdef.emissive_strength,
+        emissive_tint=rdef.emissive_tint,
+        color_tint=rdef.color_tint,
+        alpha_mode=rdef.alpha_mode,
+    )
+
+
 def _scene_nodes_to_parts(
     parsed_scenes: list[scene_parser.ParsedScene],
+    guid_map: dict[str, str] | None = None,
+    roblox_defs: dict[str, material_mapper.RobloxMaterialDef] | None = None,
 ) -> list[rbxl_writer.RbxPartEntry]:
     """
     Convert parsed Unity scene nodes into RbxPartEntry objects.
 
     Each root SceneNode becomes a BasePart in Roblox Workspace.
     Position is mapped directly (Unity Y-up == Roblox Y-up).
+
+    Args:
+        parsed_scenes: Parsed scene data.
+        guid_map: Optional {material_guid: material_name} lookup for
+            attaching materials to parts.
+        roblox_defs: Optional {material_name: RobloxMaterialDef} from
+            material mapping results.
     """
     parts: list[rbxl_writer.RbxPartEntry] = []
     for parsed in parsed_scenes:
@@ -56,6 +92,26 @@ def _scene_nodes_to_parts(
                 size=(4.0, 1.0, 4.0),  # default size; real size from MeshRenderer bounds
                 anchored=True,
             )
+
+            # Attach material data if available
+            if guid_map and roblox_defs:
+                for comp in node.components:
+                    if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
+                        continue
+                    for mat_ref in comp.properties.get("m_Materials", []):
+                        if not isinstance(mat_ref, dict):
+                            continue
+                        guid = mat_ref.get("guid", "")
+                        mat_name = guid_map.get(guid)
+                        if mat_name and mat_name in roblox_defs:
+                            rdef = roblox_defs[mat_name]
+                            part.surface_appearance = _roblox_def_to_surface_appearance(rdef)
+                            if rdef.base_part_color:
+                                part.color3 = rdef.base_part_color
+                            if rdef.base_part_transparency > 0:
+                                part.transparency = rdef.base_part_transparency
+                            break  # use first material for the part
+
             parts.append(part)
     return parts
 
@@ -174,32 +230,9 @@ def convert(
     errors: list[str] = []
     t_start = time.monotonic()
 
-    click.echo(f"🔍  Extracting assets from {unity_path} …")
-    try:
-        manifest = asset_extractor.extract_assets(
-            unity_path,
-            supported_extensions=config.SUPPORTED_ASSET_EXTENSIONS,
-        )
-        click.echo(f"    → {len(manifest.assets)} assets found "
-                   f"({manifest.total_size_bytes / 1_048_576:.1f} MB)")
-    except FileNotFoundError as exc:
-        errors.append(str(exc))
-        manifest = asset_extractor.AssetManifest(unity_project_path=unity_path)
-
-    click.echo("🎨  Mapping materials …")
-    try:
-        mat_result = material_mapper.map_materials(unity_path, out_dir)
-        click.echo(f"    → {mat_result.total} material(s): "
-                   f"{mat_result.fully_converted} full, "
-                   f"{mat_result.partially_converted} partial, "
-                   f"{mat_result.unconvertible} unconvertible")
-        if mat_result.texture_ops_performed:
-            click.echo(f"    → {mat_result.texture_ops_performed} texture operation(s)")
-        if mat_result.unconverted_md_path:
-            click.echo(f"    → UNCONVERTED.md written to {mat_result.unconverted_md_path}")
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"Material mapping error: {exc}")
-        mat_result = material_mapper.MaterialMapResult()
+    # ------------------------------------------------------------------
+    # Phase 1 — Discovery (lightweight YAML reads)
+    # ------------------------------------------------------------------
 
     click.echo("🗺   Parsing scenes …")
     parsed_scenes: list[scene_parser.ParsedScene] = []
@@ -218,6 +251,50 @@ def convert(
         errors.append(str(exc))
         prefabs = prefab_parser.PrefabLibrary()
 
+    # Collect material GUIDs referenced by scenes and prefabs
+    referenced_guids: set[str] = set()
+    for ps in parsed_scenes:
+        referenced_guids |= ps.referenced_material_guids
+    referenced_guids |= prefabs.referenced_material_guids
+
+    # ------------------------------------------------------------------
+    # Phase 2 — Asset inventory
+    # ------------------------------------------------------------------
+
+    click.echo(f"🔍  Extracting assets from {unity_path} …")
+    try:
+        manifest = asset_extractor.extract_assets(
+            unity_path,
+            supported_extensions=config.SUPPORTED_ASSET_EXTENSIONS,
+        )
+        click.echo(f"    → {len(manifest.assets)} assets found "
+                   f"({manifest.total_size_bytes / 1_048_576:.1f} MB)")
+    except FileNotFoundError as exc:
+        errors.append(str(exc))
+        manifest = asset_extractor.AssetManifest(unity_project_path=unity_path)
+
+    # ------------------------------------------------------------------
+    # Phase 3 — Heavy processing (informed by Phase 1)
+    # ------------------------------------------------------------------
+
+    click.echo("🎨  Mapping materials …")
+    try:
+        mat_result = material_mapper.map_materials(
+            unity_path, out_dir,
+            referenced_guids=referenced_guids or None,
+        )
+        click.echo(f"    → {mat_result.total} material(s): "
+                   f"{mat_result.fully_converted} full, "
+                   f"{mat_result.partially_converted} partial, "
+                   f"{mat_result.unconvertible} unconvertible")
+        if mat_result.texture_ops_performed:
+            click.echo(f"    → {mat_result.texture_ops_performed} texture operation(s)")
+        if mat_result.unconverted_md_path:
+            click.echo(f"    → UNCONVERTED.md written to {mat_result.unconverted_md_path}")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Material mapping error: {exc}")
+        mat_result = material_mapper.MaterialMapResult()
+
     click.echo("📝  Transpiling C# scripts …")
     try:
         transpilation = code_transpiler.transpile_scripts(
@@ -234,8 +311,27 @@ def convert(
         errors.append(str(exc))
         transpilation = code_transpiler.TranspilationResult()
 
+    # ------------------------------------------------------------------
+    # Phase 4 — Assembly
+    # ------------------------------------------------------------------
+
+    # Build material GUID → material name lookup for scene→material wiring
+    mat_guid_to_name: dict[str, str] | None = None
+    if mat_result.roblox_defs:
+        mat_guid_to_name = {}
+        guid_map = material_mapper._build_guid_map(unity_path)
+        for guid, asset_path in guid_map.items():
+            if asset_path.suffix == ".mat":
+                mat_name = asset_path.stem
+                if mat_name in mat_result.roblox_defs:
+                    mat_guid_to_name[guid] = mat_name
+
     click.echo("🏗   Writing .rbxl …")
-    parts = _scene_nodes_to_parts(parsed_scenes)
+    parts = _scene_nodes_to_parts(
+        parsed_scenes,
+        guid_map=mat_guid_to_name,
+        roblox_defs=mat_result.roblox_defs or None,
+    )
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
