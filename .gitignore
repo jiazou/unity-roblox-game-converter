@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# Output / conversion artifacts
+output/
+*.rbxl
+*.rbxlx
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
