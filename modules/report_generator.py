@@ -1,0 +1,136 @@
+"""
+report_generator.py — Generates a human-readable and machine-readable
+conversion report summarising the outcome of a Unity → Roblox conversion run.
+
+The report captures asset counts, script transpilation results, warnings,
+errors, and overall conversion health. It is written as a JSON file and
+optionally printed as a text summary to stdout.
+
+No other module is imported here.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class AssetSummary:
+    total: int = 0
+    by_kind: dict[str, int] = field(default_factory=dict)
+    total_size_bytes: int = 0
+    duplicates_removed: int = 0
+
+
+@dataclass
+class ScriptSummary:
+    total: int = 0
+    succeeded: int = 0
+    flagged_for_review: int = 0
+    skipped: int = 0
+    ai_transpiled: int = 0
+    rule_based: int = 0
+    flagged_scripts: list[str] = field(default_factory=list)   # filenames
+
+
+@dataclass
+class SceneSummary:
+    scenes_parsed: int = 0
+    total_game_objects: int = 0
+    prefabs_parsed: int = 0
+
+
+@dataclass
+class OutputSummary:
+    rbxl_path: str = ""
+    parts_written: int = 0
+    scripts_in_place: int = 0
+    report_path: str = ""
+
+
+@dataclass
+class ConversionReport:
+    """Top-level conversion report written to disk after a completed run."""
+    generated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    unity_project_path: str = ""
+    output_dir: str = ""
+    duration_seconds: float = 0.0
+    success: bool = True
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    assets: AssetSummary = field(default_factory=AssetSummary)
+    scripts: ScriptSummary = field(default_factory=ScriptSummary)
+    scene: SceneSummary = field(default_factory=SceneSummary)
+    output: OutputSummary = field(default_factory=OutputSummary)
+
+
+def _dataclass_to_dict(obj: Any) -> Any:
+    """Recursively convert dataclasses to plain dicts (handles nested)."""
+    if hasattr(obj, "__dataclass_fields__"):
+        return {k: _dataclass_to_dict(v) for k, v in asdict(obj).items()}
+    return obj
+
+
+def generate_report(
+    report: ConversionReport,
+    output_path: str | Path,
+    verbose: bool = True,
+    print_summary: bool = True,
+) -> Path:
+    """
+    Serialise a ConversionReport to a JSON file and optionally print a summary.
+
+    Args:
+        report: Fully populated ConversionReport instance.
+        output_path: File path for the JSON report (created/overwritten).
+        verbose: If True, include per-script details in the JSON output.
+        print_summary: If True, print a human-readable summary to stdout.
+
+    Returns:
+        Resolved Path of the written report file.
+    """
+    output_path = Path(output_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    report_dict = asdict(report)
+
+    if not verbose:
+        # Strip large lists for compact mode
+        report_dict["scripts"].pop("flagged_scripts", None)
+
+    output_path.write_text(
+        json.dumps(report_dict, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    if print_summary:
+        status = "✅ SUCCESS" if report.success else "❌ FAILED"
+        lines = [
+            "",
+            f"╔══ Conversion Report ══╗",
+            f"  Status       : {status}",
+            f"  Duration     : {report.duration_seconds:.1f}s",
+            f"  Assets found : {report.assets.total}",
+            f"  Scripts      : {report.scripts.total} total, "
+            f"{report.scripts.succeeded} OK, "
+            f"{report.scripts.flagged_for_review} flagged",
+            f"  GameObjects  : {report.scene.total_game_objects}",
+            f"  Parts in .rbxl: {report.output.parts_written}",
+        ]
+        if report.warnings:
+            lines.append(f"  Warnings     : {len(report.warnings)}")
+        if report.errors:
+            lines.append(f"  Errors       : {len(report.errors)}")
+            for err in report.errors:
+                lines.append(f"    ✗ {err}")
+        lines.append(f"  Report saved : {output_path}")
+        lines.append("")
+        print("\n".join(lines))
+
+    return output_path
