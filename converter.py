@@ -75,8 +75,7 @@ def _roblox_def_to_surface_appearance(
 
 def _scene_nodes_to_parts(
     parsed_scenes: list[scene_parser.ParsedScene],
-    guid_map: dict[str, str] | None = None,
-    roblox_defs: dict[str, material_mapper.RobloxMaterialDef] | None = None,
+    guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None,
 ) -> list[rbxl_writer.RbxPartEntry]:
     """
     Convert parsed Unity scene nodes into RbxPartEntry objects.
@@ -86,10 +85,9 @@ def _scene_nodes_to_parts(
 
     Args:
         parsed_scenes: Parsed scene data.
-        guid_map: Optional {material_guid: material_name} lookup for
-            attaching materials to parts.
-        roblox_defs: Optional {material_name: RobloxMaterialDef} from
-            material mapping results.
+        guid_to_roblox_def: Optional mapping from material GUID directly to
+            RobloxMaterialDef.  Built by the caller from the GUID index +
+            path-keyed roblox_defs, so there is no name-based indirection.
     """
     parts: list[rbxl_writer.RbxPartEntry] = []
     for parsed in parsed_scenes:
@@ -102,7 +100,7 @@ def _scene_nodes_to_parts(
             )
 
             # Attach material data if available
-            if guid_map and roblox_defs:
+            if guid_to_roblox_def:
                 for comp in node.components:
                     if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
                         continue
@@ -110,9 +108,8 @@ def _scene_nodes_to_parts(
                         if not isinstance(mat_ref, dict):
                             continue
                         guid = mat_ref.get("guid", "")
-                        mat_name = guid_map.get(guid)
-                        if mat_name and mat_name in roblox_defs:
-                            rdef = roblox_defs[mat_name]
+                        rdef = guid_to_roblox_def.get(guid)
+                        if rdef:
                             part.surface_appearance = _roblox_def_to_surface_appearance(rdef)
                             if rdef.base_part_color:
                                 part.color3 = rdef.base_part_color
@@ -371,21 +368,23 @@ def convert(
     # Phase 4 — Assembly
     # ------------------------------------------------------------------
 
-    # Build material GUID → material name lookup using the full GUID index
-    mat_guid_to_name: dict[str, str] | None = None
+    # Build GUID → RobloxMaterialDef directly via the GUID index.
+    # roblox_defs is keyed by material file path (unique), and the GUID index
+    # maps each GUID to its asset path, so the join is exact — no name-based
+    # indirection that could mis-assign duplicates or break when m_Name !=
+    # filename.
+    guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None
     if mat_result.roblox_defs:
-        mat_guid_to_name = {}
+        guid_to_roblox_def = {}
         for guid, entry in guid_index.guid_to_entry.items():
-            if entry.asset_path.suffix == ".mat":
-                mat_name = entry.asset_path.stem
-                if mat_name in mat_result.roblox_defs:
-                    mat_guid_to_name[guid] = mat_name
+            rdef = mat_result.roblox_defs.get(entry.asset_path)
+            if rdef is not None:
+                guid_to_roblox_def[guid] = rdef
 
     click.echo("🏗   Writing .rbxl …")
     parts = _scene_nodes_to_parts(
         parsed_scenes,
-        guid_map=mat_guid_to_name,
-        roblox_defs=mat_result.roblox_defs or None,
+        guid_to_roblox_def=guid_to_roblox_def,
     )
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
