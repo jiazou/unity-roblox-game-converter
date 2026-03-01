@@ -1,9 +1,26 @@
 """
 scene_parser.py — Parses Unity .unity scene files into a structured hierarchy.
 
-Unity scene files are YAML-based (with a custom Unity header). This module
-reads them, resolves GameObject parent/child relationships, and returns a
-tree of SceneNode objects that represent the scene hierarchy.
+Unity scene files are multi-document YAML with a custom header.  Each YAML
+document represents one serialised object (GameObject, Transform, MeshRenderer,
+etc.) and is preceded by a separator carrying the Unity classID and local
+fileID:
+
+    --- !u!{classID} &{fileID}
+
+This module:
+  1. Pre-scans separators to capture (classID, fileID) per document.
+  2. Strips the non-standard header so PyYAML can parse the body.
+  3. Pairs each parsed document with its (classID, fileID).
+  4. Builds SceneNode objects from GameObjects (classID 1).
+  5. Resolves Transform/RectTransform docs (classID 4/224) to populate
+     position, rotation, scale, and parent/child hierarchy via m_Father.
+  6. Attaches other components (MeshFilter, MeshRenderer, MonoBehaviour, …)
+     to their owning GameObjects via m_GameObject back-references.
+  7. Extracts mesh GUIDs from MeshFilter.m_Mesh.
+  8. Extracts material GUIDs from MeshRenderer.m_Materials.
+  9. Records PrefabInstance docs (classID 1001) with their source GUID
+     and property modifications for downstream resolution.
 
 No other module is imported here.
 """
@@ -18,10 +35,27 @@ from typing import Any
 import yaml  # PyYAML
 
 
-# Unity YAML files start with a non-standard header; strip it before parsing.
-_UNITY_YAML_HEADER = re.compile(r"^%YAML.*\n%TAG.*\n", re.MULTILINE)
-_UNITY_DOC_SEPARATOR = re.compile(r"^--- !u!(\d+) &(\d+)", re.MULTILINE)
+# ---------------------------------------------------------------------------
+# Unity YAML helpers
+# ---------------------------------------------------------------------------
 
+_UNITY_YAML_HEADER = re.compile(r"^%YAML.*\n%TAG.*\n", re.MULTILINE)
+_UNITY_DOC_SEPARATOR = re.compile(r"^--- !u!(\d+) &(\d+).*$", re.MULTILINE)
+
+# Well-known Unity classIDs
+_CID_GAME_OBJECT = 1
+_CID_TRANSFORM = 4
+_CID_MESH_RENDERER = 23
+_CID_MESH_FILTER = 33
+_CID_SKINNED_MESH_RENDERER = 137
+_CID_MONO_BEHAVIOUR = 114
+_CID_RECT_TRANSFORM = 224
+_CID_PREFAB_INSTANCE = 1001
+
+
+# ---------------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------------
 
 @dataclass
 class ComponentData:
@@ -29,6 +63,17 @@ class ComponentData:
     component_type: str          # e.g. "Transform", "MeshRenderer", "Rigidbody"
     file_id: str                 # Unity local file ID
     properties: dict[str, Any]  # Raw parsed YAML properties
+
+
+@dataclass
+class PrefabInstanceData:
+    """A PrefabInstance document found in the scene."""
+    file_id: str
+    source_prefab_guid: str              # GUID of the .prefab asset
+    source_prefab_file_id: str           # fileID inside the prefab
+    transform_parent_file_id: str        # parent Transform in the scene
+    modifications: list[dict[str, Any]]  # m_Modifications entries
+    removed_components: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -48,6 +93,13 @@ class SceneNode:
     rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # quaternion
     scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
+    # Mesh reference (populated from MeshFilter or SkinnedMeshRenderer)
+    mesh_guid: str | None = None
+    mesh_file_id: str | None = None      # sub-asset fileID inside the mesh asset
+
+    # Whether this node came from a PrefabInstance
+    from_prefab_instance: bool = False
+
 
 @dataclass
 class ParsedScene:
@@ -57,30 +109,108 @@ class ParsedScene:
     all_nodes: dict[str, SceneNode] = field(default_factory=dict)  # file_id → node
     raw_documents: list[dict[str, Any]] = field(default_factory=list)
     referenced_material_guids: set[str] = field(default_factory=set)
+    referenced_mesh_guids: set[str] = field(default_factory=set)
+    prefab_instances: list[PrefabInstanceData] = field(default_factory=list)
 
 
-def _strip_unity_header(text: str) -> str:
-    """Remove Unity-specific YAML directives that confuse standard parsers."""
-    text = _UNITY_YAML_HEADER.sub("", text, count=1)
-    # Replace document separators with standard YAML ---
-    text = _UNITY_DOC_SEPARATOR.sub(r"---", text)
-    return text
-
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _extract_vec3(d: dict, key: str) -> tuple[float, float, float]:
     v = d.get(key, {})
+    if not isinstance(v, dict):
+        return (0.0, 0.0, 0.0)
     return (float(v.get("x", 0)), float(v.get("y", 0)), float(v.get("z", 0)))
 
 
 def _extract_quat(d: dict, key: str) -> tuple[float, float, float, float]:
     v = d.get(key, {})
+    if not isinstance(v, dict):
+        return (0.0, 0.0, 0.0, 1.0)
     return (float(v.get("x", 0)), float(v.get("y", 0)),
             float(v.get("z", 0)), float(v.get("w", 1)))
 
 
+def _ref_file_id(ref: Any) -> str | None:
+    """Extract fileID from a Unity object reference dict, or None."""
+    if isinstance(ref, dict):
+        fid = ref.get("fileID", 0)
+        if fid:
+            return str(fid)
+    return None
+
+
+def _ref_guid(ref: Any) -> str | None:
+    """Extract guid from a Unity object reference dict, or None."""
+    if isinstance(ref, dict):
+        guid = ref.get("guid", "")
+        if guid and guid != "0" * 32:
+            return guid
+    return None
+
+
+def _parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
+    """
+    Parse a Unity YAML file into (classID, fileID, body_dict) triples.
+
+    Pre-scans the document separators to capture classID and fileID before
+    handing the cleaned text to PyYAML.
+    """
+    # Step 1: collect (classID, fileID) for every document separator
+    doc_headers: list[tuple[int, str]] = []
+    for m in _UNITY_DOC_SEPARATOR.finditer(raw_text):
+        doc_headers.append((int(m.group(1)), m.group(2)))
+
+    # Step 2: strip the non-standard header and replace separators
+    cleaned = _UNITY_YAML_HEADER.sub("", raw_text, count=1)
+    cleaned = _UNITY_DOC_SEPARATOR.sub("---", cleaned)
+
+    # Step 3: parse YAML documents
+    try:
+        docs: list[dict] = list(yaml.safe_load_all(cleaned))
+    except yaml.YAMLError:
+        return []
+
+    # Step 4: pair each document with its header
+    # PyYAML may produce fewer docs than separators (empty docs are skipped),
+    # and it may produce extra None docs.  Filter non-dict results.
+    result: list[tuple[int, str, dict]] = []
+    header_idx = 0
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        if header_idx < len(doc_headers):
+            cid, fid = doc_headers[header_idx]
+            header_idx += 1
+        else:
+            cid, fid = 0, "0"
+        result.append((cid, fid, doc))
+
+    return result
+
+
+def _doc_body(doc: dict) -> dict:
+    """
+    Unity YAML documents are wrapped: ``{ClassName: {actual_props}}``.
+    Return the inner dict.
+    """
+    for v in doc.values():
+        if isinstance(v, dict):
+            return v
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def parse_scene(scene_path: str | Path) -> ParsedScene:
     """
     Parse a Unity .unity scene file into a tree of SceneNode objects.
+
+    Resolves Transform hierarchy, attaches components to GameObjects, and
+    extracts mesh and material GUIDs.
 
     Args:
         scene_path: Path to the .unity scene file.
@@ -97,27 +227,42 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         raise FileNotFoundError(f"Scene file not found: {scene_path}")
 
     raw_text = scene_path.read_text(encoding="utf-8", errors="replace")
-    cleaned = _strip_unity_header(raw_text)
+    triples = _parse_documents(raw_text)
 
-    try:
-        docs: list[dict] = list(yaml.safe_load_all(cleaned))
-    except yaml.YAMLError as exc:
-        raise ValueError(f"Failed to parse scene YAML: {exc}") from exc
+    result = ParsedScene(scene_path=scene_path)
+    result.raw_documents = [doc for _, _, doc in triples]
 
-    result = ParsedScene(scene_path=scene_path, raw_documents=docs)
+    # ------------------------------------------------------------------
+    # Pass 1: Index all documents by fileID and classify by classID
+    # ------------------------------------------------------------------
 
-    # First pass: build node stubs from GameObject documents
-    file_id_to_raw: dict[str, dict] = {}
-    for doc in docs:
-        if not isinstance(doc, dict):
-            continue
-        if "GameObject" in doc:
-            go = doc["GameObject"]
-            fid = str(go.get("m_LocalIdentfierInFile", id(go)))
-            file_id_to_raw[fid] = go
+    file_id_to_doc: dict[str, dict] = {}            # fileID → raw body
+    file_id_to_class: dict[str, int] = {}            # fileID → classID
+    go_docs: dict[str, dict] = {}                    # fileID → GameObject body
+    transform_docs: dict[str, dict] = {}             # fileID → Transform body
+    component_docs: list[tuple[str, int, dict]] = [] # (fileID, classID, body)
+    prefab_instance_docs: list[tuple[str, dict]] = []  # (fileID, body)
 
-    # Build SceneNode stubs
-    for fid, go in file_id_to_raw.items():
+    for cid, fid, doc in triples:
+        body = _doc_body(doc)
+        file_id_to_doc[fid] = body
+        file_id_to_class[fid] = cid
+
+        if cid == _CID_GAME_OBJECT:
+            go_docs[fid] = body
+        elif cid in (_CID_TRANSFORM, _CID_RECT_TRANSFORM):
+            transform_docs[fid] = body
+        elif cid == _CID_PREFAB_INSTANCE:
+            prefab_instance_docs.append((fid, body))
+        elif cid in (_CID_MESH_FILTER, _CID_MESH_RENDERER,
+                     _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR):
+            component_docs.append((fid, cid, body))
+
+    # ------------------------------------------------------------------
+    # Pass 2: Build SceneNode stubs from GameObjects
+    # ------------------------------------------------------------------
+
+    for fid, go in go_docs.items():
         node = SceneNode(
             name=go.get("m_Name", "GameObject"),
             file_id=fid,
@@ -127,8 +272,105 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         )
         result.all_nodes[fid] = node
 
-    # Wire parent/child relationships (simplified — production code would
-    # resolve Transform component m_Father references)
+    # ------------------------------------------------------------------
+    # Pass 3: Resolve Transforms → populate position, rotation, scale,
+    #         parent/child hierarchy, and attach as component
+    # ------------------------------------------------------------------
+
+    # Build Transform.m_GameObject → Transform body lookup
+    # (a Transform's m_GameObject points to the owning GO)
+    go_fid_to_transform: dict[str, tuple[str, dict]] = {}  # GO fileID → (xform fileID, body)
+    for xform_fid, xform in transform_docs.items():
+        go_ref = _ref_file_id(xform.get("m_GameObject"))
+        if go_ref:
+            go_fid_to_transform[go_ref] = (xform_fid, xform)
+
+    # Also build transform fileID → GO fileID for parent wiring
+    xform_fid_to_go_fid: dict[str, str] = {}
+    for go_fid, (xform_fid, _xform) in go_fid_to_transform.items():
+        xform_fid_to_go_fid[xform_fid] = go_fid
+
+    for go_fid, node in result.all_nodes.items():
+        entry = go_fid_to_transform.get(go_fid)
+        if entry is None:
+            continue
+        xform_fid, xform = entry
+
+        # Populate transform values
+        node.position = _extract_vec3(xform, "m_LocalPosition")
+        node.rotation = _extract_quat(xform, "m_LocalRotation")
+        node.scale = _extract_vec3(xform, "m_LocalScale")
+
+        # Determine parent via m_Father
+        father_xform_fid = _ref_file_id(xform.get("m_Father"))
+        if father_xform_fid:
+            parent_go_fid = xform_fid_to_go_fid.get(father_xform_fid)
+            if parent_go_fid and parent_go_fid in result.all_nodes:
+                node.parent_file_id = parent_go_fid
+
+        # Attach Transform as a component
+        comp_type = "RectTransform" if file_id_to_class.get(xform_fid) == _CID_RECT_TRANSFORM else "Transform"
+        node.components.append(ComponentData(
+            component_type=comp_type,
+            file_id=xform_fid,
+            properties=xform,
+        ))
+
+    # ------------------------------------------------------------------
+    # Pass 4: Attach other components to their GameObjects
+    # ------------------------------------------------------------------
+
+    _CLASS_ID_TO_NAME: dict[int, str] = {
+        _CID_MESH_FILTER: "MeshFilter",
+        _CID_MESH_RENDERER: "MeshRenderer",
+        _CID_SKINNED_MESH_RENDERER: "SkinnedMeshRenderer",
+        _CID_MONO_BEHAVIOUR: "MonoBehaviour",
+    }
+
+    for comp_fid, cid, body in component_docs:
+        go_ref = _ref_file_id(body.get("m_GameObject"))
+        if not go_ref:
+            continue
+        node = result.all_nodes.get(go_ref)
+        if node is None:
+            continue
+
+        comp_type = _CLASS_ID_TO_NAME.get(cid, f"Component_{cid}")
+        node.components.append(ComponentData(
+            component_type=comp_type,
+            file_id=comp_fid,
+            properties=body,
+        ))
+
+        # Extract mesh GUID from MeshFilter.m_Mesh
+        if cid == _CID_MESH_FILTER:
+            mesh_ref = body.get("m_Mesh", {})
+            guid = _ref_guid(mesh_ref)
+            if guid:
+                node.mesh_guid = guid
+                node.mesh_file_id = str(mesh_ref.get("fileID", ""))
+                result.referenced_mesh_guids.add(guid)
+
+        # Extract mesh GUID from SkinnedMeshRenderer.m_Mesh
+        if cid == _CID_SKINNED_MESH_RENDERER:
+            mesh_ref = body.get("m_Mesh", {})
+            guid = _ref_guid(mesh_ref)
+            if guid:
+                node.mesh_guid = guid
+                node.mesh_file_id = str(mesh_ref.get("fileID", ""))
+                result.referenced_mesh_guids.add(guid)
+
+        # Extract material GUIDs from renderers
+        if cid in (_CID_MESH_RENDERER, _CID_SKINNED_MESH_RENDERER):
+            for mat_ref in body.get("m_Materials", []):
+                guid = _ref_guid(mat_ref)
+                if guid:
+                    result.referenced_material_guids.add(guid)
+
+    # ------------------------------------------------------------------
+    # Pass 5: Wire parent/child hierarchy
+    # ------------------------------------------------------------------
+
     for node in result.all_nodes.values():
         if node.parent_file_id is None:
             result.roots.append(node)
@@ -136,19 +378,31 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
             parent = result.all_nodes.get(node.parent_file_id)
             if parent:
                 parent.children.append(node)
+            else:
+                # Parent not found (may be a PrefabInstance-owned GO) → root
+                result.roots.append(node)
 
-    # Extract material GUIDs from MeshRenderer / SkinnedMeshRenderer docs
-    for doc in docs:
-        if not isinstance(doc, dict):
-            continue
-        # MeshRenderer or SkinnedMeshRenderer
-        renderer = doc.get("MeshRenderer") or doc.get("SkinnedMeshRenderer")
-        if renderer is None:
-            continue
-        for mat_ref in renderer.get("m_Materials", []):
-            if isinstance(mat_ref, dict):
-                guid = mat_ref.get("guid", "")
-                if guid:
-                    result.referenced_material_guids.add(guid)
+    # ------------------------------------------------------------------
+    # Pass 6: Record PrefabInstance documents
+    # ------------------------------------------------------------------
+
+    for pi_fid, body in prefab_instance_docs:
+        source_ref = body.get("m_SourcePrefab", {})
+        source_guid = _ref_guid(source_ref) or ""
+        source_file_id = str(source_ref.get("fileID", ""))
+
+        modification = body.get("m_Modification", {})
+        transform_parent = _ref_file_id(modification.get("m_TransformParent")) or ""
+        modifications = modification.get("m_Modifications", []) or []
+        removed = modification.get("m_RemovedComponents", []) or []
+
+        result.prefab_instances.append(PrefabInstanceData(
+            file_id=pi_fid,
+            source_prefab_guid=source_guid,
+            source_prefab_file_id=source_file_id,
+            transform_parent_file_id=transform_parent,
+            modifications=modifications,
+            removed_components=removed,
+        ))
 
     return result
