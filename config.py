@@ -70,7 +70,7 @@ REPORT_VERBOSE: bool = True
 # Material mapper options
 # ---------------------------------------------------------------------------
 
-TEXTURE_MAX_RESOLUTION: int = 1024
+TEXTURE_MAX_RESOLUTION: int = 4096          # Roblox allows up to 4096x4096
 TEXTURE_OUTPUT_FORMAT: str = "png"
 GENERATE_UNIFORM_TEXTURES: bool = True    # 4x4 PNGs for scalar values
 PRE_TILE_MAX_FACTOR: int = 4             # max tiling before logging to UNCONVERTED

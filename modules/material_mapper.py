@@ -154,36 +154,69 @@ _RE_PROPERTIES_BLOCK = re.compile(r"Properties\s*\{([^}]*)\}", re.DOTALL)
 _RE_PROPERTY_NAME = re.compile(r"(\w+)\s*\(")
 
 
+_RE_INCLUDE = re.compile(r'#include\s+"([^"]+)"')
+
+
 def _parse_shader_source(shader_path: Path) -> ShaderInfo:
     """Parse a .shader file to determine its capabilities."""
     try:
         source = shader_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return ShaderInfo("Unknown", "unknown", False, False, False, False, shader_path)
+        # Can't read source — be conservative: assume shader uses color and texture
+        return ShaderInfo("Unknown", "unknown", False, False, True, True, shader_path)
+
+    # Resolve local #include files (.cginc / .hlsl) in the same directory tree
+    # so property and feature detection covers the full shader program.
+    full_source = source
+    shader_dir = shader_path.parent
+    for inc_match in _RE_INCLUDE.finditer(source):
+        inc_name = inc_match.group(1)
+        inc_path = shader_dir / inc_name
+        if inc_path.exists():
+            try:
+                full_source += "\n" + inc_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                pass
 
     # Shader name
     m = _RE_SHADER_NAME.search(source)
     name = m.group(1) if m else shader_path.stem
 
-    # Transparency
+    # Transparency (search full source including includes)
     is_transparent = bool(
-        _RE_BLEND.search(source)
-        or _RE_ZWRITE_OFF.search(source)
-        or _RE_TRANSPARENT_TAG.search(source)
+        _RE_BLEND.search(full_source)
+        or _RE_ZWRITE_OFF.search(full_source)
+        or _RE_TRANSPARENT_TAG.search(full_source)
     )
 
-    # Vertex colors
-    uses_vertex_colors = bool(_RE_VERTEX_COLOR.search(source))
+    # Vertex colors (search full source including includes)
+    uses_vertex_colors = bool(_RE_VERTEX_COLOR.search(full_source))
 
-    # Which properties does the shader declare?
-    declared_props: set[str] = set()
-    prop_block = _RE_PROPERTIES_BLOCK.search(source)
-    if prop_block:
-        for pm in _RE_PROPERTY_NAME.finditer(prop_block.group(1)):
-            declared_props.add(pm.group(1))
+    # Determine which properties the shader uses.
+    #
+    # The Properties {} block only declares what the Inspector exposes — it
+    # does NOT reliably indicate what the compiled shader passes actually
+    # sample.  A property can be read without being declared (set via script)
+    # and a declared property can go unused.
+    #
+    # Strategy: search the ENTIRE source (including resolved #includes) for
+    # references to the property name.  This catches both declared properties
+    # and direct CG/HLSL references.  Default to True (conservative) when
+    # the source is too short or obfuscated to tell.
+    source_has = lambda kw: kw in full_source  # noqa: E731
 
-    reads_color = "_Color" in declared_props or "_BaseColor" in declared_props
-    reads_maintex = "_MainTex" in declared_props or "_BaseMap" in declared_props
+    reads_color = (
+        source_has("_Color") or source_has("_BaseColor")
+    )
+    reads_maintex = (
+        source_has("_MainTex") or source_has("_BaseMap") or source_has("_BaseColorMap")
+    )
+
+    # If the source is suspiciously short (e.g. UsePass / Fallback only),
+    # we can't rule anything out — default to conservative.
+    if len(full_source) < 200:
+        reads_color = True
+        reads_maintex = True
 
     # Categorize
     name_lower = name.lower()
@@ -230,7 +263,8 @@ def _identify_shader(
         return ShaderInfo("Universal Render Pipeline/Unlit", "urp_unlit",
                           False, False, True, True)
 
-    return ShaderInfo("Unknown", "unknown", False, False, False, False)
+    # Completely unresolved shader — be conservative: assume it reads everything
+    return ShaderInfo("Unknown", "unknown", False, False, True, True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
