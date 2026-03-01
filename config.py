@@ -65,3 +65,14 @@ ROBLOX_XML_NAMESPACE: str = "roblox.com"
 
 REPORT_FILENAME: str = "conversion_report.json"
 REPORT_VERBOSE: bool = True
+
+# ---------------------------------------------------------------------------
+# Material mapper options
+# ---------------------------------------------------------------------------
+
+TEXTURE_MAX_RESOLUTION: int = 1024
+TEXTURE_OUTPUT_FORMAT: str = "png"
+GENERATE_UNIFORM_TEXTURES: bool = True    # 4x4 PNGs for scalar values
+PRE_TILE_MAX_FACTOR: int = 4             # max tiling before logging to UNCONVERTED
+FLIP_NORMAL_GREEN_CHANNEL: bool = False  # set True for DirectX-format normal maps
+UNCONVERTED_FILENAME: str = "UNCONVERTED.md"
