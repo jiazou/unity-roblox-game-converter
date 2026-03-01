@@ -261,6 +261,16 @@ def _identify_shader(
 
     # URP package shader (GUID not in Assets/) — detect by property names
     if "_BaseMap" in mat_properties or "_BaseColor" in mat_properties:
+        # Distinguish URP/Lit (has PBR properties) from URP/Unlit
+        has_pbr = bool(
+            mat_properties & {
+                "_MetallicGlossMap", "_BumpMap", "_Metallic",
+                "_Smoothness", "_OcclusionMap", "_EmissionMap",
+            }
+        )
+        if has_pbr:
+            return ShaderInfo("Universal Render Pipeline/Lit", "urp_lit",
+                              False, False, True, True)
         return ShaderInfo("Universal Render Pipeline/Unlit", "urp_unlit",
                           False, False, True, True)
 
@@ -376,6 +386,7 @@ class ParsedMaterial:
     alpha_cutoff: float = 0.5
     tint_color: tuple[float, float, float, float] | None = None
     custom_properties: dict[str, Any] = field(default_factory=dict)
+    active_tex_names: set[str] = field(default_factory=set)  # texture props with non-null refs
 
 
 def _resolve_texture(
@@ -449,10 +460,18 @@ def _parse_material(
     shader_ref = mat.get("m_Shader", {})
     shader = _identify_shader(shader_ref, guid_map, all_prop_names)
 
+    # Collect texture property names that have non-null texture refs
+    active_textures: set[str] = set()
+    for tname, tentry in tex_envs.items():
+        tex_ref = tentry.get("m_Texture", {})
+        if isinstance(tex_ref, dict) and tex_ref.get("fileID", 0) != 0:
+            active_textures.add(tname)
+
     parsed = ParsedMaterial(
         name=mat.get("m_Name", mat_path.stem),
         path=mat_path,
         shader=shader,
+        active_tex_names=active_textures,
     )
 
     # --- Albedo texture (only if shader reads it) ---
@@ -749,7 +768,7 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
 
         # Detail maps — log as unconverted
         for detail_prop in ("_DetailAlbedoMap", "_DetailNormalMap", "_DetailMask"):
-            if detail_prop in _collect_tex_names(parsed):
+            if detail_prop in parsed.active_tex_names:
                 result.unconverted.append(UnconvertedFeature(
                     "Detail map", detail_prop, "MEDIUM",
                     "Bake detail into base texture offline", True,
@@ -757,7 +776,7 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
                 break
 
         # Height map — log as unconverted
-        if "_ParallaxMap" in _collect_tex_names(parsed) or "_HeightMap" in _collect_tex_names(parsed):
+        if "_ParallaxMap" in parsed.active_tex_names or "_HeightMap" in parsed.active_tex_names:
             result.unconverted.append(UnconvertedFeature(
                 "Height/parallax map", "_ParallaxMap", "MEDIUM",
                 "Convert to normal map detail or bake into mesh", True,
@@ -824,27 +843,6 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
 
     return result
 
-
-def _collect_tex_names(parsed: ParsedMaterial) -> set[str]:
-    """Return the set of texture property names that have non-null paths."""
-    names: set[str] = set()
-    # Re-read the mat file quickly to check for detail/height textures
-    try:
-        raw = parsed.path.read_text(encoding="utf-8", errors="replace")
-        cleaned = _clean_unity_yaml(raw)
-        data = yaml.safe_load(cleaned)
-        if not isinstance(data, dict):
-            return names
-        mat = data.get("Material", {})
-        props = mat.get("m_SavedProperties", {})
-        tex_envs = _parse_tex_envs(props.get("m_TexEnvs"))
-        for name, entry in tex_envs.items():
-            tex_ref = entry.get("m_Texture", {})
-            if isinstance(tex_ref, dict) and tex_ref.get("fileID", 0) != 0:
-                names.add(name)
-    except Exception:
-        pass
-    return names
 
 
 def _pipeline_label(category: str) -> str:
