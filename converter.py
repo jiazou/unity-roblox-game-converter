@@ -76,6 +76,7 @@ def _roblox_def_to_surface_appearance(
 def _scene_nodes_to_parts(
     parsed_scenes: list[scene_parser.ParsedScene],
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None,
+    guid_to_companion_scripts: dict[str, list[str]] | None = None,
 ) -> list[rbxl_writer.RbxPartEntry]:
     """
     Convert parsed Unity scene nodes into RbxPartEntry objects.
@@ -88,6 +89,9 @@ def _scene_nodes_to_parts(
         guid_to_roblox_def: Optional mapping from material GUID directly to
             RobloxMaterialDef.  Built by the caller from the GUID index +
             path-keyed roblox_defs, so there is no name-based indirection.
+        guid_to_companion_scripts: Optional mapping from material GUID to
+            Luau companion scripts (e.g. blinking/rotation effects) that
+            should be parented to the part using that material.
     """
     parts: list[rbxl_writer.RbxPartEntry] = []
     for parsed in parsed_scenes:
@@ -99,7 +103,7 @@ def _scene_nodes_to_parts(
                 anchored=True,
             )
 
-            # Attach material data if available
+            # Attach material data and companion scripts if available
             if guid_to_roblox_def:
                 for comp in node.components:
                     if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
@@ -115,6 +119,15 @@ def _scene_nodes_to_parts(
                                 part.color3 = rdef.base_part_color
                             if rdef.base_part_transparency > 0:
                                 part.transparency = rdef.base_part_transparency
+                            # Attach companion scripts to this part
+                            if guid_to_companion_scripts:
+                                for i, src in enumerate(guid_to_companion_scripts.get(guid, ())):
+                                    suffix = f"_{i+1}" if i > 0 else ""
+                                    part.scripts.append(rbxl_writer.RbxScriptEntry(
+                                        name=f"{node.name}_MaterialEffect{suffix}",
+                                        luau_source=src,
+                                        script_type="Script",
+                                    ))
                             break  # use first material for the part
 
             parts.append(part)
@@ -368,23 +381,28 @@ def convert(
     # Phase 4 — Assembly
     # ------------------------------------------------------------------
 
-    # Build GUID → RobloxMaterialDef directly via the GUID index.
-    # roblox_defs is keyed by material file path (unique), and the GUID index
-    # maps each GUID to its asset path, so the join is exact — no name-based
-    # indirection that could mis-assign duplicates or break when m_Name !=
-    # filename.
+    # Build GUID → RobloxMaterialDef and GUID → companion scripts directly
+    # via the GUID index.  Both maps are keyed by material file path (unique),
+    # and the GUID index maps each GUID to its asset path, so the join is
+    # exact — no name-based indirection.
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None
-    if mat_result.roblox_defs:
+    guid_to_companion: dict[str, list[str]] | None = None
+    if mat_result.roblox_defs or mat_result.companion_scripts:
         guid_to_roblox_def = {}
+        guid_to_companion = {}
         for guid, entry in guid_index.guid_to_entry.items():
             rdef = mat_result.roblox_defs.get(entry.asset_path)
             if rdef is not None:
                 guid_to_roblox_def[guid] = rdef
+            scripts = mat_result.companion_scripts.get(entry.asset_path)
+            if scripts:
+                guid_to_companion[guid] = scripts
 
     click.echo("🏗   Writing .rbxl …")
     parts = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
+        guid_to_companion_scripts=guid_to_companion,
     )
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
