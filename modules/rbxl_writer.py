@@ -57,6 +57,7 @@ class RbxPartEntry:
     transparency: float = 0.0
     material_enum: str | None = None     # e.g. "SmoothPlastic"
     surface_appearance: RbxSurfaceAppearance | None = None
+    mesh_id: str | None = None           # rbxassetid:// or file path for MeshPart
 
 
 @dataclass
@@ -122,13 +123,20 @@ _ALPHA_MODE_MAP = {"Overlay": "0", "Transparency": "1", "Opaque": "2", "TintMask
 
 
 def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
-    item = ET.SubElement(workspace, "Item", **{"class": "Part"})
+    # Use MeshPart when a mesh asset is available (required for SurfaceAppearance),
+    # otherwise fall back to a plain Part (box primitive).
+    use_mesh = part.mesh_id is not None
+    cls = "MeshPart" if use_mesh else "Part"
+    item = ET.SubElement(workspace, "Item", **{"class": cls})
     props = ET.SubElement(item, "Properties")
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
     _make_vector3(props, "Position", part.position)
     _make_vector3(props, "Size", part.size)
     _make_property(props, "BrickColor", "BrickColor", part.brick_color)
+
+    if use_mesh:
+        _make_property(props, "Content", "MeshId", part.mesh_id)
 
     if part.color3:
         _make_color3(props, "Color3", part.color3)
@@ -137,9 +145,13 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     if part.material_enum:
         _make_property(props, "token", "Material", part.material_enum)
 
-    # SurfaceAppearance child
-    if part.surface_appearance:
+    # SurfaceAppearance child (only meaningful on MeshPart)
+    if part.surface_appearance and use_mesh:
         _make_surface_appearance(item, part.surface_appearance)
+    elif part.surface_appearance and not use_mesh:
+        # No mesh — SurfaceAppearance won't render on a plain Part.
+        # Apply what we can: color/transparency are already set via BasePart properties.
+        pass
 
     for script in part.scripts:
         script_item = ET.SubElement(item, "Item", **{"class": script.script_type})
