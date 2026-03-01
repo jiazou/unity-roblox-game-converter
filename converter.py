@@ -7,16 +7,21 @@ This is the single entry point that wires all pipeline modules together:
     1. scene_parser     → parses .unity scene files, extracts material GUIDs
     2. prefab_parser    → parses .prefab files, extracts material GUIDs
 
-  Phase 2 — Asset inventory:
+  Phase 2 — Asset inventory + GUID resolution:
     3. asset_extractor  → discovers and catalogues Unity assets
+    4. guid_resolver    → builds full bidirectional GUID ↔ asset-path index
 
-  Phase 3 — Heavy processing (informed by Phase 1):
-    4. material_mapper  → parses .mat files, converts to Roblox materials
-    5. code_transpiler  → converts C# MonoBehaviours to Luau scripts
+  Phase 3 — Heavy processing (informed by Phases 1 & 2):
+    5. material_mapper  → parses .mat files, converts to Roblox materials
+    6. code_transpiler  → converts C# MonoBehaviours to Luau scripts
+    7. mesh_decimator   → conservative decimation for Roblox polygon limits
 
   Phase 4 — Assembly:
-    6. rbxl_writer      → writes the final .rbxl Roblox place file
-    7. report_generator → produces a JSON + stdout conversion report
+    8. rbxl_writer      → writes the final .rbxl Roblox place file
+
+  Phase 5 — Portal upload (optional, requires Roblox API key):
+    9. roblox_uploader  → uploads .rbxl + textures to Roblox Open Cloud
+   10. report_generator → produces a JSON + stdout conversion report
 
 Scenes and prefabs are parsed first so material mapping can be filtered to
 only the materials actually referenced by MeshRenderer components.
@@ -35,10 +40,13 @@ import click
 import config
 from modules import (
     asset_extractor,
+    guid_resolver,
     material_mapper,
+    mesh_decimator,
     scene_parser,
     prefab_parser,
     code_transpiler,
+    roblox_uploader,
     rbxl_writer,
     report_generator,
 )
@@ -209,12 +217,24 @@ def _build_report(
               help="Anthropic API key (or set ANTHROPIC_API_KEY env var).")
 @click.option("--verbose/--no-verbose", default=config.REPORT_VERBOSE,
               help="Include per-script detail in the report.")
+@click.option("--roblox-api-key", default=config.ROBLOX_API_KEY, envvar="ROBLOX_API_KEY",
+              help="Roblox Open Cloud API key (required for portal upload).")
+@click.option("--universe-id", default=config.ROBLOX_UNIVERSE_ID, type=int,
+              help="Roblox universe (experience) ID for upload.")
+@click.option("--place-id", default=config.ROBLOX_PLACE_ID, type=int,
+              help="Roblox place ID for upload.")
+@click.option("--decimate/--no-decimate", default=config.MESH_DECIMATION_ENABLED,
+              help="Decimate meshes exceeding Roblox polygon limits.")
 def convert(
     unity_project_path: str,
     output_dir: str,
     use_ai: bool,
     api_key: str,
     verbose: bool,
+    roblox_api_key: str,
+    universe_id: int | None,
+    place_id: int | None,
+    decimate: bool,
 ) -> None:
     """
     Convert a Unity project at UNITY_PROJECT_PATH to a Roblox place in OUTPUT_DIR.
@@ -222,6 +242,7 @@ def convert(
     \b
     Example:
         python converter.py ./MyUnityGame ./roblox_output
+        python converter.py ./MyUnityGame ./out --roblox-api-key KEY --universe-id 123 --place-id 456
     """
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
@@ -258,7 +279,7 @@ def convert(
     referenced_guids |= prefabs.referenced_material_guids
 
     # ------------------------------------------------------------------
-    # Phase 2 — Asset inventory
+    # Phase 2 — Asset inventory + GUID resolution
     # ------------------------------------------------------------------
 
     click.echo(f"🔍  Extracting assets from {unity_path} …")
@@ -273,8 +294,21 @@ def convert(
         errors.append(str(exc))
         manifest = asset_extractor.AssetManifest(unity_project_path=unity_path)
 
+    click.echo("🔗  Building GUID index …")
+    try:
+        guid_index = guid_resolver.build_guid_index(unity_path)
+        click.echo(f"    → {guid_index.total_resolved} GUIDs resolved "
+                   f"from {guid_index.total_meta_files} .meta files")
+        if guid_index.duplicate_guids:
+            click.echo(f"    → {len(guid_index.duplicate_guids)} duplicate GUID(s) detected")
+        if guid_index.orphan_metas:
+            click.echo(f"    → {len(guid_index.orphan_metas)} orphan .meta file(s)")
+    except FileNotFoundError as exc:
+        errors.append(str(exc))
+        guid_index = guid_resolver.GuidIndex(project_root=unity_path)
+
     # ------------------------------------------------------------------
-    # Phase 3 — Heavy processing (informed by Phase 1)
+    # Phase 3 — Heavy processing (informed by Phase 1 & 2)
     # ------------------------------------------------------------------
 
     click.echo("🎨  Mapping materials …")
@@ -311,18 +345,39 @@ def convert(
         errors.append(str(exc))
         transpilation = code_transpiler.TranspilationResult()
 
+    # ── Mesh decimation (conservative) ─────────────────────────────
+    decimation_result = mesh_decimator.DecimationResult()
+    if decimate:
+        mesh_entries = manifest.by_kind.get("mesh", [])
+        mesh_paths = [e.path for e in mesh_entries]
+        if mesh_paths:
+            click.echo(f"🔺  Decimating meshes ({len(mesh_paths)} file(s)) …")
+            meshes_out = out_dir / "meshes"
+            decimation_result = mesh_decimator.decimate_meshes(
+                mesh_paths=mesh_paths,
+                output_dir=meshes_out,
+                target_faces=config.MESH_TARGET_FACES,
+                quality_floor=config.MESH_QUALITY_FLOOR,
+                roblox_max_faces=config.MESH_ROBLOX_MAX_FACES,
+            )
+            click.echo(f"    → {decimation_result.total_meshes} mesh(es): "
+                       f"{decimation_result.already_compliant} compliant, "
+                       f"{decimation_result.decimated} decimated, "
+                       f"{decimation_result.skipped} skipped")
+            for w in decimation_result.warnings:
+                click.echo(f"    ⚠ {w}")
+
     # ------------------------------------------------------------------
     # Phase 4 — Assembly
     # ------------------------------------------------------------------
 
-    # Build material GUID → material name lookup for scene→material wiring
+    # Build material GUID → material name lookup using the full GUID index
     mat_guid_to_name: dict[str, str] | None = None
     if mat_result.roblox_defs:
         mat_guid_to_name = {}
-        guid_map = material_mapper._build_guid_map(unity_path)
-        for guid, asset_path in guid_map.items():
-            if asset_path.suffix == ".mat":
-                mat_name = asset_path.stem
+        for guid, entry in guid_index.guid_to_entry.items():
+            if entry.asset_path.suffix == ".mat":
+                mat_name = entry.asset_path.stem
                 if mat_name in mat_result.roblox_defs:
                     mat_guid_to_name[guid] = mat_name
 
@@ -342,6 +397,32 @@ def convert(
         place_name=unity_path.name,
     )
     click.echo(f"    → Written to {write_result.output_path}")
+
+    # ------------------------------------------------------------------
+    # Phase 5 — Portal upload (requires Roblox API key)
+    # ------------------------------------------------------------------
+
+    click.echo("☁️   Checking Roblox upload …")
+    textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
+    upload_result = roblox_uploader.upload_to_roblox(
+        rbxl_path=rbxl_path,
+        textures_dir=textures_dir,
+        api_key=roblox_api_key,
+        universe_id=universe_id,
+        place_id=place_id,
+    )
+    if upload_result.skipped:
+        for w in upload_result.warnings:
+            click.echo(f"    → {w}")
+    elif upload_result.success:
+        click.echo(f"    → Uploaded to place {upload_result.place_id} "
+                   f"(version {upload_result.version_number})")
+        if upload_result.asset_ids:
+            click.echo(f"    → {len(upload_result.asset_ids)} texture(s) uploaded")
+    else:
+        for err in upload_result.errors:
+            click.echo(f"    ✗ {err}")
+            errors.append(err)
 
     duration = time.monotonic() - t_start
 
