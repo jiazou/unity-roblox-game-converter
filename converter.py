@@ -4,11 +4,12 @@ converter.py — Orchestrator for the Unity → Roblox conversion pipeline.
 This is the single entry point that wires all pipeline modules together:
 
   1. asset_extractor  → discovers and catalogues Unity assets
-  2. scene_parser     → parses .unity scene files into node trees
-  3. prefab_parser    → parses .prefab files into reusable templates
-  4. code_transpiler  → converts C# MonoBehaviours to Luau scripts
-  5. rbxl_writer      → writes the final .rbxl Roblox place file
-  6. report_generator → produces a JSON + stdout conversion report
+  2. material_mapper  → parses .mat files, converts to Roblox materials
+  3. scene_parser     → parses .unity scene files into node trees
+  4. prefab_parser    → parses .prefab files into reusable templates
+  5. code_transpiler  → converts C# MonoBehaviours to Luau scripts
+  6. rbxl_writer      → writes the final .rbxl Roblox place file
+  7. report_generator → produces a JSON + stdout conversion report
 
 Data flows linearly: each step's output is passed explicitly to the next.
 No module imports another module — all wiring happens here.
@@ -24,6 +25,7 @@ import click
 import config
 from modules import (
     asset_extractor,
+    material_mapper,
     scene_parser,
     prefab_parser,
     code_transpiler,
@@ -76,6 +78,7 @@ def _build_report(
     unity_path: Path,
     output_dir: Path,
     manifest: asset_extractor.AssetManifest,
+    mat_result: material_mapper.MaterialMapResult,
     scenes: list[scene_parser.ParsedScene],
     prefabs: prefab_parser.PrefabLibrary,
     transpilation: code_transpiler.TranspilationResult,
@@ -97,6 +100,15 @@ def _build_report(
     rpt.assets.total = len(manifest.assets)
     rpt.assets.total_size_bytes = manifest.total_size_bytes
     rpt.assets.by_kind = {k: len(v) for k, v in manifest.by_kind.items()}
+
+    # Materials
+    rpt.materials.total = mat_result.total
+    rpt.materials.fully_converted = mat_result.fully_converted
+    rpt.materials.partially_converted = mat_result.partially_converted
+    rpt.materials.unconvertible = mat_result.unconvertible
+    rpt.materials.texture_ops = mat_result.texture_ops_performed
+    if mat_result.unconverted_md_path:
+        rpt.materials.unconverted_md_path = str(mat_result.unconverted_md_path)
 
     # Scripts
     rpt.scripts.total = transpilation.total
@@ -174,6 +186,21 @@ def convert(
         errors.append(str(exc))
         manifest = asset_extractor.AssetManifest(unity_project_path=unity_path)
 
+    click.echo("🎨  Mapping materials …")
+    try:
+        mat_result = material_mapper.map_materials(unity_path, out_dir)
+        click.echo(f"    → {mat_result.total} material(s): "
+                   f"{mat_result.fully_converted} full, "
+                   f"{mat_result.partially_converted} partial, "
+                   f"{mat_result.unconvertible} unconvertible")
+        if mat_result.texture_ops_performed:
+            click.echo(f"    → {mat_result.texture_ops_performed} texture operation(s)")
+        if mat_result.unconverted_md_path:
+            click.echo(f"    → UNCONVERTED.md written to {mat_result.unconverted_md_path}")
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Material mapping error: {exc}")
+        mat_result = material_mapper.MaterialMapResult()
+
     click.echo("🗺   Parsing scenes …")
     parsed_scenes: list[scene_parser.ParsedScene] = []
     for scene_file in unity_path.rglob("*.unity"):
@@ -223,7 +250,7 @@ def convert(
     duration = time.monotonic() - t_start
 
     rpt = _build_report(
-        unity_path, out_dir, manifest, parsed_scenes,
+        unity_path, out_dir, manifest, mat_result, parsed_scenes,
         prefabs, transpilation, write_result, duration, errors,
     )
 

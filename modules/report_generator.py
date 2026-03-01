@@ -38,6 +38,16 @@ class ScriptSummary:
 
 
 @dataclass
+class MaterialSummary:
+    total: int = 0
+    fully_converted: int = 0
+    partially_converted: int = 0
+    unconvertible: int = 0
+    texture_ops: int = 0
+    unconverted_md_path: str = ""
+
+
+@dataclass
 class SceneSummary:
     scenes_parsed: int = 0
     total_game_objects: int = 0
@@ -65,6 +75,7 @@ class ConversionReport:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     assets: AssetSummary = field(default_factory=AssetSummary)
+    materials: MaterialSummary = field(default_factory=MaterialSummary)
     scripts: ScriptSummary = field(default_factory=ScriptSummary)
     scene: SceneSummary = field(default_factory=SceneSummary)
     output: OutputSummary = field(default_factory=OutputSummary)
@@ -117,6 +128,10 @@ def generate_report(
             f"  Status       : {status}",
             f"  Duration     : {report.duration_seconds:.1f}s",
             f"  Assets found : {report.assets.total}",
+            f"  Materials    : {report.materials.total} total, "
+            f"{report.materials.fully_converted} full, "
+            f"{report.materials.partially_converted} partial, "
+            f"{report.materials.unconvertible} unconvertible",
             f"  Scripts      : {report.scripts.total} total, "
             f"{report.scripts.succeeded} OK, "
             f"{report.scripts.flagged_for_review} flagged",

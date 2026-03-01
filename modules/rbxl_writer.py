@@ -31,6 +31,20 @@ class RbxScriptEntry:
 
 
 @dataclass
+class RbxSurfaceAppearance:
+    """PBR material properties for a SurfaceAppearance child object."""
+    color_map: str | None = None         # texture asset path / placeholder
+    normal_map: str | None = None
+    metalness_map: str | None = None
+    roughness_map: str | None = None
+    emissive_mask: str | None = None
+    emissive_strength: float = 1.0
+    emissive_tint: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    color_tint: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    alpha_mode: str = "Opaque"           # Opaque | Transparency | Overlay
+
+
+@dataclass
 class RbxPartEntry:
     name: str
     position: tuple[float, float, float] = (0.0, 4.0, 0.0)
@@ -39,6 +53,10 @@ class RbxPartEntry:
     anchored: bool = True
     children: list["RbxPartEntry"] = field(default_factory=list)
     scripts: list[RbxScriptEntry] = field(default_factory=list)
+    color3: tuple[float, float, float] | None = None
+    transparency: float = 0.0
+    material_enum: str | None = None     # e.g. "SmoothPlastic"
+    surface_appearance: RbxSurfaceAppearance | None = None
 
 
 @dataclass
@@ -68,6 +86,41 @@ def _make_vector3(parent: ET.Element, name: str, xyz: tuple[float, float, float]
     return el
 
 
+def _make_color3(parent: ET.Element, name: str, rgb: tuple[float, float, float]) -> ET.Element:
+    el = ET.SubElement(parent, "Color3", name=name)
+    # Roblox Color3 uses 0-1 float values
+    ET.SubElement(el, "R").text = f"{rgb[0]:.6f}"
+    ET.SubElement(el, "G").text = f"{rgb[1]:.6f}"
+    ET.SubElement(el, "B").text = f"{rgb[2]:.6f}"
+    return el
+
+
+def _make_surface_appearance(parent: ET.Element, sa: RbxSurfaceAppearance) -> ET.Element:
+    """Emit a SurfaceAppearance child item under a Part/MeshPart."""
+    item = ET.SubElement(parent, "Item", **{"class": "SurfaceAppearance"})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", "SurfaceAppearance")
+    if sa.color_map:
+        _make_property(props, "Content", "ColorMap", sa.color_map)
+    if sa.normal_map:
+        _make_property(props, "Content", "NormalMap", sa.normal_map)
+    if sa.metalness_map:
+        _make_property(props, "Content", "MetalnessMap", sa.metalness_map)
+    if sa.roughness_map:
+        _make_property(props, "Content", "RoughnessMap", sa.roughness_map)
+    if sa.emissive_mask:
+        _make_property(props, "Content", "EmissiveMaskContent", sa.emissive_mask)
+        _make_property(props, "float", "EmissiveStrength", f"{sa.emissive_strength:.4f}")
+        _make_color3(props, "EmissiveTint", sa.emissive_tint)
+    if sa.color_tint != (1.0, 1.0, 1.0):
+        _make_color3(props, "Color", sa.color_tint)
+    _make_property(props, "token", "AlphaMode", _ALPHA_MODE_MAP.get(sa.alpha_mode, "0"))
+    return item
+
+
+_ALPHA_MODE_MAP = {"Overlay": "0", "Transparency": "1", "Opaque": "2", "TintMask": "3"}
+
+
 def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     item = ET.SubElement(workspace, "Item", **{"class": "Part"})
     props = ET.SubElement(item, "Properties")
@@ -76,6 +129,17 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     _make_vector3(props, "Position", part.position)
     _make_vector3(props, "Size", part.size)
     _make_property(props, "BrickColor", "BrickColor", part.brick_color)
+
+    if part.color3:
+        _make_color3(props, "Color3", part.color3)
+    if part.transparency > 0.001:
+        _make_property(props, "float", "Transparency", f"{part.transparency:.4f}")
+    if part.material_enum:
+        _make_property(props, "token", "Material", part.material_enum)
+
+    # SurfaceAppearance child
+    if part.surface_appearance:
+        _make_surface_appearance(item, part.surface_appearance)
 
     for script in part.scripts:
         script_item = ET.SubElement(item, "Item", **{"class": script.script_type})
