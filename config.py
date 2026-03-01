@@ -60,6 +60,23 @@ RBXL_OUTPUT_FILENAME: str = "converted_place.rbxl"
 ROBLOX_XML_NAMESPACE: str = "roblox.com"
 
 # ---------------------------------------------------------------------------
+# Roblox Open Cloud upload (portal upload)
+# ---------------------------------------------------------------------------
+
+ROBLOX_API_KEY: str = os.environ.get("ROBLOX_API_KEY", "")
+ROBLOX_UNIVERSE_ID: int | None = None
+ROBLOX_PLACE_ID: int | None = None
+
+# ---------------------------------------------------------------------------
+# Mesh decimation (conservative defaults)
+# ---------------------------------------------------------------------------
+
+MESH_DECIMATION_ENABLED: bool = True
+MESH_ROBLOX_MAX_FACES: int = 10_000        # hard MeshPart limit
+MESH_TARGET_FACES: int = 8_000             # leave headroom below the cap
+MESH_QUALITY_FLOOR: float = 0.6           # never reduce below 60% of original
+
+# ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
 

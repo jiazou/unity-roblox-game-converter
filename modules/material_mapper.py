@@ -93,7 +93,8 @@ class MaterialConversionResult:
 class MaterialMapResult:
     """Top-level output of the material mapping pipeline."""
     materials: list[MaterialConversionResult] = field(default_factory=list)
-    roblox_defs: dict[str, RobloxMaterialDef] = field(default_factory=dict)
+    roblox_defs: dict[Path, RobloxMaterialDef] = field(default_factory=dict)
+    companion_scripts: dict[Path, list[str]] = field(default_factory=dict)
     generated_textures: list[Path] = field(default_factory=list)
     unconverted_md_path: Path | None = None
     total: int = 0
@@ -1179,11 +1180,14 @@ def map_materials(
     unconverted_path = out_dir / config.UNCONVERTED_FILENAME
     _generate_unconverted_md(results, unity_path.name, unconverted_path)
 
-    # Build result
-    roblox_defs = {}
+    # Build result — keyed by material file path (unique) rather than name
+    roblox_defs: dict[Path, RobloxMaterialDef] = {}
+    companion_scripts: dict[Path, list[str]] = {}
     for r in results:
         if r.roblox_def:
-            roblox_defs[r.material_name] = r.roblox_def
+            roblox_defs[r.material_path] = r.roblox_def
+        if r.companion_scripts:
+            companion_scripts[r.material_path] = r.companion_scripts
 
     total = len(results)
     fully = sum(1 for r in results if r.fully_converted)
@@ -1193,6 +1197,7 @@ def map_materials(
     return MaterialMapResult(
         materials=results,
         roblox_defs=roblox_defs,
+        companion_scripts=companion_scripts,
         generated_textures=generated,
         unconverted_md_path=unconverted_path,
         total=total,
