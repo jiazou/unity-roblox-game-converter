@@ -52,6 +52,9 @@ class SceneSummary:
     scenes_parsed: int = 0
     total_game_objects: int = 0
     prefabs_parsed: int = 0
+    prefab_instances_resolved: int = 0
+    meshes_decimated: int = 0
+    meshes_compliant: int = 0
 
 
 @dataclass
@@ -136,6 +139,10 @@ def generate_report(
             f"{report.scripts.succeeded} OK, "
             f"{report.scripts.flagged_for_review} flagged",
             f"  GameObjects  : {report.scene.total_game_objects}",
+            f"  Prefabs      : {report.scene.prefabs_parsed} parsed, "
+            f"{report.scene.prefab_instances_resolved} instances resolved",
+            f"  Meshes       : {report.scene.meshes_compliant} compliant, "
+            f"{report.scene.meshes_decimated} decimated",
             f"  Parts in .rbxl: {report.output.parts_written}",
         ]
         if report.warnings:

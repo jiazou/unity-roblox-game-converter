@@ -78,6 +78,7 @@ def _node_to_part(
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
     guid_to_companion_scripts: dict[str, list[str]] | None,
     guid_index: guid_resolver.GuidIndex | None,
+    mesh_path_remap: dict[str, str] | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a single SceneNode (and its children recursively) to an RbxPartEntry."""
     part = rbxl_writer.RbxPartEntry(
@@ -87,11 +88,15 @@ def _node_to_part(
         anchored=True,
     )
 
-    # Set mesh_id from the node's mesh GUID via the GUID index
+    # Set mesh_id from the node's mesh GUID via the GUID index.
+    # If a decimated version exists, prefer that path.
     if node.mesh_guid and guid_index:
         mesh_path = guid_index.resolve(node.mesh_guid)
         if mesh_path:
-            part.mesh_id = str(mesh_path)
+            mesh_str = str(mesh_path)
+            if mesh_path_remap and mesh_str in mesh_path_remap:
+                mesh_str = mesh_path_remap[mesh_str]
+            part.mesh_id = mesh_str
 
     # Attach material data and companion scripts
     if guid_to_roblox_def:
@@ -123,9 +128,166 @@ def _node_to_part(
     for child in node.children:
         part.children.append(_node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
+            mesh_path_remap,
         ))
 
     return part
+
+
+def _prefab_node_to_scene_node(
+    pnode: prefab_parser.PrefabNode,
+) -> scene_parser.SceneNode:
+    """Convert a PrefabNode tree into a SceneNode tree (recursive)."""
+    snode = scene_parser.SceneNode(
+        name=pnode.name,
+        file_id=pnode.file_id,
+        active=pnode.active,
+        layer=0,
+        tag="Untagged",
+        position=pnode.position,
+        rotation=pnode.rotation,
+        scale=pnode.scale,
+        mesh_guid=pnode.mesh_guid,
+        mesh_file_id=pnode.mesh_file_id,
+        from_prefab_instance=True,
+    )
+    # Copy components
+    for pc in pnode.components:
+        snode.components.append(scene_parser.ComponentData(
+            component_type=pc.component_type,
+            file_id=pc.file_id,
+            properties=pc.properties,
+        ))
+    # Recurse
+    for child in pnode.children:
+        snode.children.append(_prefab_node_to_scene_node(child))
+    return snode
+
+
+def _apply_prefab_modifications(
+    node: scene_parser.SceneNode,
+    modifications: list[dict],
+) -> None:
+    """
+    Apply PrefabInstance m_Modifications to a resolved prefab node tree.
+
+    Unity m_Modifications is a list of dicts, each with:
+      - target: {fileID, guid}  (identifies which object inside the prefab)
+      - propertyPath: str       (e.g. "m_LocalPosition.x", "m_Name")
+      - value: str              (the overridden value)
+
+    We apply the most common modifications: position, rotation, scale, name,
+    and m_IsActive.
+    """
+    # Build fileID → node lookup for the entire subtree
+    fid_to_node: dict[str, scene_parser.SceneNode] = {}
+
+    def _index(n: scene_parser.SceneNode) -> None:
+        fid_to_node[n.file_id] = n
+        for comp in n.components:
+            fid_to_node[comp.file_id] = n
+        for child in n.children:
+            _index(child)
+
+    _index(node)
+
+    for mod in modifications:
+        if not isinstance(mod, dict):
+            continue
+        target = mod.get("target", {})
+        target_fid = str(target.get("fileID", "")) if isinstance(target, dict) else ""
+        prop_path = mod.get("propertyPath", "")
+        value = mod.get("value", "")
+
+        target_node = fid_to_node.get(target_fid)
+        if not target_node:
+            continue
+
+        try:
+            fval = float(value)
+        except (ValueError, TypeError):
+            fval = None
+
+        # Position overrides
+        if prop_path == "m_LocalPosition.x" and fval is not None:
+            target_node.position = (fval, target_node.position[1], target_node.position[2])
+        elif prop_path == "m_LocalPosition.y" and fval is not None:
+            target_node.position = (target_node.position[0], fval, target_node.position[2])
+        elif prop_path == "m_LocalPosition.z" and fval is not None:
+            target_node.position = (target_node.position[0], target_node.position[1], fval)
+        # Rotation overrides
+        elif prop_path == "m_LocalRotation.x" and fval is not None:
+            target_node.rotation = (fval, target_node.rotation[1], target_node.rotation[2], target_node.rotation[3])
+        elif prop_path == "m_LocalRotation.y" and fval is not None:
+            target_node.rotation = (target_node.rotation[0], fval, target_node.rotation[2], target_node.rotation[3])
+        elif prop_path == "m_LocalRotation.z" and fval is not None:
+            target_node.rotation = (target_node.rotation[0], target_node.rotation[1], fval, target_node.rotation[3])
+        elif prop_path == "m_LocalRotation.w" and fval is not None:
+            target_node.rotation = (target_node.rotation[0], target_node.rotation[1], target_node.rotation[2], fval)
+        # Scale overrides
+        elif prop_path == "m_LocalScale.x" and fval is not None:
+            target_node.scale = (fval, target_node.scale[1], target_node.scale[2])
+        elif prop_path == "m_LocalScale.y" and fval is not None:
+            target_node.scale = (target_node.scale[0], fval, target_node.scale[2])
+        elif prop_path == "m_LocalScale.z" and fval is not None:
+            target_node.scale = (target_node.scale[0], target_node.scale[1], fval)
+        # Name override
+        elif prop_path == "m_Name":
+            target_node.name = str(value)
+        # Active state
+        elif prop_path == "m_IsActive":
+            target_node.active = str(value) == "1"
+
+
+def _resolve_prefab_instances(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    prefab_lib: prefab_parser.PrefabLibrary,
+    guid_index: guid_resolver.GuidIndex,
+) -> int:
+    """
+    Resolve PrefabInstance documents in parsed scenes.
+
+    For each PrefabInstance, look up the source prefab via GUID, clone its
+    node tree as SceneNodes, apply m_Modifications, and insert into the
+    scene hierarchy (either as a root or under the designated parent).
+
+    Returns the number of prefab instances resolved.
+    """
+    # Build GUID → PrefabTemplate lookup
+    guid_to_prefab: dict[str, prefab_parser.PrefabTemplate] = {}
+    for template in prefab_lib.prefabs:
+        prefab_guid = guid_index.guid_for_path(template.prefab_path.resolve())
+        if prefab_guid:
+            guid_to_prefab[prefab_guid] = template
+
+    resolved = 0
+    for scene in parsed_scenes:
+        for pi in scene.prefab_instances:
+            template = guid_to_prefab.get(pi.source_prefab_guid)
+            if template is None or template.root is None:
+                continue
+
+            # Clone the prefab tree as SceneNodes
+            root_node = _prefab_node_to_scene_node(template.root)
+
+            # Apply scene-level property overrides
+            _apply_prefab_modifications(root_node, pi.modifications)
+
+            # Collect material/mesh GUIDs from the prefab
+            scene.referenced_material_guids |= template.referenced_material_guids
+            scene.referenced_mesh_guids |= template.referenced_mesh_guids
+
+            # Insert into scene hierarchy
+            parent_fid = pi.transform_parent_file_id
+            parent_node = scene.all_nodes.get(parent_fid) if parent_fid else None
+            if parent_node:
+                parent_node.children.append(root_node)
+            else:
+                scene.roots.append(root_node)
+
+            resolved += 1
+
+    return resolved
 
 
 def _scene_nodes_to_parts(
@@ -133,6 +295,7 @@ def _scene_nodes_to_parts(
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None,
     guid_to_companion_scripts: dict[str, list[str]] | None = None,
     guid_index: guid_resolver.GuidIndex | None = None,
+    mesh_path_remap: dict[str, str] | None = None,
 ) -> list[rbxl_writer.RbxPartEntry]:
     """
     Convert parsed Unity scene nodes into RbxPartEntry objects.
@@ -154,6 +317,7 @@ def _scene_nodes_to_parts(
         for node in parsed.roots:
             parts.append(_node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
+                mesh_path_remap,
             ))
     return parts
 
@@ -181,6 +345,8 @@ def _build_report(
     prefabs: prefab_parser.PrefabLibrary,
     transpilation: code_transpiler.TranspilationResult,
     write_result: rbxl_writer.RbxWriteResult,
+    decimation: mesh_decimator.DecimationResult,
+    prefab_instances_resolved: int,
     duration: float,
     errors: list[str],
 ) -> report_generator.ConversionReport:
@@ -228,6 +394,9 @@ def _build_report(
     rpt.scene.scenes_parsed = len(scenes)
     rpt.scene.total_game_objects = total_gos
     rpt.scene.prefabs_parsed = len(prefabs.prefabs)
+    rpt.scene.prefab_instances_resolved = prefab_instances_resolved
+    rpt.scene.meshes_decimated = decimation.decimated
+    rpt.scene.meshes_compliant = decimation.already_compliant
 
     # Output
     rpt.output.rbxl_path = str(write_result.output_path)
@@ -341,6 +510,19 @@ def convert(
         errors.append(str(exc))
         guid_index = guid_resolver.GuidIndex(project_root=unity_path)
 
+    # ── Resolve prefab instances in scenes ────────────────────────
+    click.echo("🧩  Resolving prefab instances …")
+    total_pi = sum(len(s.prefab_instances) for s in parsed_scenes)
+    resolved_count = 0
+    if total_pi and prefabs.prefabs:
+        resolved_count = _resolve_prefab_instances(parsed_scenes, prefabs, guid_index)
+        click.echo(f"    → {resolved_count}/{total_pi} prefab instance(s) resolved")
+        # Update referenced material GUIDs (prefab instances may add new ones)
+        for ps in parsed_scenes:
+            referenced_guids |= ps.referenced_material_guids
+    else:
+        click.echo(f"    → {total_pi} instance(s), nothing to resolve")
+
     # ------------------------------------------------------------------
     # Phase 3 — Heavy processing (informed by Phase 1 & 2)
     # ------------------------------------------------------------------
@@ -401,6 +583,14 @@ def convert(
             for w in decimation_result.warnings:
                 click.echo(f"    ⚠ {w}")
 
+    # ── Build mesh path remap (original → decimated) ─────────────
+    mesh_path_remap: dict[str, str] | None = None
+    if decimation_result.entries:
+        mesh_path_remap = {}
+        for entry in decimation_result.entries:
+            if not entry.skipped and entry.output_path.exists():
+                mesh_path_remap[str(entry.source_path)] = str(entry.output_path)
+
     # ------------------------------------------------------------------
     # Phase 4 — Assembly
     # ------------------------------------------------------------------
@@ -428,6 +618,7 @@ def convert(
         guid_to_roblox_def=guid_to_roblox_def,
         guid_to_companion_scripts=guid_to_companion,
         guid_index=guid_index,
+        mesh_path_remap=mesh_path_remap,
     )
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
@@ -470,7 +661,8 @@ def convert(
 
     rpt = _build_report(
         unity_path, out_dir, manifest, mat_result, parsed_scenes,
-        prefabs, transpilation, write_result, duration, errors,
+        prefabs, transpilation, write_result, decimation_result,
+        resolved_count, duration, errors,
     )
 
     report_path = out_dir / config.REPORT_FILENAME
