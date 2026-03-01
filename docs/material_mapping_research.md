@@ -222,7 +222,7 @@ Similar PBR maps to SurfaceAppearance, but adds `StudsPerTile` for automatic til
 ### Key Limitations
 
 - **MeshPart only** for SurfaceAppearance (not regular Parts)
-- **1024x1024** max reliable texture resolution (up to 2048x2048 sometimes)
+- **4096x4096** max texture resolution (Roblox upload limit; 1024x1024 was a conservative budget, not a hard cap)
 - **PNG, JPG, TGA, BMP** formats only (no EXR/HDR)
 - **No runtime script modification** of SurfaceAppearance maps
 - **One material per MeshPart** (no sub-meshes with different materials)
@@ -237,7 +237,7 @@ Similar PBR maps to SurfaceAppearance, but adds `StudsPerTile` for automatic til
 
 | Unity Property | Roblox Property | Conversion |
 |----------------|----------------|------------|
-| `_MainTex` / `_BaseMap` / `_BaseColorMap` | `SurfaceAppearance.ColorMap` | Direct file copy (resize to ≤1024) |
+| `_MainTex` / `_BaseMap` / `_BaseColorMap` | `SurfaceAppearance.ColorMap` | Direct file copy (resize to ≤`TEXTURE_MAX_RESOLUTION`, default 4096) |
 | `_Color` / `_BaseColor` | `SurfaceAppearance.Color` | Direct Color3 mapping (see [Color section](#the-_color-question-tint-vs-colormap)) |
 | `_BumpMap` / `_NormalMap` | `SurfaceAppearance.NormalMap` | Direct copy (verify OpenGL format) |
 | `_BumpScale` / `_NormalScale` | _(no Roblox property)_ | Bake into normal map if ≠ 1.0 |
@@ -353,7 +353,8 @@ for each pixel:
 
 ### Texture Sizing
 
-- All output textures should be ≤ **1024x1024** for reliable Roblox upload
+- Roblox accepts textures up to **4096x4096** (the upload API limit)
+- `config.TEXTURE_MAX_RESOLUTION` (default 4096) controls the ceiling; textures exceeding this are downscaled
 - Aspect ratio preserved; non-square textures are fine
 - Uniform-value textures (e.g., metallic = 0.0 everywhere) can be a tiny 4x4 PNG
 
@@ -561,9 +562,10 @@ Roblox `SurfaceAppearance` has **NO tiling or offset properties.** Textures map 
 
 1. **Pre-tile the texture** (automated):
    - Create a new texture that is the source tiled N×M times
-   - Downscale to fit within 1024x1024
+   - Downscale to fit within `TEXTURE_MAX_RESOLUTION` (default 4096)
    - Loss: resolution per-tile decreases as tiling factor increases
-   - Example: 512x512 texture tiled 4x4 → 2048x2048 → downscale to 1024x1024 → each tile is 256x256
+   - Example at 4096 ceiling: 512x512 texture tiled 4x4 → 2048x2048 → fits under ceiling, no downscale needed
+   - Example at 1024 ceiling: 512x512 texture tiled 4x4 → 2048x2048 → downscale to 1024x1024 → each tile is 256x256
 
 2. **Modify mesh UVs** (better quality but requires mesh processing):
    - Scale all UV coordinates by the tiling factor

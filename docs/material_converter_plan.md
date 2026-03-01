@@ -23,18 +23,32 @@ dataclass-based contracts, wired through `converter.py`.
 ```
 converter.py (orchestrator)
     │
+    │  ── Phase 1: Discovery (lightweight YAML reads) ──
+    │
+    ├── scene_parser.parse_scene()           ← already exists; moved BEFORE materials
+    │       returns ParsedScene[] with referenced_material_guids
+    │
+    ├── prefab_parser.parse_prefabs()        ← already exists; moved BEFORE materials
+    │       returns PrefabLibrary
+    │
+    │  ── Phase 2: Asset inventory ──
+    │
     ├── asset_extractor.extract_assets()     ← already exists
     │       returns AssetManifest (with .meta files tracked)
     │
+    │  ── Phase 3: Heavy processing (informed by Phase 1) ──
+    │
     ├── material_mapper.map_materials()      ← NEW
-    │       inputs:  AssetManifest, unity_project_path
+    │       inputs:  unity_project_path, output_dir
+    │       optional: referenced_guids from scene/prefab parsing
     │       returns: MaterialMapResult
     │         ├── per-material conversion results
     │         ├── list of generated textures (extracted channels, resized, etc.)
     │         └── UNCONVERTED.md content
     │
-    ├── scene_parser / prefab_parser         ← already exist
-    ├── code_transpiler                      ← already exists
+    ├── code_transpiler                      ← already exists (parallel with materials)
+    │
+    │  ── Phase 4: Assembly ──
     │
     ├── rbxl_writer.write_rbxl()             ← MODIFIED to accept material data
     │       now takes MaterialMapResult to attach SurfaceAppearance to parts
@@ -42,6 +56,29 @@ converter.py (orchestrator)
     └── report_generator                     ← MODIFIED to include material stats
             now writes UNCONVERTED.md alongside JSON report
 ```
+
+### Pipeline Ordering Rationale
+
+The pipeline runs **scenes and prefabs first** because they are cheap (YAML parsing
+only) and they reveal which materials are actually referenced by the project's
+MeshRenderer components. This information feeds forward into material mapping, which
+can then:
+
+1. **Skip orphaned `.mat` files** whose GUIDs never appear in any scene or prefab
+2. **Resolve scene→material→texture attachment** for the RBXL writer (MeshRenderer
+   `m_Materials[].guid` → material name → `RobloxMaterialDef`)
+
+Material mapping and code transpilation are independent of each other and could run
+in parallel. Both must complete before RBXL writing (the join point).
+
+**Concrete changes for reordering:**
+
+| File | Change |
+|------|--------|
+| `converter.py` | Move scene/prefab parsing stages before material mapping |
+| `scene_parser.py` | Extract material GUIDs from `MeshRenderer.m_Materials` → expose `referenced_material_guids: set[str]` on `ParsedScene` |
+| `material_mapper.map_materials()` | Accept optional `referenced_guids: set[str] \| None`; when provided, skip `.mat` files not in the set; when `None`, process all (standalone mode) |
+| `converter.py _scene_nodes_to_parts()` | Wire `mat_result.roblox_defs` into `RbxPartEntry.surface_appearance` by resolving each node's material GUID |
 
 ---
 
@@ -94,20 +131,22 @@ def _identify_shader(
 **Logic**:
 1. If `fileID` is a known built-in (46=Standard, 10720=Legacy/Diffuse, 10751=Particles/AlphaBlended, 10752=Particles/Premultiply, 10753=Particles/Additive, 200=Sprites/Default), return immediately with known properties.
 2. If `fileID == 4800000` (MonoScript reference), resolve `guid` via guid_map to find the `.shader` file.
-3. Parse the `.shader` file to extract:
+3. Parse the `.shader` file **and resolve local `#include` files** (.cginc/.hlsl in the same directory) to build a combined source. Then extract:
    - Shader name (first line: `Shader "Name/Path"`)
-   - `Properties { }` block → which properties the shader actually reads
    - `Tags { "RenderType" = "Transparent" }` → transparency
    - `Blend` directives → transparency
    - `ZWrite Off` → transparency hint
-   - Whether `i.color` / `v.color` is used → vertex colors
-4. For URP package shaders (GUID not found in Assets/), fall back to known URP property conventions (check for `_BaseMap` in material properties).
+   - Whether `i.color` / `v.color` is used → vertex colors (searched in full source + includes)
+   - Whether `_Color`/`_BaseColor` or `_MainTex`/`_BaseMap` appear **anywhere** in the combined source → `reads_color`, `reads_maintex`
+4. **Property detection rationale**: The `Properties {}` block only declares what the Inspector exposes — it does NOT reliably indicate what compiled passes actually sample. A property can be set via script without appearing in Properties, and a declared property may go entirely unused in the shader code. Therefore we search the full source (including resolved includes) for property name references, not just the Properties block.
+5. **Conservative fallbacks**: If the shader source is unreadable (OSError), too short (<200 chars, e.g. UsePass/Fallback only), or completely unresolvable (unknown GUID), default to `reads_color=True, reads_maintex=True`. It is better to include a ghost property than to silently drop a real one.
+6. For URP package shaders (GUID not found in Assets/), fall back to known URP property conventions (check for `_BaseMap` in material properties).
 
 **Estimated size**: ~80 lines
 
 ### Step 3: Material Property Extractor
 
-Parse `.mat` YAML files and extract ONLY the properties that the shader actually reads.
+Parse `.mat` YAML files and extract properties that the shader is known to use.
 
 ```python
 @dataclass
@@ -151,8 +190,11 @@ def _parse_material(
 ```
 
 **Key correctness rule**: Only populate properties that `shader_info` says the shader reads.
-For example, if `shader_info.reads_color == False`, leave `albedo_color = None` even if
-the `.mat` file stores a non-white `_Color`.
+For example, if `shader_info.reads_color == False` (i.e. neither `_Color` nor `_BaseColor`
+appear anywhere in the shader source or its includes), leave `albedo_color = None` even if
+the `.mat` file stores a non-white `_Color` — that value is a "ghost property" that the
+shader never samples.  When in doubt (unreadable shader, short source), `reads_color`
+defaults to `True` so real properties are never silently dropped.
 
 **Estimated size**: ~120 lines
 
@@ -247,12 +289,12 @@ def _process_textures(
 ```
 
 Operations:
-- **copy**: Copy file, resize if > 1024x1024
+- **copy**: Copy file, resize if exceeds `config.TEXTURE_MAX_RESOLUTION` (default 4096)
 - **extract_channel**: Load image, extract R/G/B/A channel, save as grayscale PNG
 - **invert**: `255 - pixel` (smoothness → roughness)
 - **bake_ao**: `albedo_pixel * lerp(1, ao_pixel, strength)`
 - **threshold_alpha**: Binary alpha at cutoff value
-- **pre_tile**: Tile NxM and downscale to 1024
+- **pre_tile**: Tile NxM and downscale to `config.TEXTURE_MAX_RESOLUTION`
 - **to_grayscale**: Luminance conversion for emission
 
 **Dependency**: Pillow (PIL) — needs to be added to `requirements.txt`
@@ -309,28 +351,36 @@ This is the single entry point called by `converter.py`.
 
 ### Step 8: Integration with converter.py
 
-Modify the orchestrator to wire material_mapper into the pipeline.
+Modify the orchestrator to wire material_mapper into the pipeline **after**
+scene/prefab parsing (see Architecture section for rationale).
 
 ```python
-# In converter.py, after asset extraction:
-from modules import material_mapper
+# In converter.py — new stage order:
+#   1. Scene parsing       (lightweight, discovers referenced material GUIDs)
+#   2. Prefab parsing      (lightweight)
+#   3. Asset extraction    (file inventory)
+#   4. Material mapping    (heavy processing, can filter by referenced GUIDs)
+#   5. Code transpilation  (independent)
+#   6. RBXL writing        (join point)
+#   7. Report generation
+
+# Collect material GUIDs referenced by scenes
+referenced_guids: set[str] = set()
+for ps in parsed_scenes:
+    referenced_guids |= ps.referenced_material_guids
 
 click.echo("🎨  Mapping materials …")
 try:
     mat_result = material_mapper.map_materials(
-        unity_path, manifest, out_dir,
+        unity_path, out_dir,
+        referenced_guids=referenced_guids or None,  # None = process all
     )
-    click.echo(f"    → {mat_result.total} materials: "
-               f"{mat_result.fully_converted} full, "
-               f"{mat_result.partially_converted} partial, "
-               f"{mat_result.unconvertible} unconvertible")
-except Exception as exc:
-    errors.append(f"Material mapping error: {exc}")
-    mat_result = material_mapper.MaterialMapResult(...)
+    ...
 ```
 
-Also modify `_scene_nodes_to_parts()` to attach material data to parts by matching
-material names from scene MeshRenderer components to `mat_result.roblox_defs`.
+Also modify `_scene_nodes_to_parts()` to attach material data to parts by resolving
+each `MeshRenderer`'s `m_Materials[].guid` → material name → `mat_result.roblox_defs`
+→ `RbxPartEntry.surface_appearance`.
 
 ### Step 9: Integration with rbxl_writer.py
 
@@ -389,7 +439,7 @@ Add material-specific configuration:
 
 ```python
 # Material mapper options
-TEXTURE_MAX_RESOLUTION: int = 1024
+TEXTURE_MAX_RESOLUTION: int = 4096          # Roblox allows up to 4096x4096
 TEXTURE_OUTPUT_FORMAT: str = "png"
 GENERATE_UNIFORM_TEXTURES: bool = True    # 4x4 PNGs for scalar values
 PRE_TILE_MAX_FACTOR: int = 4              # max tiling before logging to UNCONVERTED
@@ -427,13 +477,13 @@ Pillow>=10.0.0
 
 ```
 Step 1  (GUID resolver)           ← standalone, no deps
-Step 2  (Shader identifier)       ← depends on Step 1
+Step 2  (Shader identifier)       ← depends on Step 1; resolves #include files
 Step 3  (Material property parser)← depends on Steps 1, 2
 Step 4  (Converter core)          ← depends on Step 3
 Step 5  (Texture processor)       ← depends on Step 4 output; needs Pillow
 Step 6  (UNCONVERTED.md gen)      ← depends on Step 4 output
-Step 7  (Public API)              ← wraps Steps 1-6
-Step 8  (converter.py wiring)     ← depends on Step 7
+Step 7  (Public API)              ← wraps Steps 1-6; accepts optional referenced_guids
+Step 8  (converter.py wiring)     ← depends on Step 7; reorders pipeline stages
 Step 9  (rbxl_writer extension)   ← depends on Step 4 dataclasses
 Step 10 (report_generator ext)    ← depends on Step 7 output
 Step 11 (config.py)               ← standalone, do first
@@ -441,6 +491,17 @@ Step 12 (requirements.txt)        ← standalone, do first
 ```
 
 **Recommended implementation order**: 12 → 11 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 9 → 8 → 10
+
+### Runtime Pipeline Order (in converter.py)
+
+```
+Phase 1 — Discovery:        scene_parser → prefab_parser
+Phase 2 — Inventory:        asset_extractor
+Phase 3 — Heavy processing: material_mapper (filtered by Phase 1 GUIDs)
+                            code_transpiler (independent, could run in parallel)
+Phase 4 — Assembly:         rbxl_writer (joins scenes + materials + scripts)
+Phase 5 — Reporting:        report_generator
+```
 
 ---
 
@@ -451,8 +512,8 @@ Step 12 (requirements.txt)        ← standalone, do first
 Use the Trash Dash project at `/home/user/trash-dash` as a real-world test fixture:
 
 1. **GUID resolver**: Assert `93d8fc18fdc65dd4aa903210d93f3343` resolves to `Assets/Shaders/CurvedUnlit.shader`
-2. **Shader identifier**: Assert CurvedUnlit is categorized as `custom_unlit`, `is_transparent=False`, `uses_vertex_colors=True`, `reads_color=False`
-3. **Material parser**: Assert `Dog.mat` has `albedo_color=None` (not `(0.4, 0.4, 0.4)`) because CurvedUnlit doesn't read `_Color`
+2. **Shader identifier**: Assert CurvedUnlit is categorized as `custom_unlit`, `is_transparent=False`, `uses_vertex_colors=True`, `reads_color=False` (full-source search of CurvedUnlit.shader + CurvedCode.cginc finds no `_Color` reference)
+3. **Material parser**: Assert `Dog.mat` has `albedo_color=None` (not `(0.4, 0.4, 0.4)`) because neither CurvedUnlit.shader nor its included CurvedCode.cginc reference `_Color` — it is a ghost property
 4. **Converter**: Assert `Dog.mat` produces a `RobloxMaterialDef` with `color_map` set and `color_tint = (1,1,1)` (no tint)
 5. **UNCONVERTED.md**: Assert vertex color and world curve are logged for CurvedUnlit materials
 
