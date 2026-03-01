@@ -1117,14 +1117,18 @@ def _generate_unconverted_md(
 def map_materials(
     unity_project_path: str | Path,
     output_dir: str | Path,
+    referenced_guids: set[str] | None = None,
 ) -> MaterialMapResult:
     """
-    Parse all .mat files in a Unity project, convert to Roblox material
+    Parse .mat files in a Unity project, convert to Roblox material
     definitions, process textures, and generate UNCONVERTED.md.
 
     Args:
         unity_project_path: Root of the Unity project (contains Assets/).
         output_dir: Where to write generated textures and UNCONVERTED.md.
+        referenced_guids: If provided, only process .mat files whose GUID
+            appears in this set (as discovered from scene/prefab
+            MeshRenderer components).  When None, process all .mat files.
 
     Returns:
         MaterialMapResult with all conversion results and aggregate stats.
@@ -1136,6 +1140,11 @@ def map_materials(
     # 1. Build GUID map
     guid_map = _build_guid_map(unity_path)
 
+    # Build reverse map (asset_path → guid) for filtering by referenced_guids
+    path_to_guid: dict[Path, str] | None = None
+    if referenced_guids is not None:
+        path_to_guid = {path: guid for guid, path in guid_map.items()}
+
     # 2–4. Parse and convert each .mat file
     assets_dir = unity_path / "Assets"
     results: list[MaterialConversionResult] = []
@@ -1143,6 +1152,11 @@ def map_materials(
 
     if assets_dir.is_dir():
         for mat_path in sorted(assets_dir.rglob("*.mat")):
+            # Skip materials not referenced by any scene or prefab
+            if path_to_guid is not None:
+                mat_guid = path_to_guid.get(mat_path, "")
+                if mat_guid not in referenced_guids:
+                    continue
             parsed = _parse_material(mat_path, guid_map)
             if parsed is None:
                 results.append(MaterialConversionResult(

@@ -98,7 +98,7 @@ UNCONVERTED.md, meaning the conversion is fully automated.
 |----------------|-----------|--------|-------|
 | `{input_path}` | Channel extract R | `{output_metalness}` | From MetallicGlossMap |
 | `{input_path}` | Channel extract A + invert | `{output_roughness}` | Smoothness → Roughness |
-| `{input_path}` | Resize 2048→1024 | `{output_path}` | Roblox max resolution |
+| `{input_path}` | Resize to ≤4096 | `{output_path}` | Roblox max resolution |
 | `{input_path}` | AO bake into albedo | `{output_path}` | OcclusionMap * ColorMap |
 | `{input_path}` | Luminance grayscale | `{output_emissive}` | EmissionMap → mask |
 | `{input_path}` | Pre-tile 2x2 | `{output_path}` | Tiling workaround |
@@ -150,7 +150,7 @@ These are engine-level limitations that cannot be worked around:
 | No height/displacement mapping | Permanent | N/A |
 | No SSS/anisotropy/iridescence | No plans announced | N/A |
 | No per-material cubemap reflections | Engine uses probes | N/A |
-| Max 1024x1024 texture (reliable) | Platform limit | N/A |
+| Max 4096x4096 texture | Platform upload limit | N/A |
 | SurfaceAppearance: MeshPart only | By design | N/A |
 | No runtime SurfaceAppearance changes | PluginSecurity | N/A |
 | No SurfaceAppearance tiling/offset | Feature request open | DevForum #928282 |

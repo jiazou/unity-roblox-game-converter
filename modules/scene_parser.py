@@ -56,6 +56,7 @@ class ParsedScene:
     roots: list[SceneNode] = field(default_factory=list)   # top-level GameObjects
     all_nodes: dict[str, SceneNode] = field(default_factory=dict)  # file_id → node
     raw_documents: list[dict[str, Any]] = field(default_factory=list)
+    referenced_material_guids: set[str] = field(default_factory=set)
 
 
 def _strip_unity_header(text: str) -> str:
@@ -135,5 +136,19 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
             parent = result.all_nodes.get(node.parent_file_id)
             if parent:
                 parent.children.append(node)
+
+    # Extract material GUIDs from MeshRenderer / SkinnedMeshRenderer docs
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        # MeshRenderer or SkinnedMeshRenderer
+        renderer = doc.get("MeshRenderer") or doc.get("SkinnedMeshRenderer")
+        if renderer is None:
+            continue
+        for mat_ref in renderer.get("m_Materials", []):
+            if isinstance(mat_ref, dict):
+                guid = mat_ref.get("guid", "")
+                if guid:
+                    result.referenced_material_guids.add(guid)
 
     return result
