@@ -312,21 +312,62 @@ def _apply_api_mappings(source: str) -> tuple[str, int]:
     return result, total_subs
 
 
-def _rule_based_transpile(csharp: str) -> tuple[str, float, list[str]]:
+def _rule_based_transpile(
+    csharp: str,
+    serialized_refs: dict[str, str] | None = None,
+) -> tuple[str, float, list[str]]:
     """
     Apply regex substitutions and API mappings to convert C# patterns to Luau.
 
     When tree-sitter is available, AST info is used to generate service imports
     and improve confidence scoring.
 
+    Args:
+        csharp: Original C# source text.
+        serialized_refs: Optional field_name → prefab_name mapping from
+            MonoBehaviour YAML.  When provided, ``[SerializeField]`` fields
+            referencing prefabs are converted to ``ServerStorage:WaitForChild()``
+            calls instead of being stripped.
+
     Returns:
         (luau_source, confidence, warnings)
     """
     luau = csharp
     warnings: list[str] = []
+    need_server_storage = False
 
     # Try AST-based analysis for structural insight
     ast_info = _parse_csharp_ast(csharp)
+
+    # Handle [SerializeField] declarations before general transforms.
+    # When we have serialized_refs (from MonoBehaviour YAML), replace field
+    # declarations that reference prefabs with ServerStorage:WaitForChild().
+    if serialized_refs:
+        def _replace_serialize_field(m: re.Match) -> str:
+            nonlocal need_server_storage
+            field_name = m.group("fname")
+            if field_name in serialized_refs:
+                need_server_storage = True
+                prefab_name = serialized_refs[field_name]
+                return f'local {field_name} = ServerStorage:WaitForChild("{prefab_name}")'
+            # Field not in our ref map — strip the attribute, keep the declaration
+            return m.group("decl")
+
+        # Match: [SerializeField] <modifiers> <Type> <name> <optional init> ;
+        luau = re.sub(
+            r"\[SerializeField\]\s*"
+            r"(?P<decl>"
+            r"(?:(?:public|private|protected|internal|static|readonly)\s+)*"
+            r"\w+(?:<[^>]*>)?\s+"
+            r"(?P<fname>\w+)"
+            r"(?:\s*=[^;]*)?"
+            r"\s*;)",
+            _replace_serialize_field,
+            luau,
+        )
+    else:
+        # No ref data — just strip [SerializeField] attributes
+        luau = re.sub(r"\[SerializeField\]\s*", "", luau)
 
     # Apply basic structural transformations
     for pattern, replacement in _RULE_PATTERNS:
@@ -480,9 +521,14 @@ def _rule_based_transpile(csharp: str) -> tuple[str, float, list[str]]:
 
     # Add Roblox service imports at the top if AST detected usage
     service_header = ""
+    services_needed: set[str] = set()
     if ast_info and ast_info.services_needed:
+        services_needed |= ast_info.services_needed
+    if need_server_storage:
+        services_needed.add("ServerStorage")
+    if services_needed:
         lines = []
-        for svc in sorted(ast_info.services_needed):
+        for svc in sorted(services_needed):
             if svc in SERVICE_IMPORTS:
                 lines.append(SERVICE_IMPORTS[svc])
         if lines:
@@ -577,6 +623,7 @@ def transpile_scripts(
     model: str = "claude-opus-4-5",
     max_tokens: int = 4096,
     confidence_threshold: float = 0.7,
+    serialized_refs: dict[Path, dict[str, str]] | None = None,
 ) -> TranspilationResult:
     """
     Find all C# scripts in *unity_project_path*/Assets and transpile them to Luau.
@@ -588,6 +635,10 @@ def transpile_scripts(
         model: Claude model name.
         max_tokens: Max tokens per Claude request.
         confidence_threshold: Scripts below this score are flagged for review.
+        serialized_refs: Optional mapping from ``{script_cs_path: {field_name:
+            prefab_name}}``, extracted from MonoBehaviour scene/prefab YAML.
+            When provided, ``[SerializeField]`` fields referencing prefabs are
+            converted to ``ServerStorage:WaitForChild("PrefabName")`` calls.
 
     Returns:
         TranspilationResult with one TranspiledScript per .cs file found.
@@ -606,11 +657,14 @@ def transpile_scripts(
         # AST analysis for classification (needed regardless of transpilation strategy)
         ast_info = _parse_csharp_ast(csharp_source)
 
+        # Look up serialized field refs for this specific script
+        script_refs = serialized_refs.get(cs_path.resolve()) if serialized_refs else None
+
         if use_ai and api_key:
             luau, confidence, warnings = _ai_transpile(csharp_source, api_key, model, max_tokens)
             strategy: TranspilationStrategy = "ai"
         else:
-            luau, confidence, warnings = _rule_based_transpile(csharp_source)
+            luau, confidence, warnings = _rule_based_transpile(csharp_source, script_refs)
             strategy = "rule_based"
 
         # Classify script type based on Unity API usage

@@ -302,3 +302,77 @@ class TestImprovedTranspilerRules:
         code = "var items = new List<int>();"
         luau, _, _ = _rule_based_transpile(code)
         assert "{}" in luau
+
+
+# ── SerializeField → ServerStorage:WaitForChild wiring ────────────────
+
+
+class TestSerializedFieldRefs:
+    """Test [SerializeField] replacement with serialized_refs from scene YAML."""
+
+    def test_serialize_field_replaced_with_wait_for_child(self) -> None:
+        code = "[SerializeField] private GameObject enemyPrefab;\n"
+        refs = {"enemyPrefab": "Enemy"}
+        luau, _, _ = _rule_based_transpile(code, serialized_refs=refs)
+        assert 'ServerStorage:WaitForChild("Enemy")' in luau
+        assert "local enemyPrefab" in luau
+        assert "[SerializeField]" not in luau
+
+    def test_server_storage_service_imported(self) -> None:
+        code = (
+            "using UnityEngine;\n"
+            "public class Spawner : MonoBehaviour {\n"
+            "    [SerializeField] private GameObject bulletPrefab;\n"
+            "}\n"
+        )
+        refs = {"bulletPrefab": "Bullet"}
+        luau, _, _ = _rule_based_transpile(code, serialized_refs=refs)
+        assert 'game:GetService("ServerStorage")' in luau
+
+    def test_non_ref_serialize_field_stripped(self) -> None:
+        """[SerializeField] on fields NOT in the ref map just strip the attribute."""
+        code = "[SerializeField] private float speed = 5.0f;\n"
+        refs = {"enemyPrefab": "Enemy"}  # speed is not in refs
+        luau, _, _ = _rule_based_transpile(code, serialized_refs=refs)
+        assert "[SerializeField]" not in luau
+        assert "speed" in luau
+        assert "WaitForChild" not in luau
+
+    def test_multiple_serialize_fields(self) -> None:
+        code = (
+            "[SerializeField] private GameObject enemy;\n"
+            "[SerializeField] private float speed = 5.0f;\n"
+            "[SerializeField] private GameObject coin;\n"
+        )
+        refs = {"enemy": "EnemyZombie", "coin": "GoldCoin"}
+        luau, _, _ = _rule_based_transpile(code, serialized_refs=refs)
+        assert 'ServerStorage:WaitForChild("EnemyZombie")' in luau
+        assert 'ServerStorage:WaitForChild("GoldCoin")' in luau
+        assert "local enemy" in luau
+        assert "local coin" in luau
+        # Speed should not be replaced with WaitForChild
+        assert luau.count("WaitForChild") == 2
+
+    def test_no_refs_strips_attribute(self) -> None:
+        """When serialized_refs is None, [SerializeField] is just stripped."""
+        code = "[SerializeField] private GameObject thing;\n"
+        luau, _, _ = _rule_based_transpile(code, serialized_refs=None)
+        assert "[SerializeField]" not in luau
+
+    def test_transpile_scripts_passes_refs(self, tmp_path: Path) -> None:
+        """transpile_scripts() passes serialized_refs through to the transpiler."""
+        project = tmp_path / "RefProject"
+        (project / "Assets" / "Scripts").mkdir(parents=True)
+        cs_path = project / "Assets" / "Scripts" / "Spawner.cs"
+        cs_path.write_text(
+            "using UnityEngine;\n"
+            "public class Spawner : MonoBehaviour {\n"
+            "    [SerializeField] private GameObject enemy;\n"
+            "    void Start() { Debug.Log(\"go\"); }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        refs = {cs_path.resolve(): {"enemy": "EnemyBot"}}
+        result = transpile_scripts(project, use_ai=False, serialized_refs=refs)
+        assert result.total == 1
+        assert 'WaitForChild("EnemyBot")' in result.scripts[0].luau_source

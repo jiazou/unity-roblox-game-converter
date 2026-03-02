@@ -398,6 +398,31 @@ is only useful as a rough starting point for manual cleanup.
 
 ---
 
+### `Instantiate()` → `Clone()` Is a Naive Text Substitution
+
+**Severity**: MEDIUM
+**Status**: Known limitation — not planned for rule-based fix
+
+The API mapping `Instantiate` → `.Clone` is a simple text substitution, not a
+structural rewrite. This means:
+
+| Unity C# | What the transpiler produces | What it should produce |
+|---|---|---|
+| `Instantiate(prefab)` | `.Clone(prefab)` (broken) | `prefab:Clone(); clone.Parent = workspace` |
+| `var x = Instantiate(prefab, pos, rot)` | `local x = .Clone(prefab, pos, rot)` (broken) | `local x = prefab:Clone(); x.CFrame = ...` |
+| `Instantiate(prefab, parent)` | `.Clone(prefab, parent)` (broken) | `prefab:Clone(); clone.Parent = parent` |
+
+The `Instantiate` call in Unity is a static method with constructor semantics
+(source object, optional position/rotation/parent), while Roblox `Clone()` is an
+instance method with no arguments — position and parenting are separate calls. A
+correct conversion requires restructuring the expression, not replacing a token.
+
+**Workaround**: Use `--use-ai` mode, which handles this correctly. For rule-based
+output, manually replace `.Clone(...)` calls with proper `:Clone()` + property
+assignment patterns.
+
+---
+
 ## Roblox Platform Limitations (Permanent)
 
 These are engine-level restrictions that **cannot be worked around** in the converter:
