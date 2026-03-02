@@ -85,10 +85,19 @@ def _node_to_part(
     mesh_path_remap: dict[str, str] | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a single SceneNode (and its children recursively) to an RbxPartEntry."""
+    # Default base size of 1×1×1 studs, scaled by the node's Unity local scale.
+    # Unity scale (1,1,1) → Roblox 1×1×1 studs (can be overridden by collider sizes).
+    base_size = (1.0, 1.0, 1.0)
+    scaled_size = (
+        base_size[0] * abs(node.scale[0]),
+        base_size[1] * abs(node.scale[1]),
+        base_size[2] * abs(node.scale[2]),
+    )
     part = rbxl_writer.RbxPartEntry(
         name=node.name,
         position=node.position,
-        size=(4.0, 1.0, 4.0),
+        rotation=node.rotation,
+        size=scaled_size,
         anchored=True,
     )
 

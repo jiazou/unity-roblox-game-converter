@@ -12,6 +12,7 @@ No other module is imported here.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ class RbxSurfaceAppearance:
 class RbxPartEntry:
     name: str
     position: tuple[float, float, float] = (0.0, 4.0, 0.0)
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # quaternion (x,y,z,w)
     size: tuple[float, float, float] = (4.0, 1.0, 2.0)
     brick_color: str = "Medium stone grey"
     anchored: bool = True
@@ -96,6 +98,63 @@ def _make_color3(parent: ET.Element, name: str, rgb: tuple[float, float, float])
     return el
 
 
+def _quat_to_rotation_matrix(
+    qx: float, qy: float, qz: float, qw: float,
+) -> tuple[float, float, float, float, float, float, float, float, float]:
+    """
+    Convert a quaternion (x, y, z, w) to a 3×3 rotation matrix.
+
+    Returns (R00, R01, R02, R10, R11, R12, R20, R21, R22) in row-major order,
+    matching Roblox's CFrame CoordinateFrame property layout.
+    """
+    # Normalise
+    mag = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+    if mag < 1e-10:
+        return (1, 0, 0, 0, 1, 0, 0, 0, 1)
+    qx, qy, qz, qw = qx/mag, qy/mag, qz/mag, qw/mag
+
+    r00 = 1 - 2*(qy*qy + qz*qz)
+    r01 = 2*(qx*qy - qz*qw)
+    r02 = 2*(qx*qz + qy*qw)
+    r10 = 2*(qx*qy + qz*qw)
+    r11 = 1 - 2*(qx*qx + qz*qz)
+    r12 = 2*(qy*qz - qx*qw)
+    r20 = 2*(qx*qz - qy*qw)
+    r21 = 2*(qy*qz + qx*qw)
+    r22 = 1 - 2*(qx*qx + qy*qy)
+
+    return (r00, r01, r02, r10, r11, r12, r20, r21, r22)
+
+
+def _is_identity_quat(q: tuple[float, float, float, float]) -> bool:
+    """Check if a quaternion is approximately identity (no rotation)."""
+    return abs(q[0]) < 1e-6 and abs(q[1]) < 1e-6 and abs(q[2]) < 1e-6 and abs(q[3] - 1.0) < 1e-6
+
+
+def _make_cframe(
+    parent: ET.Element,
+    name: str,
+    pos: tuple[float, float, float],
+    quat: tuple[float, float, float, float],
+) -> ET.Element:
+    """Write a CFrame property as a CoordinateFrame element (position + 3×3 rotation matrix)."""
+    el = ET.SubElement(parent, "CoordinateFrame", name=name)
+    ET.SubElement(el, "X").text = str(pos[0])
+    ET.SubElement(el, "Y").text = str(pos[1])
+    ET.SubElement(el, "Z").text = str(pos[2])
+    r = _quat_to_rotation_matrix(*quat)
+    ET.SubElement(el, "R00").text = f"{r[0]:.8f}"
+    ET.SubElement(el, "R01").text = f"{r[1]:.8f}"
+    ET.SubElement(el, "R02").text = f"{r[2]:.8f}"
+    ET.SubElement(el, "R10").text = f"{r[3]:.8f}"
+    ET.SubElement(el, "R11").text = f"{r[4]:.8f}"
+    ET.SubElement(el, "R12").text = f"{r[5]:.8f}"
+    ET.SubElement(el, "R20").text = f"{r[6]:.8f}"
+    ET.SubElement(el, "R21").text = f"{r[7]:.8f}"
+    ET.SubElement(el, "R22").text = f"{r[8]:.8f}"
+    return el
+
+
 def _make_surface_appearance(parent: ET.Element, sa: RbxSurfaceAppearance) -> ET.Element:
     """Emit a SurfaceAppearance child item under a Part/MeshPart."""
     item = ET.SubElement(parent, "Item", **{"class": "SurfaceAppearance"})
@@ -131,7 +190,14 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     props = ET.SubElement(item, "Properties")
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
-    _make_vector3(props, "Position", part.position)
+
+    # Write CFrame (position + rotation). When rotation is identity, just set Position
+    # for cleaner output. Otherwise, write a full CoordinateFrame with rotation matrix.
+    if _is_identity_quat(part.rotation):
+        _make_vector3(props, "Position", part.position)
+    else:
+        _make_cframe(props, "CFrame", part.position, part.rotation)
+
     _make_vector3(props, "Size", part.size)
     _make_property(props, "BrickColor", "BrickColor", part.brick_color)
 
