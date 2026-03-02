@@ -60,10 +60,22 @@ class RbxPartEntry:
     material_enum: str | None = None     # e.g. "SmoothPlastic"
     surface_appearance: RbxSurfaceAppearance | None = None
     mesh_id: str | None = None           # rbxassetid:// or file path for MeshPart
+    shape: str | None = None             # "Block" | "Ball" | "Cylinder" | "Wedge" (Part only)
     # Child objects converted from Unity Light, AudioSource, ParticleSystem components
     light_children: list[tuple] = field(default_factory=list)
     sound_children: list[tuple] = field(default_factory=list)
     particle_children: list[tuple] = field(default_factory=list)
+
+
+@dataclass
+class RbxLightingConfig:
+    """Global lighting properties derived from Unity's Directional Light."""
+    brightness: float = 1.0
+    ambient: tuple[float, float, float] = (0.5, 0.5, 0.5)
+    color_shift_top: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    outdoor_ambient: tuple[float, float, float] = (0.5, 0.5, 0.5)
+    clock_time: float = 14.0  # 2pm (sun high and forward)
+    geographic_latitude: float = 0.0
 
 
 @dataclass
@@ -311,6 +323,11 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     if use_mesh:
         _make_property(props, "Content", "MeshId", part.mesh_id)
 
+    # Shape property for non-mesh primitives (Ball, Cylinder, Wedge)
+    _SHAPE_TOKEN = {"Block": "1", "Ball": "3", "Cylinder": "2", "Wedge": "4"}
+    if not use_mesh and part.shape and part.shape in _SHAPE_TOKEN:
+        _make_property(props, "token", "shape", _SHAPE_TOKEN[part.shape])
+
     if part.color3:
         _make_color3(props, "Color3", part.color3)
     if part.transparency > 0.001:
@@ -360,11 +377,22 @@ def _prettify(tree: ET.Element) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _count_parts(parts: list[RbxPartEntry]) -> int:
+    """Count all parts including nested children."""
+    count = 0
+    for part in parts:
+        count += 1
+        if part.children:
+            count += _count_parts(part.children)
+    return count
+
+
 def write_rbxl(
     parts: list[RbxPartEntry],
     scripts: list[RbxScriptEntry],
     output_path: str | Path,
     place_name: str = "ConvertedPlace",
+    lighting: RbxLightingConfig | None = None,
 ) -> RbxWriteResult:
     """
     Serialise the converted scene into a Roblox place file (.rbxl).
@@ -374,6 +402,7 @@ def write_rbxl(
         scripts: Top-level scripts placed directly in ServerScriptService.
         output_path: Destination .rbxl file path (created/overwritten).
         place_name: Name embedded in the DataModel root.
+        lighting: Optional lighting configuration from directional lights.
 
     Returns:
         RbxWriteResult describing what was written.
@@ -391,15 +420,28 @@ def write_rbxl(
         "version": "4",
     })
 
+    # Lighting service (from directional lights or defaults)
+    if lighting:
+        light_item = ET.SubElement(root, "Item", **{"class": "Lighting"})
+        lp = ET.SubElement(light_item, "Properties")
+        _make_property(lp, "string", "Name", "Lighting")
+        _make_property(lp, "float", "Brightness", f"{lighting.brightness:.4f}")
+        _make_color3(lp, "Ambient", lighting.ambient)
+        _make_color3(lp, "ColorShift_Top", lighting.color_shift_top)
+        _make_color3(lp, "OutdoorAmbient", lighting.outdoor_ambient)
+        _make_property(lp, "float", "ClockTime", f"{lighting.clock_time:.2f}")
+        _make_property(lp, "float", "GeographicLatitude", f"{lighting.geographic_latitude:.2f}")
+
     # Workspace
     workspace_item = ET.SubElement(root, "Item", **{"class": "Workspace"})
     ws_props = ET.SubElement(workspace_item, "Properties")
     _make_property(ws_props, "string", "Name", "Workspace")
 
-    parts_written = 0
     for part in parts:
         _make_part(workspace_item, part)
-        parts_written += 1
+
+    # Count all parts including children for accurate reporting
+    parts_written = _count_parts(parts)
 
     # Partition scripts by type into appropriate Roblox containers:
     #   Script       → ServerScriptService

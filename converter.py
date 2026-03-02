@@ -312,13 +312,15 @@ def convert(
             click.echo(f"    ⚠ {w}")
 
     click.echo("🏗   Writing .rbxl …")
-    parts = _scene_nodes_to_parts(
+    parts, lighting_config = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
         guid_to_companion_scripts=guid_to_companion,
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
     )
+    if lighting_config:
+        click.echo(f"    → Directional light → Lighting (brightness={lighting_config.brightness:.1f})")
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
@@ -327,6 +329,7 @@ def convert(
         scripts=rbx_scripts,
         output_path=rbxl_path,
         place_name=unity_path.name,
+        lighting=lighting_config,
     )
     click.echo(f"    → Written to {write_result.output_path}")
 

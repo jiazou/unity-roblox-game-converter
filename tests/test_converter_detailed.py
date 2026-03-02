@@ -256,7 +256,7 @@ class TestSceneNodesToPartsDetailed:
             scene_path=Path("/s.unity"),
             roots=[n1, n2],
         )
-        parts = _scene_nodes_to_parts([scene])
+        parts, _ = _scene_nodes_to_parts([scene])
         assert len(parts) == 2
 
     def test_three_scenes(self) -> None:
@@ -267,7 +267,7 @@ class TestSceneNodesToPartsDetailed:
                 scene_path=Path(f"/s{i}.unity"),
                 roots=[n],
             ))
-        parts = _scene_nodes_to_parts(scenes)
+        parts, _ = _scene_nodes_to_parts(scenes)
         assert len(parts) == 3
 
 

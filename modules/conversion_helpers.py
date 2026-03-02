@@ -82,8 +82,13 @@ def apply_collider_properties(
 def convert_light_components(
     part: rbxl_writer.RbxPartEntry,
     components: list[scene_parser.ComponentData],
+    directional_lights: list[dict] | None = None,
 ) -> None:
-    """Convert Unity Light components to Roblox light child tuples."""
+    """Convert Unity Light components to Roblox light child tuples.
+
+    Directional lights (type 1) are collected separately since they map to
+    Roblox's global Lighting service, not a per-part child.
+    """
     for comp in components:
         if comp.component_type != "Light":
             continue
@@ -102,6 +107,13 @@ def convert_light_components(
 
         if light_type == 0:  # Spot
             part.light_children.append(("SpotLight", color, intensity, range_val, bool(shadows), spot_angle))
+        elif light_type == 1:  # Directional → global Lighting
+            if directional_lights is not None:
+                directional_lights.append({
+                    "color": color,
+                    "intensity": intensity,
+                    "shadows": bool(shadows),
+                })
         elif light_type == 2:  # Point
             part.light_children.append(("PointLight", color, intensity, range_val, bool(shadows), 0.0))
 
@@ -226,12 +238,55 @@ def apply_materials(
 # SceneNode → RbxPartEntry conversion
 # ---------------------------------------------------------------------------
 
+# Known Unity built-in primitive mesh GUIDs (from Unity's default resources)
+_UNITY_PRIMITIVE_GUIDS: dict[str, str] = {
+    # fileID values used for Unity built-in meshes in MeshFilter references
+    # Cube → Block, Sphere → Ball, Cylinder → Cylinder
+}
+# Unity built-in mesh names → Roblox Part shapes
+_UNITY_PRIMITIVE_NAMES: dict[str, str] = {
+    "Cube": "Block",
+    "Sphere": "Ball",
+    "Cylinder": "Cylinder",
+    "Capsule": "Cylinder",  # closest approximation
+    "Plane": "Block",       # flat block
+}
+
+
+def _detect_primitive_shape(node: scene_parser.SceneNode) -> str | None:
+    """Detect if a node uses a Unity built-in primitive and return Roblox shape."""
+    for comp in node.components:
+        if comp.component_type == "MeshFilter":
+            mesh_ref = comp.properties.get("m_Mesh", {})
+            if isinstance(mesh_ref, dict):
+                # Built-in meshes have guid 0000000000000000e000000000000000
+                guid = mesh_ref.get("guid", "")
+                if guid == "0000000000000000e000000000000000":
+                    # fileID identifies which built-in primitive
+                    file_id = mesh_ref.get("fileID", 0)
+                    _BUILTIN_MESH_IDS = {
+                        10202: "Block",     # Cube
+                        10207: "Ball",      # Sphere
+                        10206: "Cylinder",  # Cylinder
+                        10208: "Cylinder",  # Capsule → Cylinder
+                        10209: "Block",     # Plane → flat Block
+                        10210: "Block",     # Quad → flat Block
+                    }
+                    shape = _BUILTIN_MESH_IDS.get(file_id)
+                    if shape:
+                        return shape
+    # Fallback: check node name for common primitive names
+    name_lower = node.name.lower().rstrip("0123456789 ()_")
+    return _UNITY_PRIMITIVE_NAMES.get(name_lower.capitalize())
+
+
 def node_to_part(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
     guid_to_companion_scripts: dict[str, list[str]] | None,
     guid_index: guid_resolver.GuidIndex | None,
     mesh_path_remap: dict[str, str] | None = None,
+    directional_lights: list[dict] | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a single SceneNode (and its children recursively) to an RbxPartEntry."""
     base_size = (1.0, 1.0, 1.0)
@@ -248,6 +303,11 @@ def node_to_part(
         anchored=True,
     )
 
+    # Detect Unity built-in primitive → Roblox shape
+    shape = _detect_primitive_shape(node)
+    if shape and not node.mesh_guid:
+        part.shape = shape
+
     # Set mesh_id from the node's mesh GUID via the GUID index.
     if node.mesh_guid and guid_index:
         mesh_path = guid_index.resolve(node.mesh_guid)
@@ -259,7 +319,7 @@ def node_to_part(
 
     # Apply component conversions
     apply_collider_properties(part, node.components)
-    convert_light_components(part, node.components)
+    convert_light_components(part, node.components, directional_lights)
     convert_audio_components(part, node.name, node.components, guid_index)
     convert_particle_components(part, node.name, node.components)
     apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
@@ -268,7 +328,7 @@ def node_to_part(
     for child in node.children:
         part.children.append(node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
-            mesh_path_remap,
+            mesh_path_remap, directional_lights,
         ))
 
     return part
@@ -425,22 +485,53 @@ def resolve_prefab_instances(
 # Scene nodes → parts batch conversion
 # ---------------------------------------------------------------------------
 
+def directional_lights_to_lighting(
+    dir_lights: list[dict],
+) -> rbxl_writer.RbxLightingConfig | None:
+    """Build a RbxLightingConfig from collected directional light data.
+
+    Uses the first (primary) directional light for Brightness and ColorShift_Top.
+    """
+    if not dir_lights:
+        return None
+    primary = dir_lights[0]
+    color = primary["color"]
+    intensity = primary["intensity"]
+    return rbxl_writer.RbxLightingConfig(
+        brightness=min(intensity * 2.0, 10.0),
+        ambient=(0.5, 0.5, 0.5),
+        color_shift_top=color,
+        outdoor_ambient=(
+            min(color[0] * 0.5, 1.0),
+            min(color[1] * 0.5, 1.0),
+            min(color[2] * 0.5, 1.0),
+        ),
+    )
+
+
 def scene_nodes_to_parts(
     parsed_scenes: list[scene_parser.ParsedScene],
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None,
     guid_to_companion_scripts: dict[str, list[str]] | None = None,
     guid_index: guid_resolver.GuidIndex | None = None,
     mesh_path_remap: dict[str, str] | None = None,
-) -> list[rbxl_writer.RbxPartEntry]:
-    """Convert parsed Unity scene nodes into RbxPartEntry objects."""
+) -> tuple[list[rbxl_writer.RbxPartEntry], rbxl_writer.RbxLightingConfig | None]:
+    """Convert parsed Unity scene nodes into RbxPartEntry objects.
+
+    Returns:
+        Tuple of (parts, lighting_config).  lighting_config is built from
+        any directional lights found in the scene.
+    """
     parts: list[rbxl_writer.RbxPartEntry] = []
+    directional_lights: list[dict] = []
     for parsed in parsed_scenes:
         for node in parsed.roots:
             parts.append(node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
-                mesh_path_remap,
+                mesh_path_remap, directional_lights,
             ))
-    return parts
+    lighting = directional_lights_to_lighting(directional_lights)
+    return parts, lighting
 
 
 # ---------------------------------------------------------------------------

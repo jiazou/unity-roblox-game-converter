@@ -42,11 +42,20 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | GUID resolution | High | Bidirectional index from .meta files |
 | UNCONVERTED.md generation | High | Per-conversion transparency report |
 | Built-in Standard shader | High | Full property mapping |
+| Standard (Specular) → Metallic | Medium | Luminance-based specular-to-metallic conversion |
 | URP Lit/Unlit shaders | High | Property name normalization |
+| URP alpha handling (`_Surface`+`_AlphaClip`) | High | Full mapping to AlphaMode |
+| HDRP Lit shader (MaskMap MODS) | Medium | R=Metal, G=AO, A=Smooth extraction |
 | Legacy Diffuse shader | High | `_Color` + `_MainTex` |
+| Legacy Bumped/Specular shaders | Medium | Normal maps + specular-to-metallic |
+| Normal map scale baking | High | `_BumpScale` baked into normal map pixels |
+| Smoothness from albedo alpha | High | `_SmoothnessTextureChannel=1` support |
+| Texture offset (pixel shift) | High | UV offset applied via pixel shifting |
 | Custom shader identification | Medium | Source parsing + `#include` resolution |
 | Ghost property detection | High | Only converts properties the shader actually reads |
 | Companion Luau scripts | Medium | Generated for blink/rotation effects |
+| Directional Light → Lighting | High | Maps to Roblox `Lighting` service properties |
+| Unity primitives → Roblox shapes | Medium | Cube→Block, Sphere→Ball, Cylinder→Cylinder |
 | Collider → Part sizing | High | Box, Sphere, Capsule colliders set part size |
 | Rigidbody kinematic detection | High | `m_IsKinematic` → `Anchored` property |
 
@@ -58,7 +67,7 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Multi-material meshes | **HIGH** | Future | [Multi-Material Meshes](#multi-material-meshes) |
 | UV tiling ≠ (1,1) | **HIGH** | Partial | [UV Tiling](#uv-tiling-and-offset) |
 | Terrain / splat maps | **HIGH** | Future | [Terrain](#terrain-conversion) |
-| Directional Light → Lighting | **MEDIUM** | Yes | [Directional Lights](#directional-lights) |
+| ~~Directional Light → Lighting~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Directional Lights](#directional-lights)~~ FIXED |
 | Camera objects | **MEDIUM** | Yes | [Cameras](#cameras) |
 | C# transpilation (rule-based) | **MEDIUM** | Yes | [Script Transpilation](#c-to-luau-transpilation-quality) |
 | Height/parallax maps | MEDIUM | Future | [Height Maps](#heightparallax-maps) |
@@ -66,11 +75,11 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Custom Shader Graph | MEDIUM | Partial | [Shader Graph](#custom-shader-graph) |
 | Part size from mesh bounds | MEDIUM | Yes | [Mesh-Based Sizing](#mesh-based-part-sizing) |
 | Skybox generation | MEDIUM | Future | [Skybox](#skybox-and-atmosphere) |
-| Unity primitive → Roblox shape | MEDIUM | Yes | [Primitive Mapping](#unity-primitive-to-roblox-shape-mapping) |
+| ~~Unity primitive → Roblox shape~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Primitive Mapping](#unity-primitive-to-roblox-shape-mapping)~~ FIXED |
 | Canvas / UI | MEDIUM | Future | [UI Canvas](#ui-canvas) |
 | Unlit rendering | LOW | Partial | [Unlit Materials](#unlit-materials) |
 | SSS / anisotropy / iridescence | LOW | No | [HDRP Advanced](#hdrp-advanced-features) |
-| Normal map scale baking | LOW | Yes | [Normal Scale](#normal-map-scale) |
+| ~~Normal map scale baking~~ | ~~LOW~~ | ~~Yes~~ | ~~[Normal Scale](#normal-map-scale)~~ FIXED |
 
 ---
 
@@ -117,6 +126,63 @@ and distance properties from `AudioSource` components and writes `Sound` childre
 Part size is now derived from `m_LocalScale`. Collider dimensions (Box, Sphere, Capsule)
 override the size when present.
 
+### ~~Directional Light Not Handled~~ — FIXED
+
+`convert_light_components()` now collects directional lights (type 1) and
+`directional_lights_to_lighting()` builds a `RbxLightingConfig` that maps Unity's
+directional light color and intensity to Roblox `Lighting` service properties
+(Brightness, ColorShift_Top, OutdoorAmbient).
+
+### ~~Unity Primitives Not Mapped to Roblox Shapes~~ — FIXED
+
+`_detect_primitive_shape()` identifies Unity built-in primitives (Cube, Sphere,
+Cylinder, Capsule, Plane) via their MeshFilter `m_Mesh` reference (GUID
+`0000000000000000e000000000000000` + known fileIDs) and sets the Roblox `shape`
+property (Block, Ball, Cylinder).
+
+### ~~Normal Map Scale Not Baked~~ — FIXED
+
+When `_BumpScale ≠ 1.0`, the texture processor now bakes the scale into the
+normal map by scaling XY components and renormalizing Z, matching the formula
+from the material mapping research doc.
+
+### ~~Standard (Specular) Not Converted to Metallic~~ — FIXED
+
+`_convert_material()` now applies the luminance-based specular-to-metallic heuristic
+from the research doc: `spec_luminance > 0.5 → metallic=1.0, else 0.0`.
+
+### ~~URP Alpha Mode Not Handled~~ — FIXED
+
+`_parse_material()` now reads URP's `_Surface` + `_AlphaClip` properties when
+`_Mode` is absent, correctly mapping `_Surface=0 → Opaque`, `_Surface=1 + _AlphaClip=1
+→ Cutout`, `_Surface=1 + _AlphaClip=0 → Transparent`.
+
+### ~~Smoothness from Albedo Alpha Not Supported~~ — FIXED
+
+When `_SmoothnessTextureChannel == 1`, roughness is now extracted from the albedo
+texture's alpha channel instead of the metallic texture, matching Unity's behavior.
+
+### ~~HDRP MaskMap Not Parsed~~ — FIXED
+
+`_identify_shader()` now detects HDRP shaders by checking for `_BaseColorMap` and
+`_MaskMap` properties. `_parse_material()` handles the MODS packing (R=Metallic,
+G=AO, A=Smoothness), and `_convert_material()` extracts each channel correctly.
+
+### ~~Legacy Bumped/Specular Shaders Treated as Simple~~ — FIXED
+
+Legacy Bumped Diffuse and Legacy Specular shaders are now routed through the PBR
+pipeline, extracting normal maps and converting specular values to metallic.
+
+### ~~Texture Offset Not Applied~~ — FIXED
+
+When `_MainTex_ST` has non-zero offset values, the texture processor now applies
+pixel-level shifting using `PIL.ImageChops.offset()`.
+
+### ~~parts_written Only Counted Root Parts~~ — FIXED
+
+`write_rbxl()` now uses `_count_parts()` to recursively count all parts including
+nested children, giving accurate part counts in the conversion report.
+
 ---
 
 ## Remaining Gaps
@@ -135,29 +201,23 @@ geometry doesn't match the transform scale assumptions.
 **Fix**: Parse mesh bounding box from FBX/OBJ and use it as the base size before
 applying transform scale.
 
-#### Unity Primitive to Roblox Shape Mapping
+#### ~~Unity Primitive to Roblox Shape Mapping~~ — FIXED
 
-**Severity**: MEDIUM
-**Status**: Not implemented
+~~**Severity**: MEDIUM~~
+~~**Status**: Not implemented~~
 
-Unity built-in primitives (Cube, Sphere, Cylinder, Plane) are not mapped to their Roblox
-equivalents (Block, Ball, Cylinder, Part). All become generic `Part` instances.
-
-**Fix**: Detect built-in mesh GUIDs (`0000000000000000e000000000000000` etc.) and set
-the corresponding Roblox `Shape` property.
+Unity built-in primitives now map to Roblox shape equivalents. See Recently Fixed.
 
 ---
 
 ### Scene & Object Type Gaps
 
-#### Directional Lights
+#### ~~Directional Lights~~ — FIXED
 
-**Severity**: MEDIUM
-**Status**: Not implemented
+~~**Severity**: MEDIUM~~
+~~**Status**: Not implemented~~
 
-Unity Directional Lights (type 1) should map to Roblox `Lighting` service properties
-(Ambient, Brightness, ColorShift). Currently they become regular Parts with no light
-child, since `convert_light_components()` only handles Spot (type 0) and Point (type 2).
+Directional lights now map to Roblox `Lighting` service properties. See Recently Fixed.
 
 #### Cameras
 
@@ -233,8 +293,9 @@ the texture will appear un-tiled.
 | ≤ (4, 4) | Pre-tile the texture image | Good (loses resolution per tile) |
 | > (4, 4) | Modify mesh UVs in the FBX | Best (requires mesh editing) |
 
-**Partial implementation**: The `material_mapper.py` generates `pre_tile` texture
-operations, but the texture processor is not yet wired to execute them.
+**Implementation**: The `material_mapper.py` generates `pre_tile` texture operations
+and `_process_textures()` now fully executes them, including offset pixel shifting.
+Tiling factors ≤ 4x are pre-tiled automatically; factors > 4x are logged to UNCONVERTED.md.
 
 #### Height/Parallax Maps
 
@@ -268,14 +329,12 @@ and `#include` resolution.
 For Shader Graph materials, the converter falls back to checking if standard property
 names (`_BaseMap`, `_Color`) exist in the material's saved properties.
 
-#### Normal Map Scale
+#### ~~Normal Map Scale~~ — FIXED
 
-**Severity**: LOW
-**Status**: Not implemented
+~~**Severity**: LOW~~
+~~**Status**: Not implemented~~
 
-When `_BumpScale ≠ 1.0`, the normal map intensity should be adjusted by scaling XY
-channels and renormalizing Z. Currently the converter copies normal maps without
-modification.
+Normal map scale baking is now implemented. See Recently Fixed.
 
 #### Unlit Materials
 
@@ -408,15 +467,15 @@ only processed materials, not all `.mat` files found.
 ### Phase 1 — Next Release (Remaining Bugs)
 1. ~~Apply Transform scale to Part size~~ — Done
 2. ~~Apply material Color3/Transparency to plain Parts~~ — Done
-3. Map Unity primitives (Cube/Sphere/Cylinder/Plane) to Roblox shape equivalents
+3. ~~Map Unity primitives (Cube/Sphere/Cylinder/Plane) to Roblox shape equivalents~~ — Done
 4. ~~Convert rotation quaternion to CFrame~~ — Done
-5. Map Directional Light → Roblox `Lighting` properties
+5. ~~Map Directional Light → Roblox `Lighting` properties~~ — Done
 6. ~~Instantiate prefabs in scene tree~~ — Done
-7. Fix parts_written counting to include children
+7. ~~Fix parts_written counting to include children~~ — Done
 
 ### Phase 2 — Near Term (Feature Gaps)
-8. UV pre-tiling texture processor
-9. Normal map scale baking
+8. ~~UV pre-tiling texture processor~~ — Done (offset also implemented)
+9. ~~Normal map scale baking~~ — Done
 10. Unlit game detection + Lighting configuration
 11. Skybox/Atmosphere generation
 12. Improved rule-based transpiler (strip class/namespace, convert loops)
