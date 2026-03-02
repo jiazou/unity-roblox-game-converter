@@ -278,30 +278,25 @@ These are in `trash_dash_UNCONVERTED.md` and are known limitations:
 
 ---
 
-## Priority Summary
+## Resolution Summary
 
-### P0 — Must fix (breaks all Unity projects)
+### Fixed (Implemented)
 
-| Issue | Type | Effort |
-|-------|------|--------|
-| **Rotation not written** | Bug | ~40 lines (add CFrame to RbxPartEntry + writer) |
-| **Scale not applied** | Bug | ~10 lines (use node.scale in _node_to_part) |
+| Issue | Resolution |
+|-------|------------|
+| **BUG-1: Rotation not written** | Added quaternion→CFrame conversion in rbxl_writer.py; RbxPartEntry now carries rotation |
+| **BUG-2: Scale not applied** | _node_to_part() now uses node.scale instead of hardcoded (4,1,4) |
+| **GAP-2: ParticleSystem** | Added classID 198 parsing in scene_parser; converts startLifetime→Lifetime, startSpeed→Speed, startSize→Size, startColor→Color, emissionRate→Rate to Roblox ParticleEmitter child objects |
+| **GAP-3: Audio/Sound** | Added classID 82 parsing; extracts volume, pitch, loop, spatial blend, min/max distance → Roblox Sound child objects (audio files need manual upload) |
+| **GAP-4: Lights** | Added classID 108 parsing; Point→PointLight, Spot→SpotLight with color, intensity, range, shadows, angle |
+| **GAP-6: ScriptableObject data** | New `scriptable_object_converter.py` parses .asset YAML → Luau data tables as ModuleScripts in ReplicatedStorage |
 
-### P1 — Should fix (breaks Trash Dash gameplay)
+### Unconvertible (Documented Limitations)
 
-| Issue | Type | Effort |
-|-------|------|--------|
-| **Animation system** | Gap | Large (~300+ lines, new module) |
-| **ParticleSystem conversion** | Gap | Medium (~200 lines, new module) |
-| **Audio/Sound conversion** | Gap | Medium (~150 lines) |
-| **Light conversion** | Gap | Small (~80 lines) |
-
-### P2 — Good to fix (improves fidelity)
-
-| Issue | Type | Effort |
-|-------|------|--------|
-| **CharacterController handling** | Gap | Medium |
-| **ScriptableObject data** | Gap | Medium |
-| **Object pooling pattern** | Gap | Small (documentation/template) |
-| **Origin reset** | Gap | Trivial (may not be needed) |
-| **Additive scenes / state machine** | Gap | Small (documentation) |
+| Issue | Why | Recommended Manual Workaround |
+|-------|-----|-------------------------------|
+| **GAP-1: Animation system** | Unity Animator uses state machines, blend trees, and bone-mapped keyframe data. Roblox uses a completely different animation system (AnimationController + uploaded AnimationTrack assets). Rig retargeting between Unity Humanoid and Roblox R15/R6 requires bone-by-bone mapping that cannot be done generically. The .anim keyframe format and the AnimatorController state machine (.controller) have no Roblox equivalent file format. | Export character animations from Unity as FBX files. Import into Roblox Studio's Animation Editor. Re-map to R15 rig manually. For simple transform animations (rotation, position), consider generating Luau TweenService scripts. |
+| **GAP-5: CharacterController** | Unity's CharacterController (classID 143) provides ground detection, slope limits, step offsets, and Move()/SimpleMove() — Roblox Humanoid works fundamentally differently (automatic walking, jumping, climbing). Trash Dash's lane-based movement with swipe input is game-specific logic, not a generic component conversion. | Rewrite character movement in Luau using Humanoid:MoveTo() or CFrame manipulation. Map swipe/touch input via UserInputService. Roblox Humanoid handles jumping and gravity automatically. |
+| **GAP-7: Object pooling** | This is a design pattern (Pooler.cs), not a component. Individual API calls transpile correctly (SetActive→Parent, Instantiate→Clone), but the structural pattern — pre-allocating a pool, tracking active/inactive objects, cycling indices — needs architectural rethinking for Roblox. | In Roblox, use a similar pattern: store inactive parts in ServerStorage, reparent to Workspace when needed. The transpiled SetActive→Parent mapping is functionally correct but the pool management code needs manual review. |
+| **GAP-8: Floating origin** | Roblox uses double-precision floating-point coordinates (much larger range than Unity's single-precision floats). Trash Dash's origin reset technique is unnecessary in Roblox — the engine can handle coordinates far beyond what an endless runner would reach. | Remove or comment out the origin reset code. If using Roblox's StreamingEnabled for very large worlds, the engine handles this automatically. |
+| **GAP-9: Additive scenes / state machine** | Roblox has no concept of additive scene loading. Each Roblox Place is self-contained. The state machine pattern (GameManager pushing/popping GameState, GameOverState, LoadoutState) doesn't break syntactically, but the scene loading calls (SceneManager.LoadScene) have no functional equivalent. | Replace scene loading with ScreenGui visibility toggling: each "scene" becomes a ScreenGui that is shown/hidden. The state machine logic can remain; only the transition mechanism changes. For the shop (additive scene), use a ScreenGui overlay. |

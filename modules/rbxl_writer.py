@@ -155,6 +155,109 @@ def _make_cframe(
     return el
 
 
+def _make_light(
+    parent: ET.Element,
+    light_class: str,
+    color: tuple[float, float, float],
+    brightness: float,
+    range_val: float,
+    shadows: bool,
+    angle: float = 90.0,
+) -> ET.Element:
+    """Emit a PointLight, SpotLight, or SurfaceLight child item under a Part."""
+    item = ET.SubElement(parent, "Item", **{"class": light_class})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", light_class)
+    _make_color3(props, "Color", color)
+    _make_property(props, "float", "Brightness", f"{brightness:.4f}")
+    _make_property(props, "float", "Range", f"{range_val:.2f}")
+    _make_property(props, "bool", "Shadows", str(shadows).lower())
+    _make_property(props, "bool", "Enabled", "true")
+    if light_class == "SpotLight":
+        _make_property(props, "float", "Angle", f"{angle:.2f}")
+        _make_property(props, "token", "Face", "5")  # Front face
+    return item
+
+
+def _make_sound(
+    parent: ET.Element,
+    name: str,
+    sound_path: str,
+    volume: float,
+    looped: bool,
+    playback_speed: float,
+    playing: bool,
+    roll_off_min: float,
+    roll_off_max: float,
+) -> ET.Element:
+    """Emit a Sound child item under a Part."""
+    item = ET.SubElement(parent, "Item", **{"class": "Sound"})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", name)
+    # SoundId will need to be an uploaded asset URL; for now store the path as a comment
+    _make_property(props, "Content", "SoundId", f"-- TODO: upload {sound_path}")
+    _make_property(props, "float", "Volume", f"{volume:.4f}")
+    _make_property(props, "bool", "Looped", str(looped).lower())
+    _make_property(props, "float", "PlaybackSpeed", f"{playback_speed:.4f}")
+    _make_property(props, "bool", "Playing", str(playing).lower())
+    _make_property(props, "float", "RollOffMinDistance", f"{roll_off_min:.2f}")
+    _make_property(props, "float", "RollOffMaxDistance", f"{roll_off_max:.2f}")
+    return item
+
+
+def _make_particle_emitter(
+    parent: ET.Element,
+    name: str,
+    rate: float,
+    lifetime_min: float,
+    lifetime_max: float,
+    speed_min: float,
+    speed_max: float,
+    size: float,
+    color: tuple[float, float, float],
+    texture_path: str | None,
+    light_emission: float,
+    transparency: float,
+) -> ET.Element:
+    """Emit a ParticleEmitter child item under a Part."""
+    item = ET.SubElement(parent, "Item", **{"class": "ParticleEmitter"})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", name)
+    _make_property(props, "float", "Rate", f"{rate:.2f}")
+    _make_property(props, "bool", "Enabled", "true")
+    # Lifetime as NumberRange
+    lr = ET.SubElement(props, "NumberRange", name="Lifetime")
+    lr.text = f"{lifetime_min:.4f} {lifetime_max:.4f}"
+    # Speed as NumberRange
+    sr = ET.SubElement(props, "NumberRange", name="Speed")
+    sr.text = f"{speed_min:.4f} {speed_max:.4f}"
+    # Size as NumberSequence (constant)
+    ss = ET.SubElement(props, "NumberSequence", name="Size")
+    k1 = ET.SubElement(ss, "Keypoint")
+    k1.set("time", "0")
+    k1.set("value", f"{size:.4f}")
+    k1.set("envelope", "0")
+    k2 = ET.SubElement(ss, "Keypoint")
+    k2.set("time", "1")
+    k2.set("value", f"{size:.4f}")
+    k2.set("envelope", "0")
+    _make_color3(props, "Color", color)
+    if texture_path:
+        _make_property(props, "Content", "Texture", f"-- TODO: upload {texture_path}")
+    _make_property(props, "float", "LightEmission", f"{light_emission:.4f}")
+    # Transparency as NumberSequence (constant)
+    ts = ET.SubElement(props, "NumberSequence", name="Transparency")
+    tk1 = ET.SubElement(ts, "Keypoint")
+    tk1.set("time", "0")
+    tk1.set("value", f"{transparency:.4f}")
+    tk1.set("envelope", "0")
+    tk2 = ET.SubElement(ts, "Keypoint")
+    tk2.set("time", "1")
+    tk2.set("value", "1")  # fade out at end of lifetime
+    tk2.set("envelope", "0")
+    return item
+
+
 def _make_surface_appearance(parent: ET.Element, sa: RbxSurfaceAppearance) -> ET.Element:
     """Emit a SurfaceAppearance child item under a Part/MeshPart."""
     item = ET.SubElement(parent, "Item", **{"class": "SurfaceAppearance"})
@@ -218,6 +321,18 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         # No mesh — SurfaceAppearance won't render on a plain Part.
         # Apply what we can: color/transparency are already set via BasePart properties.
         pass
+
+    # Light children (PointLight, SpotLight) — set by converter.py
+    for lc in getattr(part, "light_children", ()):
+        _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
+
+    # Sound children — set by converter.py
+    for sc in getattr(part, "sound_children", ()):
+        _make_sound(item, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7])
+
+    # ParticleEmitter children — set by converter.py
+    for pc in getattr(part, "particle_children", ()):
+        _make_particle_emitter(item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7], pc[8], pc[9], pc[10])
 
     for script in part.scripts:
         script_item = ET.SubElement(item, "Item", **{"class": script.script_type})

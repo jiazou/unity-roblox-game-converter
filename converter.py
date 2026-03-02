@@ -50,6 +50,7 @@ from modules import (
     roblox_uploader,
     rbxl_writer,
     report_generator,
+    scriptable_object_converter,
     ui_translator,
 )
 from modules.llm_cache import LLMCache
@@ -139,6 +140,99 @@ def _node_to_part(
         elif comp.component_type == "Rigidbody":
             is_kinematic = comp.properties.get("m_IsKinematic", 0)
             part.anchored = bool(is_kinematic)
+
+    # Convert Light, AudioSource, and ParticleSystem components to Roblox
+    # child objects under the Part. These are stored as pending child-creation
+    # instructions and emitted by rbxl_writer via _make_part().
+    part.light_children = []   # type: ignore[attr-defined]
+    part.sound_children = []   # type: ignore[attr-defined]
+    part.particle_children = []  # type: ignore[attr-defined]
+    for comp in node.components:
+        props = comp.properties
+        if comp.component_type == "Light":
+            # Unity Light: m_Type (0=Spot, 1=Directional, 2=Point, 3=Area)
+            light_type = int(props.get("m_Type", 2))
+            color_data = props.get("m_Color", {})
+            color = (
+                float(color_data.get("r", 1.0)) if isinstance(color_data, dict) else 1.0,
+                float(color_data.get("g", 1.0)) if isinstance(color_data, dict) else 1.0,
+                float(color_data.get("b", 1.0)) if isinstance(color_data, dict) else 1.0,
+            )
+            intensity = float(props.get("m_Intensity", 1.0))
+            range_val = float(props.get("m_Range", 10.0))
+            shadows = int(props.get("m_Shadows", {}).get("m_Type", 0) if isinstance(props.get("m_Shadows"), dict) else props.get("m_Shadows", 0))
+            spot_angle = float(props.get("m_SpotAngle", 30.0))
+
+            if light_type == 0:  # Spot
+                part.light_children.append(("SpotLight", color, intensity, range_val, bool(shadows), spot_angle))
+            elif light_type == 2:  # Point
+                part.light_children.append(("PointLight", color, intensity, range_val, bool(shadows), 0.0))
+            # Directional (1) and Area (3) have no direct per-part Roblox equivalent —
+            # Directional maps to Lighting service, Area has no equivalent.
+
+        elif comp.component_type == "AudioSource":
+            clip_ref = props.get("m_audioClip", {})
+            clip_guid = clip_ref.get("guid", "") if isinstance(clip_ref, dict) else ""
+            clip_path = ""
+            if clip_guid and guid_index:
+                resolved = guid_index.resolve(clip_guid)
+                clip_path = str(resolved) if resolved else clip_guid
+
+            volume = float(props.get("m_Volume", 1.0))
+            pitch = float(props.get("m_Pitch", 1.0))
+            loop = bool(props.get("m_Loop", 0))
+            play_on_awake = bool(props.get("m_PlayOnAwake", 1))
+            min_dist = float(props.get("m_MinDistance", 1.0))
+            max_dist = float(props.get("m_MaxDistance", 500.0))
+
+            part.sound_children.append((
+                node.name + "_Sound",
+                clip_path,
+                volume,
+                loop,
+                pitch,
+                play_on_awake,
+                min_dist,
+                max_dist,
+            ))
+
+        elif comp.component_type == "ParticleSystem":
+            # Unity ParticleSystem YAML is deeply nested. Extract top-level basics.
+            initial_module = props.get("InitialModule", {})
+            emission_module = props.get("EmissionModule", {})
+
+            # startLifetime, startSpeed, startSize can be MinMaxCurve — extract scalar
+            def _scalar_or_default(mm: Any, default: float) -> float:
+                if isinstance(mm, dict):
+                    return float(mm.get("scalar", mm.get("value", default)))
+                try:
+                    return float(mm)
+                except (TypeError, ValueError):
+                    return default
+
+            lifetime = _scalar_or_default(initial_module.get("startLifetime", {}), 5.0)
+            speed = _scalar_or_default(initial_module.get("startSpeed", {}), 5.0)
+            size = _scalar_or_default(initial_module.get("startSize", {}), 1.0)
+            gravity = _scalar_or_default(initial_module.get("gravityModifier", {}), 0.0)
+            rate = _scalar_or_default(emission_module.get("rateOverTime", {}), 10.0)
+
+            start_color = initial_module.get("startColor", {})
+            color_data = start_color.get("maxColor", {}) if isinstance(start_color, dict) else {}
+            p_color = (
+                float(color_data.get("r", 1.0)) / 255.0 if float(color_data.get("r", 1.0)) > 1 else float(color_data.get("r", 1.0)),
+                float(color_data.get("g", 1.0)) / 255.0 if float(color_data.get("g", 1.0)) > 1 else float(color_data.get("g", 1.0)),
+                float(color_data.get("b", 1.0)) / 255.0 if float(color_data.get("b", 1.0)) > 1 else float(color_data.get("b", 1.0)),
+            ) if isinstance(color_data, dict) else (1.0, 1.0, 1.0)
+
+            part.particle_children.append((
+                node.name + "_Particles",
+                rate, lifetime, lifetime,  # min/max lifetime same for constant
+                speed, speed,              # min/max speed same for constant
+                size, p_color,
+                None,  # texture — would need material GUID resolution
+                0.0,   # light_emission
+                0.0,   # transparency
+            ))
 
     # Attach material data and companion scripts
     if guid_to_roblox_def:
@@ -624,6 +718,23 @@ def convert(
     if validation_errors or validation_warnings:
         click.echo(f"    → Luau validation: {validation_errors} error(s), "
                    f"{validation_warnings} warning(s)")
+
+    # ── ScriptableObject .asset → ModuleScript data tables ─────────
+    click.echo("📦  Converting ScriptableObject data assets …")
+    so_result = scriptable_object_converter.convert_asset_files(unity_path)
+    if so_result.total:
+        click.echo(f"    → {so_result.converted}/{so_result.total} .asset file(s) → ModuleScript data")
+        # Add converted ScriptableObjects as ModuleScripts
+        for ca in so_result.assets:
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=ca.source_path,
+                output_filename=ca.asset_name + "_Data.lua",
+                csharp_source="",
+                luau_source=ca.luau_source,
+                strategy="rule_based",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
 
     # ── Mesh decimation (conservative) ─────────────────────────────
     decimation_result = mesh_decimator.DecimationResult()
