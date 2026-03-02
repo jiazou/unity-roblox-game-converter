@@ -1,0 +1,48 @@
+# Unity → Roblox Game Converter
+
+## Overview
+
+This is a multi-phase pipeline that converts Unity game projects into Roblox place files (.rbxl). It handles scene hierarchy, materials, C# → Luau transpilation, mesh decimation, and optional Roblox Cloud upload.
+
+## Architecture
+
+- `converter.py` — Full end-to-end CLI (non-interactive, runs all phases)
+- `convert_interactive.py` — Phase-based CLI for the `/convert-unity` skill (interactive, one phase at a time)
+- `config.py` — All configuration constants (paths, API keys, thresholds)
+- `modules/` — Individual pipeline modules (no cross-imports between modules)
+
+### Pipeline Phases
+
+1. **Discovery**: `scene_parser` + `prefab_parser` — parse .unity/.prefab YAML
+2. **Inventory**: `asset_extractor` + `guid_resolver` — catalog assets, build GUID index
+3. **Processing**: `material_mapper` + `code_transpiler` + `mesh_decimator` + `scriptable_object_converter`
+4. **Assembly**: `rbxl_writer` + `ui_translator` — build .rbxl XML
+5. **Upload**: `roblox_uploader` + `report_generator` — upload to Roblox Cloud, generate report
+
+### Key Design Principles
+
+- Data flows linearly: each module's output is passed explicitly to the next
+- No module imports another module — all wiring happens in the orchestrators
+- State between interactive phases is stored in `<output_dir>/.convert_state.json`
+
+## Running Tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+## Skills
+
+The `/convert-unity` skill (`.claude/skills/convert-unity.md`) provides an interactive conversion experience, pausing at decision points for human input:
+- Scene selection when multiple scenes exist
+- Material conversion review for unconvertible/partial materials
+- Code transpilation review for flagged (low-confidence) scripts
+- Mesh decimation confirmation
+- Upload configuration
+
+## Known Limitations
+
+See `docs/UNSUPPORTED.md` for the full list. Key ones:
+- No vertex color support (Roblox platform limitation)
+- One material per MeshPart (multi-material meshes need splitting)
+- Rule-based transpiler produces rough output; AI mode recommended for production
