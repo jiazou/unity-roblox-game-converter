@@ -1,6 +1,6 @@
 # Material Converter — Implementation Plan
 
-> Status: Proposed
+> Status: Implemented
 > Author: Claude
 > Date: 2026-03-01
 > Depends on: `docs/material_mapping_research.md`, `docs/trash_dash_UNCONVERTED.md`
