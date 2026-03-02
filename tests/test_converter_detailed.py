@@ -22,15 +22,15 @@ from modules import (
 )
 from modules.asset_extractor import AssetManifest
 
-from converter import (
-    _apply_prefab_modifications,
-    _build_report,
-    _node_to_part,
-    _prefab_node_to_scene_node,
-    _resolve_prefab_instances,
-    _roblox_def_to_surface_appearance,
-    _scene_nodes_to_parts,
-    _transpiled_to_rbx_scripts,
+from modules.conversion_helpers import (
+    apply_prefab_modifications as _apply_prefab_modifications,
+    build_report as _build_report,
+    node_to_part as _node_to_part,
+    prefab_node_to_scene_node as _prefab_node_to_scene_node,
+    resolve_prefab_instances as _resolve_prefab_instances,
+    roblox_def_to_surface_appearance as _roblox_def_to_surface_appearance,
+    scene_nodes_to_parts as _scene_nodes_to_parts,
+    transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
 )
 
 

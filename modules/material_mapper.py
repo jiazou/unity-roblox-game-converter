@@ -158,6 +158,42 @@ _RE_PROPERTY_NAME = re.compile(r"(\w+)\s*\(")
 _RE_INCLUDE = re.compile(r'#include\s+"([^"]+)"')
 
 
+# ---------------------------------------------------------------------------
+# Data-driven custom shader classification
+# ---------------------------------------------------------------------------
+# Each entry is (list_of_substrings, category).  The shader name is lowercased
+# and checked against the substrings in order — first match wins.  This makes
+# it easy to add project-specific shaders without touching control flow.
+
+_CUSTOM_SHADER_PATTERNS: list[tuple[list[str], str]] = [
+    (["curvedunlitalpha", "curvedunlitcloud"], "custom_unlit_alpha"),
+    (["curvedunlit"],                          "custom_unlit"),
+    (["curvedrotation"],                       "custom_rotation"),
+    (["unlitblinking"],                        "custom_blinking"),
+    (["vertexcolor"],                          "vertex_color"),
+    (["unlit"],                                "custom_unlit"),
+]
+
+
+def _classify_custom_shader(shader_name: str) -> str:
+    """Classify a custom shader name into a category via pattern matching."""
+    name_lower = shader_name.lower()
+    for patterns, category in _CUSTOM_SHADER_PATTERNS:
+        if any(p in name_lower for p in patterns):
+            return category
+    return "custom"
+
+
+# ---------------------------------------------------------------------------
+# Companion script registry — maps shader categories to Luau scripts
+# ---------------------------------------------------------------------------
+# Instead of hardcoded if/elif blocks in the conversion function, companion
+# scripts are registered here by category.  The conversion function looks up
+# scripts via this mapping.
+
+_COMPANION_SCRIPTS: dict[str, str] = {}  # populated below, after script definitions
+
+
 def _parse_shader_source(shader_path: Path) -> ShaderInfo:
     """Parse a .shader file to determine its capabilities."""
     try:
@@ -219,22 +255,10 @@ def _parse_shader_source(shader_path: Path) -> ShaderInfo:
         reads_color = True
         reads_maintex = True
 
-    # Categorize
-    name_lower = name.lower()
-    if "curvedunlitalpha" in name_lower or "curvedunlitcloud" in name_lower:
-        category = "custom_unlit_alpha"
-    elif "curvedunlit" in name_lower:
-        category = "custom_unlit"
-    elif "curvedrotation" in name_lower:
-        category = "custom_rotation"
-    elif "unlitblinking" in name_lower:
-        category = "custom_blinking"
-    elif "vertexcolor" in name_lower:
-        category = "vertex_color"
-    elif "unlit" in name_lower:
-        category = "custom_unlit"
-    else:
-        category = "custom"
+    # Categorize via data-driven pattern matching.
+    # Each entry is (patterns, category) — first match wins.
+    # Patterns are matched against the lowercased shader name.
+    category = _classify_custom_shader(name)
 
     return ShaderInfo(name, category, is_transparent, uses_vertex_colors,
                       reads_color, reads_maintex, shader_path)
@@ -799,18 +823,22 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
     if "_CurveStrength" in parsed.custom_properties:
         result.unconverted.append(UnconvertedFeature(
             "World curve effect", "_CurveStrength",
-            "LOW", "Ignore — cosmetic endless-runner effect", False,
+            "LOW", "Ignore — cosmetic world-curve effect", False,
         ))
 
+    # Look up companion scripts from the registry (data-driven)
+    companion = _COMPANION_SCRIPTS.get(cat)
+    if companion:
+        result.companion_scripts.append(companion)
+
+    # Record unconverted features for categories with companion scripts
     if cat == "custom_blinking":
-        result.companion_scripts.append(_BLINK_SCRIPT)
         result.unconverted.append(UnconvertedFeature(
             "Blinking animation", "_BlinkingValue",
             "LOW", "Companion Luau tween script generated", True,
         ))
 
     if cat == "custom_rotation":
-        result.companion_scripts.append(_ROTATION_SCRIPT)
         result.unconverted.append(UnconvertedFeature(
             "Vertex rotation animation", "_Time rotation in vertex shader",
             "LOW", "Companion Luau rotation script generated", True,
@@ -883,6 +911,10 @@ RunService.Heartbeat:Connect(function(dt)
     part.CFrame = part.CFrame * CFrame.Angles(0, math.pi * dt, 0)
 end)
 """
+
+# Populate the companion script registry
+_COMPANION_SCRIPTS["custom_blinking"] = _BLINK_SCRIPT
+_COMPANION_SCRIPTS["custom_rotation"] = _ROTATION_SCRIPT
 
 
 # ═══════════════════════════════════════════════════════════════════════════

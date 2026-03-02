@@ -20,15 +20,15 @@ from modules import (
     report_generator,
 )
 
-# Import converter helpers directly
-from converter import (
-    _node_to_part,
-    _prefab_node_to_scene_node,
-    _apply_prefab_modifications,
-    _resolve_prefab_instances,
-    _scene_nodes_to_parts,
-    _transpiled_to_rbx_scripts,
-    _build_report,
+# Import conversion helpers from the dedicated module
+from modules.conversion_helpers import (
+    node_to_part as _node_to_part,
+    prefab_node_to_scene_node as _prefab_node_to_scene_node,
+    apply_prefab_modifications as _apply_prefab_modifications,
+    resolve_prefab_instances as _resolve_prefab_instances,
+    scene_nodes_to_parts as _scene_nodes_to_parts,
+    transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
+    build_report as _build_report,
 )
 
 
