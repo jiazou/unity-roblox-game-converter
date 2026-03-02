@@ -7,13 +7,16 @@ Covers the 6 broken-out helper functions:
   - convert_audio_components
   - convert_particle_components
   - apply_materials
+  - extract_serialized_field_refs
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from modules import material_mapper, rbxl_writer, scene_parser
+from modules import guid_resolver, material_mapper, prefab_parser, rbxl_writer, scene_parser
 from modules.conversion_helpers import (
     roblox_def_to_surface_appearance,
     apply_collider_properties,
@@ -21,6 +24,7 @@ from modules.conversion_helpers import (
     convert_audio_components,
     convert_particle_components,
     apply_materials,
+    extract_serialized_field_refs,
 )
 
 
@@ -457,3 +461,208 @@ class TestApplyMaterials:
         rdef = material_mapper.RobloxMaterialDef(color_map="tex/a.png")
         apply_materials(part, node, {"mat1": rdef}, None)
         assert part.surface_appearance is None
+
+
+# ---------------------------------------------------------------------------
+# extract_serialized_field_refs
+# ---------------------------------------------------------------------------
+
+def _make_guid_index(tmp_path, entries):
+    """Build a GuidIndex with the given (guid, rel_path, suffix) entries.
+
+    Creates real files so that ``resolve()`` returns valid absolute paths.
+    """
+    gi = guid_resolver.GuidIndex(project_root=tmp_path)
+    for guid, rel_path_str, suffix in entries:
+        asset_path = tmp_path / rel_path_str
+        asset_path.parent.mkdir(parents=True, exist_ok=True)
+        asset_path.write_text("", encoding="utf-8")
+        gi.guid_to_entry[guid] = guid_resolver.GuidEntry(
+            guid=guid,
+            asset_path=asset_path.resolve(),
+            relative_path=Path(rel_path_str),
+            kind="prefab" if suffix == ".prefab" else "script",
+            is_directory=False,
+        )
+        gi.path_to_guid[asset_path.resolve()] = guid
+    return gi
+
+
+class TestExtractSerializedFieldRefs:
+    def test_extracts_prefab_ref_from_scene(self, tmp_path):
+        """A MonoBehaviour with [SerializeField] GameObject field gets extracted."""
+        gi = _make_guid_index(tmp_path, [
+            ("script_guid_1", "Assets/Scripts/Spawner.cs", ".cs"),
+            ("prefab_guid_1", "Assets/Prefabs/Enemy.prefab", ".prefab"),
+        ])
+        node = _snode(
+            name="SpawnPoint",
+            components=[
+                scene_parser.ComponentData(
+                    component_type="MonoBehaviour",
+                    file_id="200",
+                    properties={
+                        "m_ObjectHideFlags": 0,
+                        "m_GameObject": {"fileID": 100},
+                        "m_Script": {"fileID": 11500000, "guid": "script_guid_1", "type": 3},
+                        "m_Name": "",
+                        "enemyPrefab": {"fileID": 0, "guid": "prefab_guid_1", "type": 3},
+                        "spawnRate": 5.0,
+                    },
+                ),
+            ],
+        )
+        scene = scene_parser.ParsedScene(
+            scene_path=tmp_path / "test.unity",
+            all_nodes={"100": node},
+            roots=[node],
+        )
+        prefab_lib = prefab_parser.PrefabLibrary()
+        result = extract_serialized_field_refs([scene], prefab_lib, gi)
+
+        script_path = (tmp_path / "Assets/Scripts/Spawner.cs").resolve()
+        assert script_path in result
+        assert result[script_path] == {"enemyPrefab": "Enemy"}
+
+    def test_ignores_non_prefab_refs(self, tmp_path):
+        """Object references to non-prefab assets (e.g. materials) are skipped."""
+        gi = _make_guid_index(tmp_path, [
+            ("script_guid_1", "Assets/Scripts/Player.cs", ".cs"),
+            ("mat_guid_1", "Assets/Materials/Red.mat", ".mat"),
+        ])
+        node = _snode(
+            components=[
+                scene_parser.ComponentData(
+                    component_type="MonoBehaviour",
+                    file_id="200",
+                    properties={
+                        "m_Script": {"fileID": 11500000, "guid": "script_guid_1", "type": 3},
+                        "m_GameObject": {"fileID": 100},
+                        "myMaterial": {"fileID": 0, "guid": "mat_guid_1", "type": 3},
+                    },
+                ),
+            ],
+        )
+        scene = scene_parser.ParsedScene(
+            scene_path=tmp_path / "test.unity",
+            all_nodes={"100": node},
+            roots=[node],
+        )
+        result = extract_serialized_field_refs([scene], prefab_parser.PrefabLibrary(), gi)
+        assert len(result) == 0
+
+    def test_ignores_internal_m_properties(self, tmp_path):
+        """Properties starting with m_ should be skipped (Unity internals)."""
+        gi = _make_guid_index(tmp_path, [
+            ("script_guid_1", "Assets/Scripts/Test.cs", ".cs"),
+            ("prefab_guid_1", "Assets/Prefabs/Thing.prefab", ".prefab"),
+        ])
+        node = _snode(
+            components=[
+                scene_parser.ComponentData(
+                    component_type="MonoBehaviour",
+                    file_id="200",
+                    properties={
+                        "m_Script": {"fileID": 11500000, "guid": "script_guid_1", "type": 3},
+                        "m_GameObject": {"fileID": 100},
+                        "m_PrefabInstance": {"fileID": 0, "guid": "prefab_guid_1", "type": 3},
+                    },
+                ),
+            ],
+        )
+        scene = scene_parser.ParsedScene(
+            scene_path=tmp_path / "test.unity",
+            all_nodes={"100": node},
+            roots=[node],
+        )
+        result = extract_serialized_field_refs([scene], prefab_parser.PrefabLibrary(), gi)
+        assert len(result) == 0
+
+    def test_extracts_from_prefab_library(self, tmp_path):
+        """Serialized refs from prefab template MonoBehaviours are also extracted."""
+        gi = _make_guid_index(tmp_path, [
+            ("script_guid_1", "Assets/Scripts/Turret.cs", ".cs"),
+            ("prefab_guid_1", "Assets/Prefabs/Bullet.prefab", ".prefab"),
+        ])
+        pcomp = prefab_parser.PrefabComponent(
+            component_type="MonoBehaviour",
+            file_id="300",
+            properties={
+                "m_Script": {"fileID": 11500000, "guid": "script_guid_1", "type": 3},
+                "m_GameObject": {"fileID": 100},
+                "bulletPrefab": {"fileID": 0, "guid": "prefab_guid_1", "type": 3},
+            },
+        )
+        pnode = prefab_parser.PrefabNode(
+            name="Turret",
+            file_id="100",
+            active=True,
+            components=[pcomp],
+        )
+        template = prefab_parser.PrefabTemplate(
+            name="Turret",
+            prefab_path=tmp_path / "Assets/Prefabs/Turret.prefab",
+            root=pnode,
+        )
+        lib = prefab_parser.PrefabLibrary(prefabs=[template])
+
+        result = extract_serialized_field_refs([], lib, gi)
+        script_path = (tmp_path / "Assets/Scripts/Turret.cs").resolve()
+        assert script_path in result
+        assert result[script_path] == {"bulletPrefab": "Bullet"}
+
+    def test_multiple_fields_same_script(self, tmp_path):
+        """Multiple serialized fields on the same script are all captured."""
+        gi = _make_guid_index(tmp_path, [
+            ("script_guid_1", "Assets/Scripts/Spawner.cs", ".cs"),
+            ("prefab_guid_1", "Assets/Prefabs/Enemy.prefab", ".prefab"),
+            ("prefab_guid_2", "Assets/Prefabs/Coin.prefab", ".prefab"),
+        ])
+        node = _snode(
+            components=[
+                scene_parser.ComponentData(
+                    component_type="MonoBehaviour",
+                    file_id="200",
+                    properties={
+                        "m_Script": {"fileID": 11500000, "guid": "script_guid_1", "type": 3},
+                        "m_GameObject": {"fileID": 100},
+                        "enemyPrefab": {"fileID": 0, "guid": "prefab_guid_1", "type": 3},
+                        "coinPrefab": {"fileID": 0, "guid": "prefab_guid_2", "type": 3},
+                    },
+                ),
+            ],
+        )
+        scene = scene_parser.ParsedScene(
+            scene_path=tmp_path / "test.unity",
+            all_nodes={"100": node},
+            roots=[node],
+        )
+        result = extract_serialized_field_refs([scene], prefab_parser.PrefabLibrary(), gi)
+        script_path = (tmp_path / "Assets/Scripts/Spawner.cs").resolve()
+        assert result[script_path] == {"enemyPrefab": "Enemy", "coinPrefab": "Coin"}
+
+    def test_zero_guid_ignored(self, tmp_path):
+        """References with all-zero GUIDs are skipped."""
+        gi = _make_guid_index(tmp_path, [
+            ("script_guid_1", "Assets/Scripts/Test.cs", ".cs"),
+        ])
+        node = _snode(
+            components=[
+                scene_parser.ComponentData(
+                    component_type="MonoBehaviour",
+                    file_id="200",
+                    properties={
+                        "m_Script": {"fileID": 11500000, "guid": "script_guid_1", "type": 3},
+                        "m_GameObject": {"fileID": 100},
+                        "emptyRef": {"fileID": 0, "guid": "00000000000000000000000000000000", "type": 3},
+                    },
+                ),
+            ],
+        )
+        scene = scene_parser.ParsedScene(
+            scene_path=tmp_path / "test.unity",
+            all_nodes={"100": node},
+            roots=[node],
+        )
+        result = extract_serialized_field_refs([scene], prefab_parser.PrefabLibrary(), gi)
+        assert len(result) == 0

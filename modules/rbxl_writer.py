@@ -125,6 +125,9 @@ class RbxPackageResult:
     packages: list[RbxPackageEntry] = field(default_factory=list)
     total_packages: int = 0
     warnings: list[str] = field(default_factory=list)
+    # Converted part trees for embedding in ServerStorage inside the .rbxl.
+    # Each tuple is (model_name, root_part).
+    server_storage_templates: list[tuple[str, RbxPartEntry]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +438,7 @@ def write_rbxl(
     lighting: RbxLightingConfig | None = None,
     camera: RbxCameraConfig | None = None,
     skybox: RbxSkyboxConfig | None = None,
+    server_storage_templates: list[tuple[str, RbxPartEntry]] | None = None,
 ) -> RbxWriteResult:
     """
     Serialise the converted scene into a Roblox place file (.rbxl).
@@ -447,6 +451,9 @@ def write_rbxl(
         lighting: Optional lighting configuration from directional lights.
         camera: Optional camera configuration from Unity Camera component.
         skybox: Optional skybox configuration from Unity RenderSettings.
+        server_storage_templates: Optional prefab templates to place in
+            ServerStorage for runtime Clone(). Each tuple is
+            (model_name, root_part_entry).
 
     Returns:
         RbxWriteResult describing what was written.
@@ -525,6 +532,18 @@ def write_rbxl(
 
     # Count all parts including children for accurate reporting
     parts_written = _count_parts(parts)
+
+    # ServerStorage — prefab templates for runtime Clone()
+    if server_storage_templates:
+        ss_item = ET.SubElement(root, "Item", **{"class": "ServerStorage"})
+        ss_props = ET.SubElement(ss_item, "Properties")
+        _make_property(ss_props, "string", "Name", "ServerStorage")
+
+        for model_name, root_part in server_storage_templates:
+            model_item = ET.SubElement(ss_item, "Item", **{"class": "Model"})
+            mp = ET.SubElement(model_item, "Properties")
+            _make_property(mp, "string", "Name", model_name)
+            _make_part(model_item, root_part)
 
     # Partition scripts by type into appropriate Roblox containers:
     #   Script       → ServerScriptService

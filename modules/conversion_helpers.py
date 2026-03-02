@@ -445,6 +445,105 @@ def apply_prefab_modifications(
 
 
 # ---------------------------------------------------------------------------
+# Serialized field reference extraction (MonoBehaviour → prefab wiring)
+# ---------------------------------------------------------------------------
+
+# Unity internal MonoBehaviour properties that should NOT be treated as
+# user-defined serialized fields.
+_MONO_INTERNAL_PROPS: set[str] = {
+    "m_ObjectHideFlags", "m_CorrespondingSourceObject", "m_PrefabInstance",
+    "m_PrefabAsset", "m_GameObject", "m_Enabled", "m_EditorHideFlags",
+    "m_Script", "m_Name", "m_EditorClassIdentifier",
+}
+
+
+def _is_object_ref(value: Any) -> bool:
+    """Check if a YAML value is a Unity object reference dict."""
+    if not isinstance(value, dict):
+        return False
+    guid = value.get("guid", "")
+    return bool(guid) and guid != "0" * 32
+
+
+def _process_mono_properties(
+    props: dict[str, Any],
+    guid_index: guid_resolver.GuidIndex,
+    result: dict[Path, dict[str, str]],
+) -> None:
+    """Extract prefab references from a single MonoBehaviour's properties."""
+    script_ref = props.get("m_Script", {})
+    if not isinstance(script_ref, dict):
+        return
+    script_guid = script_ref.get("guid", "")
+    if not script_guid:
+        return
+    script_path = guid_index.resolve(script_guid)
+    if not script_path or script_path.suffix != ".cs":
+        return
+
+    for key, value in props.items():
+        if key in _MONO_INTERNAL_PROPS or key.startswith("m_"):
+            continue
+        if not _is_object_ref(value):
+            continue
+
+        ref_guid = value["guid"]
+        ref_path = guid_index.resolve(ref_guid)
+        if not ref_path:
+            continue
+
+        # Only wire prefab references (stored in ServerStorage)
+        if ref_path.suffix != ".prefab":
+            continue
+
+        asset_name = ref_path.stem
+        refs = result.setdefault(script_path, {})
+        if key not in refs:
+            refs[key] = asset_name
+
+
+def extract_serialized_field_refs(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    prefab_lib: prefab_parser.PrefabLibrary,
+    guid_index: guid_resolver.GuidIndex,
+) -> dict[Path, dict[str, str]]:
+    """
+    Extract serialized GameObject/prefab references from MonoBehaviour components.
+
+    Walks all scene nodes and prefab template nodes, finds MonoBehaviour
+    components, resolves their ``m_Script`` GUID to a ``.cs`` file path, then
+    maps each serialized field (whose value is an object reference pointing to a
+    ``.prefab`` asset) to the prefab's name.
+
+    Returns:
+        ``{script_cs_path: {field_name: prefab_asset_name}}`` mapping, suitable
+        for passing to ``code_transpiler.transpile_scripts()``.
+    """
+    result: dict[Path, dict[str, str]] = {}
+
+    # Process scene MonoBehaviour components
+    for scene in parsed_scenes:
+        for node in scene.all_nodes.values():
+            for comp in node.components:
+                if comp.component_type == "MonoBehaviour":
+                    _process_mono_properties(comp.properties, guid_index, result)
+
+    # Process prefab template MonoBehaviour components
+    def _walk_prefab(pnode: prefab_parser.PrefabNode) -> None:
+        for comp in pnode.components:
+            if comp.component_type == "MonoBehaviour":
+                _process_mono_properties(comp.properties, guid_index, result)
+        for child in pnode.children:
+            _walk_prefab(child)
+
+    for template in prefab_lib.prefabs:
+        if template.root is not None:
+            _walk_prefab(template.root)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Prefab instance resolution
 # ---------------------------------------------------------------------------
 
@@ -494,8 +593,10 @@ def generate_prefab_packages(
             directional_lights,
         )
 
-        # Collect scripts attached to parts (they're already inline on the parts)
-        # No top-level scripts for packages — all scripts live on the parts
+        # Store the template for embedding in ServerStorage inside the .rbxl
+        result.server_storage_templates.append((template.name, root_part))
+
+        # Also write a standalone .rbxm file for Toolbox / manual import
         rbxm_path = packages_dir / f"{template.name}.rbxm"
         entry = rbxl_writer.write_rbxm(
             parts=[root_part],
@@ -533,6 +634,7 @@ def resolve_prefab_instances(
                 continue
 
             root_node = prefab_node_to_scene_node(template.root)
+            root_node.source_prefab_name = template.name
             apply_prefab_modifications(root_node, pi.modifications)
 
             scene.referenced_material_guids |= template.referenced_material_guids

@@ -42,6 +42,7 @@ from modules import (
 )
 from modules.conversion_helpers import (
     resolve_prefab_instances as _resolve_prefab_instances,
+    extract_serialized_field_refs as _extract_serialized_field_refs,
     generate_prefab_packages as _generate_prefab_packages,
     scene_nodes_to_parts as _scene_nodes_to_parts,
     transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
@@ -192,6 +193,13 @@ def convert(
         errors.append(f"Material mapping error: {exc}")
         mat_result = material_mapper.MaterialMapResult()
 
+    # ── Extract serialized field references for transpiler ──────
+    serialized_refs = _extract_serialized_field_refs(parsed_scenes, prefabs, guid_index)
+    if serialized_refs:
+        total_fields = sum(len(v) for v in serialized_refs.values())
+        click.echo(f"🔗  Extracted {total_fields} serialized prefab reference(s) "
+                   f"across {len(serialized_refs)} script(s)")
+
     click.echo("📝  Transpiling C# scripts …")
     try:
         transpilation = code_transpiler.transpile_scripts(
@@ -201,6 +209,7 @@ def convert(
             model=config.ANTHROPIC_MODEL,
             max_tokens=config.ANTHROPIC_MAX_TOKENS,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
+            serialized_refs=serialized_refs or None,
         )
         click.echo(f"    → {transpilation.total} script(s): "
                    f"{transpilation.succeeded} OK, {transpilation.flagged} flagged")
@@ -344,6 +353,7 @@ def convert(
         lighting=lighting_config,
         camera=camera_config,
         skybox=skybox_config,
+        server_storage_templates=package_result.server_storage_templates or None,
     )
     click.echo(f"    → Written to {write_result.output_path}")
 

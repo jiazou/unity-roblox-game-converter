@@ -2,7 +2,9 @@
 
 Covers:
   - write_rbxm() in rbxl_writer.py
+  - write_rbxl() ServerStorage template embedding
   - generate_prefab_packages() in conversion_helpers.py
+  - source_prefab_name tracking on SceneNode
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from modules.rbxl_writer import (
     RbxPackageResult,
     RbxPartEntry,
     RbxScriptEntry,
+    write_rbxl,
     write_rbxm,
 )
 from modules.prefab_parser import (
@@ -276,3 +279,137 @@ class TestGeneratePrefabPackages:
         assert root.tag == "roblox"
         model_items = root.findall(".//Item[@class='Model']")
         assert len(model_items) == 1
+
+    def test_server_storage_templates_populated(self, tmp_path: Path) -> None:
+        """generate_prefab_packages should return templates for ServerStorage."""
+        lib = PrefabLibrary(prefabs=[
+            _make_prefab("EnemyTemplate"),
+            _make_prefab("BulletTemplate"),
+        ])
+        result = generate_prefab_packages(lib, tmp_path)
+        assert len(result.server_storage_templates) == 2
+        names = [name for name, _ in result.server_storage_templates]
+        assert "EnemyTemplate" in names
+        assert "BulletTemplate" in names
+
+    def test_server_storage_templates_are_part_entries(self, tmp_path: Path) -> None:
+        lib = PrefabLibrary(prefabs=[_make_prefab("Shield")])
+        result = generate_prefab_packages(lib, tmp_path)
+        assert len(result.server_storage_templates) == 1
+        name, root_part = result.server_storage_templates[0]
+        assert name == "Shield"
+        assert isinstance(root_part, RbxPartEntry)
+        assert root_part.name == "Shield"
+
+    def test_server_storage_templates_empty_for_rootless(self, tmp_path: Path) -> None:
+        lib = PrefabLibrary(prefabs=[_make_prefab("Broken", has_root=False)])
+        result = generate_prefab_packages(lib, tmp_path)
+        assert len(result.server_storage_templates) == 0
+
+
+# ---------------------------------------------------------------------------
+# write_rbxl ServerStorage embedding tests
+# ---------------------------------------------------------------------------
+
+class TestServerStorageInRbxl:
+    """Tests for prefab templates embedded in ServerStorage inside .rbxl files."""
+
+    def test_server_storage_not_present_without_templates(self, tmp_path: Path) -> None:
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl([], [], rbxl)
+        content = rbxl.read_text(encoding="utf-8")
+        assert "ServerStorage" not in content
+
+    def test_server_storage_present_with_templates(self, tmp_path: Path) -> None:
+        rbxl = tmp_path / "test.rbxl"
+        templates = [("Enemy", RbxPartEntry(name="EnemyRoot"))]
+        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        assert "ServerStorage" in content
+
+    def test_model_wraps_template(self, tmp_path: Path) -> None:
+        rbxl = tmp_path / "test.rbxl"
+        templates = [("Coin", RbxPartEntry(name="CoinGeometry"))]
+        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        # Should have a Model with name "Coin" inside ServerStorage
+        assert 'class="Model"' in content
+        assert "Coin" in content
+        assert "CoinGeometry" in content
+
+    def test_multiple_templates(self, tmp_path: Path) -> None:
+        rbxl = tmp_path / "test.rbxl"
+        templates = [
+            ("Enemy", RbxPartEntry(name="EnemyBody")),
+            ("Bullet", RbxPartEntry(name="BulletMesh")),
+            ("Pickup", RbxPartEntry(name="PickupBox")),
+        ]
+        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        assert "Enemy" in content
+        assert "Bullet" in content
+        assert "Pickup" in content
+
+    def test_template_with_children(self, tmp_path: Path) -> None:
+        child = RbxPartEntry(name="Wheel")
+        root = RbxPartEntry(name="CarBody", children=[child])
+        templates = [("Car", root)]
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        assert "CarBody" in content
+        assert "Wheel" in content
+
+    def test_server_storage_valid_xml(self, tmp_path: Path) -> None:
+        templates = [("Box", RbxPartEntry(name="BoxPart"))]
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        root = ET.fromstring(content.replace('<?xml version="1.0" ?>', "").strip())
+        ss_items = root.findall(".//Item[@class='ServerStorage']")
+        assert len(ss_items) == 1
+        model_items = ss_items[0].findall("Item[@class='Model']")
+        assert len(model_items) == 1
+
+    def test_workspace_still_present_with_templates(self, tmp_path: Path) -> None:
+        """ServerStorage should coexist with Workspace and other services."""
+        templates = [("Tree", RbxPartEntry(name="Trunk"))]
+        scene_parts = [RbxPartEntry(name="Ground")]
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl(scene_parts, [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        assert "Workspace" in content
+        assert "ServerStorage" in content
+        assert "Ground" in content
+        assert "Trunk" in content
+
+    def test_template_mesh_part_in_server_storage(self, tmp_path: Path) -> None:
+        templates = [("Weapon", RbxPartEntry(name="Sword", mesh_id="rbxassetid://999"))]
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        content = rbxl.read_text(encoding="utf-8")
+        assert 'class="MeshPart"' in content
+        assert "Sword" in content
+
+
+# ---------------------------------------------------------------------------
+# source_prefab_name tracking tests
+# ---------------------------------------------------------------------------
+
+class TestSourcePrefabName:
+    """Tests for source_prefab_name field on SceneNode."""
+
+    def test_scene_node_has_field(self) -> None:
+        from modules.scene_parser import SceneNode
+        node = SceneNode(
+            name="Test", file_id="1", active=True, layer=0, tag="Untagged",
+        )
+        assert node.source_prefab_name is None
+
+    def test_field_can_be_set(self) -> None:
+        from modules.scene_parser import SceneNode
+        node = SceneNode(
+            name="Test", file_id="1", active=True, layer=0, tag="Untagged",
+            source_prefab_name="MyPrefab",
+        )
+        assert node.source_prefab_name == "MyPrefab"

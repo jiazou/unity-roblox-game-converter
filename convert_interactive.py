@@ -50,6 +50,7 @@ from modules import (
 )
 from modules.conversion_helpers import (
     resolve_prefab_instances as _resolve_prefab_instances,
+    extract_serialized_field_refs as _extract_serialized_field_refs,
     generate_prefab_packages as _generate_prefab_packages,
     scene_nodes_to_parts as _scene_nodes_to_parts,
     transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
@@ -358,6 +359,24 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
     state.setdefault("errors", [])
     errors: list[str] = []
 
+    # Build serialized field refs from scene/prefab YAML for WaitForChild wiring
+    serialized_refs = None
+    try:
+        parsed_scenes_for_refs: list[scene_parser.ParsedScene] = []
+        for sf in unity_path.rglob("*.unity"):
+            try:
+                parsed_scenes_for_refs.append(scene_parser.parse_scene(sf))
+            except Exception:
+                pass
+        prefabs_for_refs = prefab_parser.parse_prefabs(unity_path)
+        gi_for_refs = guid_resolver.build_guid_index(unity_path)
+        if parsed_scenes_for_refs or prefabs_for_refs.prefabs:
+            serialized_refs = _extract_serialized_field_refs(
+                parsed_scenes_for_refs, prefabs_for_refs, gi_for_refs,
+            ) or None
+    except Exception:
+        pass  # Non-critical — transpilation still works without refs
+
     try:
         transpilation = code_transpiler.transpile_scripts(
             unity_path,
@@ -366,6 +385,7 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
             model=config.ANTHROPIC_MODEL,
             max_tokens=config.ANTHROPIC_MAX_TOKENS,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
+            serialized_refs=serialized_refs,
         )
 
         scripts_info: list[dict] = []
@@ -546,11 +566,15 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         mat_result = material_mapper.MaterialMapResult()
 
     # Phase 3b: transpilation (re-run to get TranspilationResult)
+    asm_serialized_refs = _extract_serialized_field_refs(
+        parsed_scenes, prefabs, guid_index,
+    ) or None
     try:
         transpilation = code_transpiler.transpile_scripts(
             unity_path,
             use_ai=False,  # Assembly uses whatever was already generated
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
+            serialized_refs=asm_serialized_refs,
         )
     except FileNotFoundError:
         transpilation = code_transpiler.TranspilationResult()
@@ -674,11 +698,17 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
+    # Collect ServerStorage templates if packages were generated
+    ss_templates = None
+    if emit_packages and package_info:
+        ss_templates = package_result.server_storage_templates or None
+
     write_result = rbxl_writer.write_rbxl(
         parts=parts,
         scripts=rbx_scripts,
         output_path=rbxl_path,
         place_name=unity_path.name,
+        server_storage_templates=ss_templates,
     )
 
     # Store assembly info in state for the report phase
@@ -814,9 +844,17 @@ def report(unity_project_path: str, output_dir: str, verbose: bool) -> None:
 
     # Transpilation
     try:
+        rpt_guid_index = guid_resolver.build_guid_index(unity_path)
+    except FileNotFoundError:
+        rpt_guid_index = guid_resolver.GuidIndex(project_root=unity_path)
+    rpt_serialized_refs = _extract_serialized_field_refs(
+        parsed_scenes, prefabs, rpt_guid_index,
+    ) or None
+    try:
         transpilation = code_transpiler.transpile_scripts(
             unity_path, use_ai=False,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
+            serialized_refs=rpt_serialized_refs,
         )
     except FileNotFoundError:
         transpilation = code_transpiler.TranspilationResult()
