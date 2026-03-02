@@ -110,6 +110,23 @@ class RbxWriteResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class RbxPackageEntry:
+    """Outcome of writing a single .rbxm package file."""
+    prefab_name: str
+    output_path: Path
+    parts_written: int
+    scripts_written: int
+
+
+@dataclass
+class RbxPackageResult:
+    """Outcome of writing all .rbxm package files."""
+    packages: list[RbxPackageEntry] = field(default_factory=list)
+    total_packages: int = 0
+    warnings: list[str] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # XML helpers
 # ---------------------------------------------------------------------------
@@ -568,4 +585,65 @@ def write_rbxl(
         parts_written=parts_written,
         scripts_written=scripts_written,
         warnings=warnings,
+    )
+
+
+def write_rbxm(
+    parts: list[RbxPartEntry],
+    scripts: list[RbxScriptEntry],
+    output_path: str | Path,
+    model_name: str = "Package",
+) -> RbxPackageEntry:
+    """
+    Serialise a prefab into a Roblox model file (.rbxm).
+
+    A .rbxm is structurally identical to .rbxl XML but the root contains a
+    single Model item (instead of Workspace, ServerScriptService, etc.).
+    This allows the model to be inserted into any place via the Toolbox
+    or used as a Roblox Package.
+
+    Args:
+        parts: RbxPartEntry objects forming the model hierarchy.
+        scripts: Scripts to attach inside the model (as children of the Model).
+        output_path: Destination .rbxm file path.
+        model_name: Name of the top-level Model instance.
+
+    Returns:
+        RbxPackageEntry describing what was written.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    root = ET.Element("roblox", **{
+        "xmlns:xmime": "http://www.w3.org/2005/05/xmlmime",
+        "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+        "xsi:noNamespaceSchemaLocation":
+            "https://raw.githubusercontent.com/MaximumADHD/Roblox-File-Format/main/Schema/roblox.xsd",
+        "version": "4",
+    })
+
+    # Top-level Model container
+    model_item = ET.SubElement(root, "Item", **{"class": "Model"})
+    model_props = ET.SubElement(model_item, "Properties")
+    _make_property(model_props, "string", "Name", model_name)
+
+    for part in parts:
+        _make_part(model_item, part)
+
+    scripts_written = 0
+    for script in scripts:
+        si = ET.SubElement(model_item, "Item", **{"class": script.script_type})
+        sp = ET.SubElement(si, "Properties")
+        _make_property(sp, "string", "Name", script.name)
+        _make_property(sp, "ProtectedString", "Source", script.luau_source)
+        scripts_written += 1
+
+    xml_str = _prettify(root)
+    output_path.write_text(xml_str, encoding="utf-8")
+
+    return RbxPackageEntry(
+        prefab_name=model_name,
+        output_path=output_path,
+        parts_written=_count_parts(parts),
+        scripts_written=scripts_written,
     )

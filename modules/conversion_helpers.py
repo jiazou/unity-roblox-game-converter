@@ -448,6 +448,67 @@ def apply_prefab_modifications(
 # Prefab instance resolution
 # ---------------------------------------------------------------------------
 
+def generate_prefab_packages(
+    prefab_lib: prefab_parser.PrefabLibrary,
+    output_dir: Path,
+    guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None,
+    guid_to_companion_scripts: dict[str, list[str]] | None = None,
+    guid_index: guid_resolver.GuidIndex | None = None,
+    mesh_path_remap: dict[str, str] | None = None,
+) -> rbxl_writer.RbxPackageResult:
+    """
+    Convert each PrefabTemplate into a standalone .rbxm (Roblox model) file.
+
+    Each prefab becomes its own package file under *output_dir*/packages/,
+    enabling reuse via the Roblox Toolbox or as linked Packages.
+
+    Args:
+        prefab_lib: Parsed prefab library from prefab_parser.
+        output_dir: Base output directory; packages are written to output_dir/packages/.
+        guid_to_roblox_def: Material GUID → RobloxMaterialDef mapping.
+        guid_to_companion_scripts: Material GUID → companion Luau scripts.
+        guid_index: GUID index for resolving mesh/asset references.
+        mesh_path_remap: Original mesh path → decimated mesh path remap.
+
+    Returns:
+        RbxPackageResult with an entry for each prefab written.
+    """
+    packages_dir = output_dir / "packages"
+    packages_dir.mkdir(parents=True, exist_ok=True)
+    result = rbxl_writer.RbxPackageResult()
+
+    for template in prefab_lib.prefabs:
+        if template.root is None:
+            result.warnings.append(f"Skipped prefab '{template.name}': no root node")
+            continue
+
+        # Convert prefab node tree → scene node tree → RbxPartEntry tree
+        root_scene_node = prefab_node_to_scene_node(template.root)
+        directional_lights: list[dict] = []
+        root_part = node_to_part(
+            root_scene_node,
+            guid_to_roblox_def,
+            guid_to_companion_scripts,
+            guid_index,
+            mesh_path_remap,
+            directional_lights,
+        )
+
+        # Collect scripts attached to parts (they're already inline on the parts)
+        # No top-level scripts for packages — all scripts live on the parts
+        rbxm_path = packages_dir / f"{template.name}.rbxm"
+        entry = rbxl_writer.write_rbxm(
+            parts=[root_part],
+            scripts=[],
+            output_path=rbxm_path,
+            model_name=template.name,
+        )
+        result.packages.append(entry)
+
+    result.total_packages = len(result.packages)
+    return result
+
+
 def resolve_prefab_instances(
     parsed_scenes: list[scene_parser.ParsedScene],
     prefab_lib: prefab_parser.PrefabLibrary,
@@ -723,6 +784,7 @@ def build_report(
     prefab_instances_resolved: int,
     duration: float,
     errors: list[str],
+    package_result: rbxl_writer.RbxPackageResult | None = None,
 ) -> report_generator.ConversionReport:
     """Populate a ConversionReport from pipeline outputs."""
     import config
@@ -774,5 +836,12 @@ def build_report(
     rpt.output.parts_written = write_result.parts_written
     rpt.output.scripts_in_place = write_result.scripts_written
     rpt.output.report_path = str(output_dir / config.REPORT_FILENAME)
+
+    if package_result and package_result.total_packages:
+        rpt.output.packages.total_packages = package_result.total_packages
+        rpt.output.packages.package_names = [
+            p.prefab_name for p in package_result.packages
+        ]
+        rpt.output.packages.packages_dir = str(output_dir / config.PACKAGES_SUBDIR)
 
     return rpt
