@@ -39,6 +39,8 @@ The current tool is designed as an **external, offline pipeline** — it reads U
 
 **Assessment:** The external approach is correct for the POC use case. Unity projects store all scene data as YAML and all assets as files — the external parser captures the same information that a C# plugin would, without requiring Unity to be installed. The only case where a Unity plugin wins is **computed properties** (runtime-evaluated animations, procedural generation) which are rare in static scene conversion.
 
+**Update (2026-03-02):** The pipeline is now also available as an interactive Claude Code skill (`/convert-unity`), which wraps the same external pipeline but adds human-in-the-loop decision points at each phase. The underlying architecture (external, offline, YAML-based parsing) is unchanged — the skill adds an interactive orchestration layer on top via `convert_interactive.py`.
+
 **Proposed change:** None for the core pipeline. However, the UI Parsing gap is real — see Component 4.
 
 ---
