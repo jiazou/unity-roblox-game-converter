@@ -53,6 +53,23 @@ USE_AI_TRANSPILATION: bool = True
 TRANSPILATION_CONFIDENCE_THRESHOLD: float = 0.7
 
 # ---------------------------------------------------------------------------
+# LLM cache options
+# ---------------------------------------------------------------------------
+
+LLM_CACHE_ENABLED: bool = True
+LLM_CACHE_DIR: Path = Path(os.environ.get("LLM_CACHE_DIR", ".cache/llm"))
+LLM_CACHE_TTL_SECONDS: float = 7 * 24 * 3600  # 7 days
+
+# ---------------------------------------------------------------------------
+# Retry options (for LLM and Roblox API calls)
+# ---------------------------------------------------------------------------
+
+RETRY_MAX_ATTEMPTS: int = 4
+RETRY_BASE_DELAY: float = 2.0
+RETRY_MAX_DELAY: float = 60.0
+RETRY_BACKOFF_FACTOR: float = 2.0
+
+# ---------------------------------------------------------------------------
 # Roblox output options
 # ---------------------------------------------------------------------------
 

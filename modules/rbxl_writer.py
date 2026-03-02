@@ -216,18 +216,56 @@ def write_rbxl(
         _make_part(workspace_item, part)
         parts_written += 1
 
-    # ServerScriptService for top-level scripts
+    # Partition scripts by type into appropriate Roblox containers:
+    #   Script       → ServerScriptService
+    #   LocalScript  → StarterPlayer.StarterPlayerScripts
+    #   ModuleScript → ReplicatedStorage
+    server_scripts = [s for s in scripts if s.script_type == "Script"]
+    local_scripts = [s for s in scripts if s.script_type == "LocalScript"]
+    module_scripts = [s for s in scripts if s.script_type == "ModuleScript"]
+
+    # ServerScriptService — server Scripts
     sss_item = ET.SubElement(root, "Item", **{"class": "ServerScriptService"})
     sss_props = ET.SubElement(sss_item, "Properties")
     _make_property(sss_props, "string", "Name", "ServerScriptService")
 
     scripts_written = 0
-    for script in scripts:
-        si = ET.SubElement(sss_item, "Item", **{"class": script.script_type})
+    for script in server_scripts:
+        si = ET.SubElement(sss_item, "Item", **{"class": "Script"})
         sp = ET.SubElement(si, "Properties")
         _make_property(sp, "string", "Name", script.name)
         _make_property(sp, "ProtectedString", "Source", script.luau_source)
         scripts_written += 1
+
+    # StarterPlayer.StarterPlayerScripts — LocalScripts
+    if local_scripts:
+        sp_item = ET.SubElement(root, "Item", **{"class": "StarterPlayer"})
+        sp_props = ET.SubElement(sp_item, "Properties")
+        _make_property(sp_props, "string", "Name", "StarterPlayer")
+
+        sps_item = ET.SubElement(sp_item, "Item", **{"class": "StarterPlayerScripts"})
+        sps_props = ET.SubElement(sps_item, "Properties")
+        _make_property(sps_props, "string", "Name", "StarterPlayerScripts")
+
+        for script in local_scripts:
+            si = ET.SubElement(sps_item, "Item", **{"class": "LocalScript"})
+            sp = ET.SubElement(si, "Properties")
+            _make_property(sp, "string", "Name", script.name)
+            _make_property(sp, "ProtectedString", "Source", script.luau_source)
+            scripts_written += 1
+
+    # ReplicatedStorage — ModuleScripts (accessible to both client and server)
+    if module_scripts:
+        rs_item = ET.SubElement(root, "Item", **{"class": "ReplicatedStorage"})
+        rs_props = ET.SubElement(rs_item, "Properties")
+        _make_property(rs_props, "string", "Name", "ReplicatedStorage")
+
+        for script in module_scripts:
+            si = ET.SubElement(rs_item, "Item", **{"class": "ModuleScript"})
+            sp = ET.SubElement(si, "Properties")
+            _make_property(sp, "string", "Name", script.name)
+            _make_property(sp, "ProtectedString", "Source", script.luau_source)
+            scripts_written += 1
 
     xml_str = _prettify(root)
     output_path.write_text(xml_str, encoding="utf-8")
