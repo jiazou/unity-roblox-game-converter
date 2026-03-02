@@ -283,6 +283,18 @@ def _identify_shader(
         if shader_path.suffix == ".shader" and shader_path.exists():
             return _parse_shader_source(shader_path)
 
+    # HDRP package shader — detect by HDRP-specific property names
+    if "_BaseColorMap" in mat_properties or "_MaskMap" in mat_properties:
+        has_hdrp = bool(
+            mat_properties & {
+                "_BaseColorMap", "_MaskMap", "_NormalMap",
+                "_EmissiveColorMap", "_NormalScale", "_HeightMap",
+            }
+        )
+        if has_hdrp:
+            return ShaderInfo("HDRP/Lit", "hdrp_lit",
+                              False, False, True, True)
+
     # URP package shader (GUID not in Assets/) — detect by property names
     if "_BaseMap" in mat_properties or "_BaseColor" in mat_properties:
         # Distinguish URP/Lit (has PBR properties) from URP/Unlit
@@ -410,6 +422,9 @@ class ParsedMaterial:
     alpha_cutoff: float = 0.5
     tint_color: tuple[float, float, float, float] | None = None
     custom_properties: dict[str, Any] = field(default_factory=dict)
+    specular_color: tuple[float, float, float] | None = None  # for Specular workflow
+    specular_tex_path: Path | None = None  # _SpecGlossMap
+    hdrp_mask_map_path: Path | None = None  # HDRP _MaskMap (MODS packing)
     active_tex_names: set[str] = field(default_factory=set)  # texture props with non-null refs
 
 
@@ -518,8 +533,10 @@ def _parse_material(
                 parsed.albedo_color = _color_to_tuple(colors[color_name])
                 break
 
-    # --- PBR maps (only for standard / URP lit / HDRP lit) ---
-    if shader.category in ("standard", "standard_specular", "urp_lit", "hdrp_lit"):
+    # --- PBR maps (standard / standard_specular / URP lit / HDRP lit / legacy bumped/specular) ---
+    pbr_categories = ("standard", "standard_specular", "urp_lit", "hdrp_lit",
+                      "legacy_bumped", "legacy_specular")
+    if shader.category in pbr_categories:
         # Normal map
         for nm_name in ("_BumpMap", "_NormalMap"):
             if nm_name in tex_envs:
@@ -529,26 +546,61 @@ def _parse_material(
                     break
         parsed.normal_scale = floats.get("_BumpScale", floats.get("_NormalScale", 1.0))
 
-        # Metallic map
-        for met_name in ("_MetallicGlossMap", "_MaskMap"):
-            if met_name in tex_envs:
-                _, path = _resolve_texture(tex_envs[met_name], guid_map)
-                if path:
-                    parsed.metallic_tex_path = path
-                    break
+        # Metallic map (Standard / URP) or MaskMap (HDRP)
+        if shader.category == "hdrp_lit" and "_MaskMap" in tex_envs:
+            # HDRP uses MODS packing: R=Metallic, G=AO, B=Detail, A=Smoothness
+            _, path = _resolve_texture(tex_envs["_MaskMap"], guid_map)
+            if path:
+                parsed.metallic_tex_path = path
+                parsed.hdrp_mask_map_path = path
+                # HDRP AO is in the G channel of MaskMap — no separate _OcclusionMap
+                parsed.ao_tex_path = path  # will be extracted differently in converter
+        else:
+            for met_name in ("_MetallicGlossMap",):
+                if met_name in tex_envs:
+                    _, path = _resolve_texture(tex_envs[met_name], guid_map)
+                    if path:
+                        parsed.metallic_tex_path = path
+                        break
         parsed.metallic_value = floats.get("_Metallic", 0.0)
 
-        # Smoothness
-        parsed.smoothness_value = floats.get("_Glossiness", floats.get("_Smoothness", 0.5))
-        parsed.smoothness_scale = floats.get("_GlossMapScale", 1.0)
-        parsed.smoothness_source = int(floats.get("_SmoothnessTextureChannel", 0))
+        # Specular workflow (Standard Specular)
+        if shader.category == "standard_specular":
+            if "_SpecColor" in colors:
+                sc = colors["_SpecColor"]
+                parsed.specular_color = _color_rgb(sc)
+            if "_SpecGlossMap" in tex_envs:
+                _, path = _resolve_texture(tex_envs["_SpecGlossMap"], guid_map)
+                if path:
+                    parsed.specular_tex_path = path
+        elif shader.category == "legacy_specular":
+            if "_SpecColor" in colors:
+                sc = colors["_SpecColor"]
+                parsed.specular_color = _color_rgb(sc)
 
-        # Occlusion
-        if "_OcclusionMap" in tex_envs:
-            _, path = _resolve_texture(tex_envs["_OcclusionMap"], guid_map)
-            if path:
-                parsed.ao_tex_path = path
-        parsed.ao_strength = floats.get("_OcclusionStrength", 1.0)
+        # Smoothness
+        parsed.smoothness_value = floats.get(
+            "_Glossiness", floats.get("_Smoothness", 0.5))
+        parsed.smoothness_scale = floats.get(
+            "_GlossMapScale", floats.get("_SmoothnessRemapMax", 1.0))
+        parsed.smoothness_source = int(floats.get("_SmoothnessTextureChannel", 0))
+        # HDRP always uses MaskMap A channel for smoothness
+        if shader.category == "hdrp_lit":
+            parsed.smoothness_source = 0  # MaskMap A, treated like metallic alpha
+
+        # Legacy shininess → smoothness approximation
+        if shader.category == "legacy_specular" and "_Shininess" in floats:
+            shininess = floats["_Shininess"]
+            parsed.smoothness_value = math.sqrt(max(0, min(1, shininess)))
+
+        # Occlusion (non-HDRP; HDRP AO was already set above from MaskMap G)
+        if shader.category != "hdrp_lit":
+            if "_OcclusionMap" in tex_envs:
+                _, path = _resolve_texture(tex_envs["_OcclusionMap"], guid_map)
+                if path:
+                    parsed.ao_tex_path = path
+        parsed.ao_strength = floats.get(
+            "_OcclusionStrength", floats.get("_AORemapMax", 1.0))
 
         # Emission
         keywords = mat.get("m_ShaderKeywords", "") or ""
@@ -569,9 +621,22 @@ def _parse_material(
                     parsed.emission_color = _color_rgb(colors[ec_name])
                     break
 
-        # Render mode
-        mode_val = floats.get("_Mode", 0)
-        parsed.render_mode = int(mode_val)
+        # Render mode — handle both Built-in (_Mode) and URP (_Surface + _AlphaClip)
+        if "_Mode" in floats:
+            parsed.render_mode = int(floats["_Mode"])
+        elif "_Surface" in floats:
+            # URP: _Surface=0 → Opaque, _Surface=1 + _AlphaClip=0 → Fade,
+            #       _Surface=1 + _AlphaClip=1 → Cutout
+            surface = int(floats["_Surface"])
+            alpha_clip = int(floats.get("_AlphaClip", 0))
+            if surface == 0:
+                parsed.render_mode = 0  # Opaque
+            elif alpha_clip:
+                parsed.render_mode = 1  # Cutout
+            else:
+                parsed.render_mode = 2  # Fade (transparent)
+        else:
+            parsed.render_mode = 0
         parsed.alpha_cutoff = floats.get("_Cutoff", 0.5)
 
     # --- Particle tint ---
@@ -673,8 +738,9 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
         # No texture, just color → BasePart.Color3
         rdef.base_part_color = parsed.albedo_color[:3]
     elif not parsed.albedo_tex_path and cat in ("standard", "standard_specular",
-                                                 "urp_lit", "urp_unlit",
-                                                 "legacy_diffuse"):
+                                                 "urp_lit", "urp_unlit", "hdrp_lit",
+                                                 "legacy_diffuse", "legacy_bumped",
+                                                 "legacy_specular"):
         # No texture, white color → default gray part
         rdef.base_part_color = (0.639, 0.635, 0.647)  # "Medium stone grey"
 
@@ -686,8 +752,10 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
     if parsed.albedo_color and parsed.albedo_color[3] < 0.99:
         rdef.base_part_transparency = 1.0 - parsed.albedo_color[3]
 
-    # --- PBR maps (Standard / URP Lit / HDRP Lit) ---
-    if cat in ("standard", "standard_specular", "urp_lit", "hdrp_lit"):
+    # --- PBR maps (Standard / Standard Specular / URP Lit / HDRP Lit / Legacy Bumped/Specular) ---
+    pbr_cats = ("standard", "standard_specular", "urp_lit", "hdrp_lit",
+                "legacy_bumped", "legacy_specular")
+    if cat in pbr_cats:
         # Normal map
         if parsed.normal_tex_path and parsed.normal_tex_path.exists():
             nm_out = _safe_filename(mat_name, "_normal.png")
@@ -705,17 +773,73 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
                 ))
             rdef.normal_map = nm_out
 
-        # Metallic + Roughness (from packed texture)
-        if parsed.metallic_tex_path and parsed.metallic_tex_path.exists():
+        # --- Specular → Metallic conversion (Standard Specular / Legacy Specular) ---
+        if cat in ("standard_specular", "legacy_specular") and parsed.specular_color:
+            sc = parsed.specular_color
+            spec_lum = _color_luminance(*sc)
+            if spec_lum > 0.5:
+                # Likely a metal — high specular luminance
+                estimated_metallic = 1.0
+                # For metals, specular color IS the albedo
+                if not rdef.color_map:
+                    rdef.base_part_color = sc
+            else:
+                estimated_metallic = 0.0
+            # Generate uniform metalness from the heuristic
+            met_out = _safe_filename(mat_name, "_metalness.png")
+            result.texture_ops.append(TextureOperation(
+                "copy", Path("__uniform__"), met_out,
+                params={"uniform_value": int(estimated_metallic * 255)},
+            ))
+            rdef.metalness_map = met_out
+            # Roughness from smoothness
+            roughness = 1.0 - parsed.smoothness_value
+            if roughness < 0.99:
+                rough_out = _safe_filename(mat_name, "_roughness.png")
+                result.texture_ops.append(TextureOperation(
+                    "copy", Path("__uniform__"), rough_out,
+                    params={"uniform_value": int(roughness * 255)},
+                ))
+                rdef.roughness_map = rough_out
+            result.warnings.append(
+                f"Specular→Metallic approximation (luminance={spec_lum:.2f}→metallic={estimated_metallic})"
+            )
+
+        # --- HDRP MaskMap MODS packing (R=Metal, G=AO, B=Detail, A=Smooth) ---
+        elif cat == "hdrp_lit" and parsed.hdrp_mask_map_path and parsed.hdrp_mask_map_path.exists():
+            met_out = _safe_filename(mat_name, "_metalness.png")
+            rough_out = _safe_filename(mat_name, "_roughness.png")
+            # R channel → Metalness
+            result.texture_ops.append(TextureOperation(
+                "extract_channel", parsed.hdrp_mask_map_path, met_out, channel="R",
+            ))
+            # A channel → invert → Roughness
+            result.texture_ops.append(TextureOperation(
+                "extract_channel", parsed.hdrp_mask_map_path, rough_out, channel="A",
+                params={"invert": True, "scale": parsed.smoothness_scale},
+            ))
+            rdef.metalness_map = met_out
+            rdef.roughness_map = rough_out
+
+        # --- Standard Metallic + Roughness (from packed texture) ---
+        elif parsed.metallic_tex_path and parsed.metallic_tex_path.exists():
             met_out = _safe_filename(mat_name, "_metalness.png")
             rough_out = _safe_filename(mat_name, "_roughness.png")
             result.texture_ops.append(TextureOperation(
                 "extract_channel", parsed.metallic_tex_path, met_out, channel="R",
             ))
-            result.texture_ops.append(TextureOperation(
-                "extract_channel", parsed.metallic_tex_path, rough_out, channel="A",
-                params={"invert": True, "scale": parsed.smoothness_scale},
-            ))
+            # Smoothness from albedo alpha when _SmoothnessTextureChannel == 1
+            if parsed.smoothness_source == 1 and parsed.albedo_tex_path and parsed.albedo_tex_path.exists():
+                result.texture_ops.append(TextureOperation(
+                    "extract_channel", parsed.albedo_tex_path, rough_out, channel="A",
+                    params={"invert": True, "scale": parsed.smoothness_scale},
+                ))
+                result.warnings.append("Smoothness extracted from albedo alpha channel")
+            else:
+                result.texture_ops.append(TextureOperation(
+                    "extract_channel", parsed.metallic_tex_path, rough_out, channel="A",
+                    params={"invert": True, "scale": parsed.smoothness_scale},
+                ))
             rdef.metalness_map = met_out
             rdef.roughness_map = rough_out
         else:
@@ -738,7 +862,19 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
                 rdef.roughness_map = rough_out
 
         # Occlusion → bake into color map
-        if parsed.ao_tex_path and parsed.ao_tex_path.exists() and rdef.color_map:
+        # For HDRP, extract G channel from MaskMap for AO
+        if cat == "hdrp_lit" and parsed.hdrp_mask_map_path and parsed.hdrp_mask_map_path.exists() and rdef.color_map:
+            ao_out = _safe_filename(mat_name, "_ao_temp.png")
+            result.texture_ops.append(TextureOperation(
+                "extract_channel", parsed.hdrp_mask_map_path, ao_out, channel="G",
+            ))
+            result.texture_ops.append(TextureOperation(
+                "bake_ao", Path(ao_out), rdef.color_map,
+                params={"albedo_path": str(parsed.albedo_tex_path),
+                        "strength": parsed.ao_strength},
+            ))
+            result.warnings.append("HDRP MaskMap G-channel AO baked into ColorMap")
+        elif parsed.ao_tex_path and parsed.ao_tex_path.exists() and rdef.color_map:
             result.texture_ops.append(TextureOperation(
                 "bake_ao", parsed.ao_tex_path, rdef.color_map,
                 params={"albedo_path": str(parsed.albedo_tex_path),
@@ -807,8 +943,7 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
             ))
 
     # --- Transparency from shader (for custom shaders) ---
-    if parsed.shader.is_transparent and cat not in ("standard", "standard_specular",
-                                                     "urp_lit", "hdrp_lit"):
+    if parsed.shader.is_transparent and cat not in pbr_cats:
         rdef.alpha_mode = "Transparency"
 
     # --- Vertex colors → unconverted ---
@@ -952,6 +1087,36 @@ def _process_textures(
 
             if op.operation == "copy":
                 img = Image.open(op.source_path)
+                # Bake normal map scale if requested (scale XY, renormalize)
+                bump_scale = op.params.get("bake_normal_scale")
+                if bump_scale is not None and abs(bump_scale - 1.0) > 0.01:
+                    import numpy as np
+                    img = img.convert("RGB")
+                    arr = np.array(img, dtype=np.float32)
+                    # Decode to [-1, 1]
+                    nx = (arr[..., 0] / 127.5 - 1.0) * bump_scale
+                    ny = (arr[..., 1] / 127.5 - 1.0) * bump_scale
+                    nz = arr[..., 2] / 127.5 - 1.0
+                    # Renormalize
+                    length = np.sqrt(nx*nx + ny*ny + nz*nz)
+                    length = np.maximum(length, 1e-6)
+                    nx /= length
+                    ny /= length
+                    nz /= length
+                    # Encode back to [0, 255]
+                    arr[..., 0] = np.clip((nx + 1.0) * 127.5, 0, 255)
+                    arr[..., 1] = np.clip((ny + 1.0) * 127.5, 0, 255)
+                    arr[..., 2] = np.clip((nz + 1.0) * 127.5, 0, 255)
+                    img = Image.fromarray(arr.astype(np.uint8))
+                # Handle texture offset (pixel shift)
+                offset_x = op.params.get("offset_x", 0.0)
+                offset_y = op.params.get("offset_y", 0.0)
+                if offset_x != 0.0 or offset_y != 0.0:
+                    from PIL import ImageChops
+                    shift_x = int(offset_x * img.width) % img.width
+                    shift_y = int(offset_y * img.height) % img.height
+                    if shift_x or shift_y:
+                        img = ImageChops.offset(img, shift_x, shift_y)
                 # Resize if needed
                 if img.width > max_res or img.height > max_res:
                     ratio = min(max_res / img.width, max_res / img.height)
@@ -999,6 +1164,15 @@ def _process_textures(
                 for tx in range(tile_x):
                     for ty in range(tile_y):
                         tiled.paste(img, (tx * img.width, ty * img.height))
+                # Handle texture offset after tiling
+                offset_x = op.params.get("offset_x", 0.0)
+                offset_y = op.params.get("offset_y", 0.0)
+                if offset_x != 0.0 or offset_y != 0.0:
+                    from PIL import ImageChops
+                    shift_x = int(offset_x * tiled.width) % tiled.width
+                    shift_y = int(offset_y * tiled.height) % tiled.height
+                    if shift_x or shift_y:
+                        tiled = ImageChops.offset(tiled, shift_x, shift_y)
                 if tiled.width > max_res or tiled.height > max_res:
                     ratio = min(max_res / tiled.width, max_res / tiled.height)
                     new_size = (int(tiled.width * ratio), int(tiled.height * ratio))

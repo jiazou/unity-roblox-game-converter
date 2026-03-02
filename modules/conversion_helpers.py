@@ -82,8 +82,13 @@ def apply_collider_properties(
 def convert_light_components(
     part: rbxl_writer.RbxPartEntry,
     components: list[scene_parser.ComponentData],
+    directional_lights: list[dict] | None = None,
 ) -> None:
-    """Convert Unity Light components to Roblox light child tuples."""
+    """Convert Unity Light components to Roblox light child tuples.
+
+    Directional lights (type 1) are collected separately since they map to
+    Roblox's global Lighting service, not a per-part child.
+    """
     for comp in components:
         if comp.component_type != "Light":
             continue
@@ -102,6 +107,13 @@ def convert_light_components(
 
         if light_type == 0:  # Spot
             part.light_children.append(("SpotLight", color, intensity, range_val, bool(shadows), spot_angle))
+        elif light_type == 1:  # Directional → global Lighting
+            if directional_lights is not None:
+                directional_lights.append({
+                    "color": color,
+                    "intensity": intensity,
+                    "shadows": bool(shadows),
+                })
         elif light_type == 2:  # Point
             part.light_children.append(("PointLight", color, intensity, range_val, bool(shadows), 0.0))
 
@@ -226,12 +238,55 @@ def apply_materials(
 # SceneNode → RbxPartEntry conversion
 # ---------------------------------------------------------------------------
 
+# Known Unity built-in primitive mesh GUIDs (from Unity's default resources)
+_UNITY_PRIMITIVE_GUIDS: dict[str, str] = {
+    # fileID values used for Unity built-in meshes in MeshFilter references
+    # Cube → Block, Sphere → Ball, Cylinder → Cylinder
+}
+# Unity built-in mesh names → Roblox Part shapes
+_UNITY_PRIMITIVE_NAMES: dict[str, str] = {
+    "Cube": "Block",
+    "Sphere": "Ball",
+    "Cylinder": "Cylinder",
+    "Capsule": "Cylinder",  # closest approximation
+    "Plane": "Block",       # flat block
+}
+
+
+def _detect_primitive_shape(node: scene_parser.SceneNode) -> str | None:
+    """Detect if a node uses a Unity built-in primitive and return Roblox shape."""
+    for comp in node.components:
+        if comp.component_type == "MeshFilter":
+            mesh_ref = comp.properties.get("m_Mesh", {})
+            if isinstance(mesh_ref, dict):
+                # Built-in meshes have guid 0000000000000000e000000000000000
+                guid = mesh_ref.get("guid", "")
+                if guid == "0000000000000000e000000000000000":
+                    # fileID identifies which built-in primitive
+                    file_id = mesh_ref.get("fileID", 0)
+                    _BUILTIN_MESH_IDS = {
+                        10202: "Block",     # Cube
+                        10207: "Ball",      # Sphere
+                        10206: "Cylinder",  # Cylinder
+                        10208: "Cylinder",  # Capsule → Cylinder
+                        10209: "Block",     # Plane → flat Block
+                        10210: "Block",     # Quad → flat Block
+                    }
+                    shape = _BUILTIN_MESH_IDS.get(file_id)
+                    if shape:
+                        return shape
+    # Fallback: check node name for common primitive names
+    name_lower = node.name.lower().rstrip("0123456789 ()_")
+    return _UNITY_PRIMITIVE_NAMES.get(name_lower.capitalize())
+
+
 def node_to_part(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
     guid_to_companion_scripts: dict[str, list[str]] | None,
     guid_index: guid_resolver.GuidIndex | None,
     mesh_path_remap: dict[str, str] | None = None,
+    directional_lights: list[dict] | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a single SceneNode (and its children recursively) to an RbxPartEntry."""
     base_size = (1.0, 1.0, 1.0)
@@ -248,6 +303,11 @@ def node_to_part(
         anchored=True,
     )
 
+    # Detect Unity built-in primitive → Roblox shape
+    shape = _detect_primitive_shape(node)
+    if shape and not node.mesh_guid:
+        part.shape = shape
+
     # Set mesh_id from the node's mesh GUID via the GUID index.
     if node.mesh_guid and guid_index:
         mesh_path = guid_index.resolve(node.mesh_guid)
@@ -256,10 +316,18 @@ def node_to_part(
             if mesh_path_remap and mesh_str in mesh_path_remap:
                 mesh_str = mesh_path_remap[mesh_str]
             part.mesh_id = mesh_str
+            # Try to derive part size from mesh bounding box
+            mesh_bounds = _get_mesh_bounds(mesh_str)
+            if mesh_bounds:
+                part.size = (
+                    mesh_bounds[0] * abs(node.scale[0]),
+                    mesh_bounds[1] * abs(node.scale[1]),
+                    mesh_bounds[2] * abs(node.scale[2]),
+                )
 
     # Apply component conversions
     apply_collider_properties(part, node.components)
-    convert_light_components(part, node.components)
+    convert_light_components(part, node.components, directional_lights)
     convert_audio_components(part, node.name, node.components, guid_index)
     convert_particle_components(part, node.name, node.components)
     apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
@@ -268,7 +336,7 @@ def node_to_part(
     for child in node.children:
         part.children.append(node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
-            mesh_path_remap,
+            mesh_path_remap, directional_lights,
         ))
 
     return part
@@ -422,8 +490,156 @@ def resolve_prefab_instances(
 
 
 # ---------------------------------------------------------------------------
+# Mesh bounding box extraction
+# ---------------------------------------------------------------------------
+
+def _get_mesh_bounds(mesh_path: str | Path) -> tuple[float, float, float] | None:
+    """Read a mesh file and return its bounding box size (x, y, z).
+
+    Uses trimesh to parse FBX/OBJ/DAE files. Returns None if trimesh is not
+    available or the file can't be parsed.
+    """
+    try:
+        import trimesh
+        mesh = trimesh.load(str(mesh_path), force="mesh")
+        if mesh is None or not hasattr(mesh, "bounds"):
+            return None
+        bounds = mesh.bounds  # [[min_x, min_y, min_z], [max_x, max_y, max_z]]
+        size = bounds[1] - bounds[0]
+        return (float(size[0]), float(size[1]), float(size[2]))
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Scene nodes → parts batch conversion
 # ---------------------------------------------------------------------------
+
+def directional_lights_to_lighting(
+    dir_lights: list[dict],
+) -> rbxl_writer.RbxLightingConfig | None:
+    """Build a RbxLightingConfig from collected directional light data.
+
+    Uses the first (primary) directional light for Brightness and ColorShift_Top.
+    """
+    if not dir_lights:
+        return None
+    primary = dir_lights[0]
+    color = primary["color"]
+    intensity = primary["intensity"]
+    return rbxl_writer.RbxLightingConfig(
+        brightness=min(intensity * 2.0, 10.0),
+        ambient=(0.5, 0.5, 0.5),
+        color_shift_top=color,
+        outdoor_ambient=(
+            min(color[0] * 0.5, 1.0),
+            min(color[1] * 0.5, 1.0),
+            min(color[2] * 0.5, 1.0),
+        ),
+    )
+
+
+def _extract_camera_from_scenes(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    all_nodes: dict[str, scene_parser.SceneNode],
+) -> rbxl_writer.RbxCameraConfig | None:
+    """Find the first Camera component tagged 'MainCamera' and extract its config."""
+    for parsed in parsed_scenes:
+        for node in parsed.all_nodes.values():
+            for comp in node.components:
+                if comp.component_type != "Camera":
+                    continue
+                # Prefer MainCamera, but accept any camera
+                if node.tag == "MainCamera" or not any(
+                    n.tag == "MainCamera" for n in parsed.all_nodes.values()
+                    if any(c.component_type == "Camera" for c in n.components)
+                ):
+                    props = comp.properties
+                    fov = float(props.get("field of view", props.get("m_FieldOfView",
+                                props.get("fieldOfView", 60.0))))
+                    near = float(props.get("near clip plane", props.get("m_NearClipPlane", 0.3)))
+                    far = float(props.get("far clip plane", props.get("m_FarClipPlane", 1000.0)))
+                    return rbxl_writer.RbxCameraConfig(
+                        position=node.position,
+                        rotation=node.rotation,
+                        field_of_view=fov,
+                        near_clip=near,
+                        far_clip=far,
+                    )
+    return None
+
+
+def _extract_skybox_from_scenes(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    guid_index: guid_resolver.GuidIndex | None,
+) -> rbxl_writer.RbxSkyboxConfig | None:
+    """Extract 6-sided skybox textures from RenderSettings → skybox material."""
+    for parsed in parsed_scenes:
+        if not parsed.skybox_material_guid or not guid_index:
+            continue
+        mat_path = guid_index.resolve(parsed.skybox_material_guid)
+        if not mat_path or not mat_path.exists():
+            continue
+        # Parse the skybox .mat for _FrontTex, _BackTex, etc.
+        try:
+            from modules.material_mapper import _clean_unity_yaml
+            import yaml
+            raw = mat_path.read_text(encoding="utf-8", errors="replace")
+            cleaned = _clean_unity_yaml(raw)
+            data = yaml.safe_load(cleaned)
+            if not data or "Material" not in data:
+                continue
+            mat = data["Material"]
+            saved = mat.get("m_SavedProperties", {})
+            tex_envs_raw = saved.get("m_TexEnvs", []) or []
+            # Build tex name → texture ref lookup
+            tex_map: dict[str, dict] = {}
+            for entry in tex_envs_raw:
+                if isinstance(entry, dict):
+                    for k, v in entry.items():
+                        tex_map[k] = v
+            # Skybox face names used by Unity
+            _FACE_MAP = {
+                "_FrontTex": "front", "_BackTex": "back",
+                "_LeftTex": "left", "_RightTex": "right",
+                "_UpTex": "up", "_DownTex": "down",
+            }
+            config = rbxl_writer.RbxSkyboxConfig()
+            found_any = False
+            for unity_name, rbx_attr in _FACE_MAP.items():
+                if unity_name in tex_map:
+                    tex_ref = tex_map[unity_name].get("m_Texture", {})
+                    if isinstance(tex_ref, dict):
+                        tex_guid = tex_ref.get("guid", "")
+                        if tex_guid and tex_guid != "0000000000000000f000000000000000":
+                            tex_path = guid_index.resolve(tex_guid)
+                            if tex_path:
+                                setattr(config, rbx_attr, str(tex_path))
+                                found_any = True
+            if found_any:
+                return config
+        except Exception:
+            continue
+    return None
+
+
+def _detect_unlit_game(
+    mat_results: list | None,
+) -> bool:
+    """Detect if the game is predominantly unlit (all/most materials use unlit shaders)."""
+    if not mat_results:
+        return False
+    unlit_categories = {"urp_unlit", "custom_unlit", "custom_unlit_alpha"}
+    total = len(mat_results)
+    if total == 0:
+        return False
+    unlit_count = sum(
+        1 for r in mat_results
+        if hasattr(r, "pipeline") and r.pipeline == "CUSTOM"
+        or (hasattr(r, "shader_name") and "unlit" in r.shader_name.lower())
+    )
+    return unlit_count / total > 0.7
+
 
 def scene_nodes_to_parts(
     parsed_scenes: list[scene_parser.ParsedScene],
@@ -431,16 +647,45 @@ def scene_nodes_to_parts(
     guid_to_companion_scripts: dict[str, list[str]] | None = None,
     guid_index: guid_resolver.GuidIndex | None = None,
     mesh_path_remap: dict[str, str] | None = None,
-) -> list[rbxl_writer.RbxPartEntry]:
-    """Convert parsed Unity scene nodes into RbxPartEntry objects."""
+    mat_results: list | None = None,
+) -> tuple[
+    list[rbxl_writer.RbxPartEntry],
+    rbxl_writer.RbxLightingConfig | None,
+    rbxl_writer.RbxCameraConfig | None,
+    rbxl_writer.RbxSkyboxConfig | None,
+]:
+    """Convert parsed Unity scene nodes into RbxPartEntry objects.
+
+    Returns:
+        Tuple of (parts, lighting_config, camera_config, skybox_config).
+    """
     parts: list[rbxl_writer.RbxPartEntry] = []
+    directional_lights: list[dict] = []
     for parsed in parsed_scenes:
         for node in parsed.roots:
             parts.append(node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
-                mesh_path_remap,
+                mesh_path_remap, directional_lights,
             ))
-    return parts
+
+    lighting = directional_lights_to_lighting(directional_lights)
+
+    # Unlit game detection: boost ambient, reduce brightness
+    if _detect_unlit_game(mat_results):
+        if lighting is None:
+            lighting = rbxl_writer.RbxLightingConfig()
+        lighting.brightness = 0.5
+        lighting.ambient = (0.85, 0.85, 0.85)
+        lighting.outdoor_ambient = (0.85, 0.85, 0.85)
+
+    # Extract camera and skybox
+    all_nodes: dict[str, scene_parser.SceneNode] = {}
+    for parsed in parsed_scenes:
+        all_nodes.update(parsed.all_nodes)
+    camera = _extract_camera_from_scenes(parsed_scenes, all_nodes)
+    skybox = _extract_skybox_from_scenes(parsed_scenes, guid_index)
+
+    return parts, lighting, camera, skybox
 
 
 # ---------------------------------------------------------------------------

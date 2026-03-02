@@ -742,3 +742,452 @@ class TestParseMaterial:
 
     def test_missing_file_returns_none(self, tmp_path: Path) -> None:
         assert _parse_material(tmp_path / "ghost.mat", {}) is None
+
+
+# ── HDRP shader detection ────────────────────────────────────────────
+
+
+class TestHDRPDetection:
+    def test_hdrp_detected_by_mask_map(self) -> None:
+        props = {"_BaseColorMap", "_MaskMap", "_NormalMap", "_NormalScale"}
+        info = _identify_shader({"fileID": 0, "guid": "unknown"}, {}, props)
+        assert info.category == "hdrp_lit"
+
+    def test_hdrp_not_confused_with_urp(self) -> None:
+        # URP uses _BaseMap, not _BaseColorMap
+        props = {"_BaseMap", "_Smoothness"}
+        info = _identify_shader({"fileID": 0, "guid": "unknown"}, {}, props)
+        assert info.category != "hdrp_lit"
+
+
+# ── Standard Specular → Metallic conversion ──────────────────────────
+
+
+class TestSpecularToMetallic:
+    def test_high_spec_luminance_gives_metallic_one(self) -> None:
+        parsed = ParsedMaterial(
+            name="HighSpec",
+            path=Path("/fake/HighSpec.mat"),
+            shader=ShaderInfo("Standard (Specular setup)", "standard_specular",
+                              False, False, True, True),
+            specular_color=(0.9, 0.9, 0.9),
+        )
+        result = _convert_material(parsed)
+        assert result.roblox_def is not None
+        # Should generate a uniform metalness texture at 255
+        met_ops = [op for op in result.texture_ops if "metalness" in op.output_filename]
+        assert len(met_ops) == 1
+        assert met_ops[0].params.get("uniform_value") == 255
+
+    def test_low_spec_luminance_gives_metallic_zero(self) -> None:
+        parsed = ParsedMaterial(
+            name="LowSpec",
+            path=Path("/fake/LowSpec.mat"),
+            shader=ShaderInfo("Standard (Specular setup)", "standard_specular",
+                              False, False, True, True),
+            specular_color=(0.1, 0.1, 0.1),
+        )
+        result = _convert_material(parsed)
+        assert result.roblox_def is not None
+        met_ops = [op for op in result.texture_ops if "metalness" in op.output_filename]
+        assert len(met_ops) == 1
+        assert met_ops[0].params.get("uniform_value") == 0
+
+
+# ── URP alpha handling ───────────────────────────────────────────────
+
+
+class TestURPAlpha:
+    def test_urp_surface_opaque(self, tmp_path: Path) -> None:
+        mat = tmp_path / "URP.mat"
+        mat.write_text(textwrap.dedent("""\
+            Material:
+              m_Name: URPOpaque
+              m_Shader: {fileID: 0, guid: urp_lit_guid, type: 0}
+              m_SavedProperties:
+                serializedVersion: 3
+                m_TexEnvs:
+                - _BaseMap:
+                    m_Texture: {fileID: 0}
+                    m_Scale: {x: 1, y: 1}
+                    m_Offset: {x: 0, y: 0}
+                m_Floats:
+                - _Surface: 0
+                - _Metallic: 0
+                - _Smoothness: 0.5
+                m_Colors:
+                - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+        """), encoding="utf-8")
+        parsed = _parse_material(mat, {})
+        assert parsed is not None
+        assert parsed.render_mode == 0  # Opaque
+
+    def test_urp_surface_cutout(self, tmp_path: Path) -> None:
+        mat = tmp_path / "URPCut.mat"
+        mat.write_text(textwrap.dedent("""\
+            Material:
+              m_Name: URPCutout
+              m_Shader: {fileID: 0, guid: urp_lit_guid, type: 0}
+              m_SavedProperties:
+                serializedVersion: 3
+                m_TexEnvs:
+                - _BaseMap:
+                    m_Texture: {fileID: 0}
+                    m_Scale: {x: 1, y: 1}
+                    m_Offset: {x: 0, y: 0}
+                m_Floats:
+                - _Surface: 1
+                - _AlphaClip: 1
+                - _Metallic: 0
+                - _Smoothness: 0.5
+                m_Colors:
+                - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+        """), encoding="utf-8")
+        parsed = _parse_material(mat, {})
+        assert parsed is not None
+        assert parsed.render_mode == 1  # Cutout
+
+    def test_urp_surface_transparent(self, tmp_path: Path) -> None:
+        mat = tmp_path / "URPTrans.mat"
+        mat.write_text(textwrap.dedent("""\
+            Material:
+              m_Name: URPTransparent
+              m_Shader: {fileID: 0, guid: urp_lit_guid, type: 0}
+              m_SavedProperties:
+                serializedVersion: 3
+                m_TexEnvs:
+                - _BaseMap:
+                    m_Texture: {fileID: 0}
+                    m_Scale: {x: 1, y: 1}
+                    m_Offset: {x: 0, y: 0}
+                m_Floats:
+                - _Surface: 1
+                - _AlphaClip: 0
+                - _Metallic: 0
+                - _Smoothness: 0.5
+                m_Colors:
+                - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+        """), encoding="utf-8")
+        parsed = _parse_material(mat, {})
+        assert parsed is not None
+        assert parsed.render_mode == 2  # Fade/Transparent
+
+
+# ── Smoothness from albedo alpha ─────────────────────────────────────
+
+
+class TestSmoothnessSource:
+    def test_smoothness_from_metallic_alpha_default(self, tmp_path: Path) -> None:
+        met_tex = tmp_path / "met.png"
+        met_tex.write_bytes(b"\x89PNG")  # minimal file to pass exists()
+        parsed = ParsedMaterial(
+            name="DefaultSmooth",
+            path=Path("/fake/DefaultSmooth.mat"),
+            shader=ShaderInfo("Standard", "standard", False, False, True, True),
+            metallic_tex_path=met_tex,
+            smoothness_source=0,
+            smoothness_scale=1.0,
+        )
+        result = _convert_material(parsed)
+        # Roughness extracted from metallic texture A channel (default)
+        rough_ops = [op for op in result.texture_ops
+                     if "roughness" in op.output_filename and op.operation == "extract_channel"]
+        assert len(rough_ops) == 1
+        assert rough_ops[0].source_path == met_tex
+        assert rough_ops[0].channel == "A"
+
+    def test_smoothness_from_albedo_alpha(self, tmp_path: Path) -> None:
+        met_tex = tmp_path / "met.png"
+        met_tex.write_bytes(b"\x89PNG")
+        albedo_tex = tmp_path / "albedo.png"
+        albedo_tex.write_bytes(b"\x89PNG")
+        parsed = ParsedMaterial(
+            name="AlbedoSmooth",
+            path=Path("/fake/AlbedoSmooth.mat"),
+            shader=ShaderInfo("Standard", "standard", False, False, True, True),
+            metallic_tex_path=met_tex,
+            albedo_tex_path=albedo_tex,
+            smoothness_source=1,
+            smoothness_scale=1.0,
+        )
+        result = _convert_material(parsed)
+        rough_ops = [op for op in result.texture_ops
+                     if "roughness" in op.output_filename and op.operation == "extract_channel"]
+        assert len(rough_ops) == 1
+        assert rough_ops[0].source_path == albedo_tex
+        assert rough_ops[0].channel == "A"
+
+
+# ── Legacy shader PBR handling ───────────────────────────────────────
+
+
+class TestLegacyShaderPBR:
+    def test_legacy_bumped_has_normal_map(self, tmp_path: Path) -> None:
+        bump_tex = tmp_path / "bump.png"
+        bump_tex.write_bytes(b"\x89PNG")
+        parsed = ParsedMaterial(
+            name="LegacyBumped",
+            path=Path("/fake/LegacyBumped.mat"),
+            shader=ShaderInfo("Legacy Shaders/Bumped Diffuse", "legacy_bumped",
+                              False, False, True, True),
+            normal_tex_path=bump_tex,
+        )
+        result = _convert_material(parsed)
+        assert result.roblox_def is not None
+        assert result.roblox_def.normal_map is not None
+        assert "normal" in result.roblox_def.normal_map
+
+    def test_legacy_specular_converts_to_metallic(self) -> None:
+        parsed = ParsedMaterial(
+            name="LegacySpec",
+            path=Path("/fake/LegacySpec.mat"),
+            shader=ShaderInfo("Legacy Shaders/Specular", "legacy_specular",
+                              False, False, True, True),
+            specular_color=(0.8, 0.8, 0.8),
+            smoothness_value=0.5,
+        )
+        result = _convert_material(parsed)
+        assert result.roblox_def is not None
+        # High specular → metallic=1
+        met_ops = [op for op in result.texture_ops if "metalness" in op.output_filename]
+        assert len(met_ops) == 1
+        assert met_ops[0].params.get("uniform_value") == 255
+
+
+# ── Directional Light → Lighting ─────────────────────────────────────
+
+
+class TestDirectionalLight:
+    def test_directional_light_collected(self) -> None:
+        from modules.conversion_helpers import (
+            convert_light_components,
+            directional_lights_to_lighting,
+        )
+        from modules.scene_parser import ComponentData
+
+        part = __import__("modules.rbxl_writer", fromlist=["RbxPartEntry"]).RbxPartEntry(name="DirLight")
+        comp = ComponentData(
+            component_type="Light",
+            file_id="10",
+            properties={
+                "m_Type": 1,
+                "m_Color": {"r": 1.0, "g": 0.9, "b": 0.8},
+                "m_Intensity": 1.5,
+                "m_Shadows": 0,
+            },
+        )
+        dir_lights: list[dict] = []
+        convert_light_components(part, [comp], dir_lights)
+        assert len(dir_lights) == 1
+        assert dir_lights[0]["intensity"] == 1.5
+
+        lighting = directional_lights_to_lighting(dir_lights)
+        assert lighting is not None
+        assert lighting.brightness == 3.0
+        assert lighting.color_shift_top == (1.0, 0.9, 0.8)
+
+
+# ── Primitive shape detection ────────────────────────────────────────
+
+
+class TestPrimitiveShapeDetection:
+    def test_cube_detected_as_block(self) -> None:
+        from modules.conversion_helpers import _detect_primitive_shape
+        from modules.scene_parser import SceneNode, ComponentData
+
+        node = SceneNode(name="Cube", file_id="1", active=True, layer=0, tag="Untagged")
+        node.components.append(ComponentData(
+            component_type="MeshFilter",
+            file_id="2",
+            properties={
+                "m_Mesh": {
+                    "fileID": 10202,
+                    "guid": "0000000000000000e000000000000000",
+                    "type": 0,
+                }
+            },
+        ))
+        assert _detect_primitive_shape(node) == "Block"
+
+    def test_sphere_detected_as_ball(self) -> None:
+        from modules.conversion_helpers import _detect_primitive_shape
+        from modules.scene_parser import SceneNode, ComponentData
+
+        node = SceneNode(name="Sphere", file_id="1", active=True, layer=0, tag="Untagged")
+        node.components.append(ComponentData(
+            component_type="MeshFilter",
+            file_id="2",
+            properties={
+                "m_Mesh": {
+                    "fileID": 10207,
+                    "guid": "0000000000000000e000000000000000",
+                    "type": 0,
+                }
+            },
+        ))
+        assert _detect_primitive_shape(node) == "Ball"
+
+    def test_no_mesh_filter_returns_none(self) -> None:
+        from modules.conversion_helpers import _detect_primitive_shape
+        from modules.scene_parser import SceneNode
+
+        node = SceneNode(name="Empty", file_id="1", active=True, layer=0, tag="Untagged")
+        result = _detect_primitive_shape(node)
+        # Falls back to name-based detection, "Empty" doesn't match
+        assert result is None
+
+
+# ── parts_written counting ───────────────────────────────────────────
+
+
+class TestPartsWrittenCounting:
+    def test_count_includes_children(self, tmp_path: Path) -> None:
+        from modules.rbxl_writer import RbxPartEntry, write_rbxl
+
+        child1 = RbxPartEntry(name="C1")
+        child2 = RbxPartEntry(name="C2")
+        parent = RbxPartEntry(name="P", children=[child1, child2])
+        rbxl = tmp_path / "test.rbxl"
+        result = write_rbxl([parent], [], rbxl)
+        assert result.parts_written == 3  # 1 parent + 2 children
+
+    def test_deeply_nested_counting(self, tmp_path: Path) -> None:
+        from modules.rbxl_writer import RbxPartEntry, write_rbxl
+
+        leaf = RbxPartEntry(name="Leaf")
+        mid = RbxPartEntry(name="Mid", children=[leaf])
+        root = RbxPartEntry(name="Root", children=[mid])
+        rbxl = tmp_path / "test.rbxl"
+        result = write_rbxl([root], [], rbxl)
+        assert result.parts_written == 3  # root + mid + leaf
+
+
+# ── Camera extraction ────────────────────────────────────────────────
+
+
+class TestCameraExtraction:
+    def test_camera_from_main_camera_node(self) -> None:
+        from modules.conversion_helpers import _extract_camera_from_scenes
+        from modules.scene_parser import ParsedScene, SceneNode, ComponentData
+
+        cam_node = SceneNode(
+            name="Main Camera", file_id="1",
+            active=True, layer=0, tag="MainCamera",
+            position=(0.0, 10.0, -20.0),
+            rotation=(0.0, 0.0, 0.0, 1.0),
+        )
+        cam_node.components.append(ComponentData(
+            component_type="Camera",
+            file_id="2",
+            properties={"field of view": 75.0, "near clip plane": 0.5, "far clip plane": 500.0},
+        ))
+        scene = ParsedScene(
+            scene_path=Path("/s.unity"),
+            roots=[cam_node],
+            all_nodes={"1": cam_node},
+        )
+        config = _extract_camera_from_scenes([scene], {"1": cam_node})
+        assert config is not None
+        assert config.field_of_view == 75.0
+        assert config.near_clip == 0.5
+        assert config.far_clip == 500.0
+
+    def test_no_camera_returns_none(self) -> None:
+        from modules.conversion_helpers import _extract_camera_from_scenes
+        from modules.scene_parser import ParsedScene, SceneNode
+
+        node = SceneNode(name="Empty", file_id="1", active=True, layer=0, tag="Untagged")
+        scene = ParsedScene(
+            scene_path=Path("/s.unity"),
+            roots=[node],
+            all_nodes={"1": node},
+        )
+        assert _extract_camera_from_scenes([scene], {"1": node}) is None
+
+
+# ── Unlit game detection ─────────────────────────────────────────────
+
+
+class TestUnlitDetection:
+    def test_mostly_unlit_detected(self) -> None:
+        from modules.conversion_helpers import _detect_unlit_game
+        from types import SimpleNamespace
+
+        results = [
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/Texture"),
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/Color"),
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/CurvedUnlit"),
+            SimpleNamespace(pipeline="BUILTIN", shader_name="Standard"),
+        ]
+        assert _detect_unlit_game(results) is True  # 3/4 = 75% > 70%
+
+    def test_mostly_lit_not_detected(self) -> None:
+        from modules.conversion_helpers import _detect_unlit_game
+        from types import SimpleNamespace
+
+        results = [
+            SimpleNamespace(pipeline="BUILTIN", shader_name="Standard"),
+            SimpleNamespace(pipeline="BUILTIN", shader_name="Standard"),
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/Texture"),
+        ]
+        assert _detect_unlit_game(results) is False  # 1/3 = 33% < 70%
+
+    def test_empty_not_detected(self) -> None:
+        from modules.conversion_helpers import _detect_unlit_game
+        assert _detect_unlit_game([]) is False
+        assert _detect_unlit_game(None) is False
+
+
+# ── Camera and Skybox in rbxl output ─────────────────────────────────
+
+
+class TestCameraInRbxl:
+    def test_camera_written_to_workspace(self, tmp_path: Path) -> None:
+        from modules.rbxl_writer import RbxPartEntry, RbxCameraConfig, write_rbxl
+
+        cam = RbxCameraConfig(
+            position=(5.0, 10.0, -15.0),
+            field_of_view=80.0,
+        )
+        rbxl = tmp_path / "cam.rbxl"
+        result = write_rbxl([], [], rbxl, camera=cam)
+        content = rbxl.read_text()
+        assert "Camera" in content
+        assert "FieldOfView" in content
+
+    def test_skybox_written_to_lighting(self, tmp_path: Path) -> None:
+        from modules.rbxl_writer import RbxPartEntry, RbxSkyboxConfig, write_rbxl
+
+        sky = RbxSkyboxConfig(front="/tex/front.png", back="/tex/back.png")
+        rbxl = tmp_path / "sky.rbxl"
+        result = write_rbxl([], [], rbxl, skybox=sky)
+        content = rbxl.read_text()
+        assert "Sky" in content
+        assert "SkyboxFt" in content
+
+
+# ── Scene parser Camera CID ──────────────────────────────────────────
+
+
+class TestSceneParserCamera:
+    def test_camera_component_parsed(self, tmp_path: Path) -> None:
+        from modules.scene_parser import parse_scene
+
+        scene_file = tmp_path / "test.unity"
+        scene_file.write_text(
+            "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n"
+            "--- !u!1 &100\nGameObject:\n  m_Name: MainCam\n  m_IsActive: 1\n"
+            "  m_Layer: 0\n  m_TagString: MainCamera\n"
+            "--- !u!4 &200\nTransform:\n  m_GameObject: {fileID: 100}\n"
+            "  m_LocalPosition: {x: 0, y: 5, z: -10}\n"
+            "  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}\n"
+            "  m_LocalScale: {x: 1, y: 1, z: 1}\n"
+            "  m_Father: {fileID: 0}\n  m_Children: []\n"
+            "--- !u!20 &300\nCamera:\n  m_GameObject: {fileID: 100}\n"
+            "  field of view: 60\n  near clip plane: 0.3\n  far clip plane: 1000\n",
+            encoding="utf-8",
+        )
+        result = parse_scene(scene_file)
+        assert len(result.roots) == 1
+        cam_comps = [c for c in result.roots[0].components if c.component_type == "Camera"]
+        assert len(cam_comps) == 1

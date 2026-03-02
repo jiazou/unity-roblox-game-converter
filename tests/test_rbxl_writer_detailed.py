@@ -150,8 +150,8 @@ class TestHierarchy:
         assert "Root" in content
         assert "Mid" in content
         assert "Leaf" in content
-        # parts_written counts top-level parts only
-        assert result.parts_written == 1
+        # parts_written counts all parts including children
+        assert result.parts_written == 3
 
     def test_multiple_children(self, tmp_path: Path) -> None:
         c1 = RbxPartEntry(name="Child1")
@@ -160,8 +160,8 @@ class TestHierarchy:
         parent = RbxPartEntry(name="Parent", children=[c1, c2, c3])
         rbxl = tmp_path / "test.rbxl"
         result = write_rbxl([parent], [], rbxl)
-        # parts_written counts top-level parts only
-        assert result.parts_written == 1
+        # parts_written counts all parts including children
+        assert result.parts_written == 4
         content = rbxl.read_text()
         for name in ("Parent", "Child1", "Child2", "Child3"):
             assert name in content

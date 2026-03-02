@@ -113,11 +113,12 @@ class TestRuleBasedConfidence:
 class TestRuleBasedWarnings:
     """Test warning generation."""
 
-    def test_residual_class_keyword_warning(self) -> None:
+    def test_simple_class_stripped_no_warning(self) -> None:
+        """A standard class declaration should now be stripped without warning."""
         code = "class InnerClass {\n    int x = 0;\n}"
-        _, _, warnings = _rule_based_transpile(code)
+        luau, _, warnings = _rule_based_transpile(code)
         class_warnings = [w for w in warnings if "class" in w.lower()]
-        assert len(class_warnings) > 0
+        assert len(class_warnings) == 0
 
     def test_residual_braces_warning(self) -> None:
         code = "void Foo() {\n    int x = 0;\n}"
@@ -233,3 +234,71 @@ class TestTranspileScriptsIntegration:
         result = transpile_scripts(project)
         filenames = [ts.output_filename for ts in result.scripts]
         assert len(filenames) == len(set(filenames))
+
+
+# ── New transpiler improvements ──────────────────────────────────────
+
+
+class TestImprovedTranspilerRules:
+    """Test the improved rule-based transpiler features."""
+
+    def test_if_else_converted(self) -> None:
+        code = "if (x > 5) {\n    print(x);\n} else {\n    print(0);\n}"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "if x > 5 then" in luau
+        assert "else" in luau
+        assert "end" in luau
+        assert "{" not in luau
+
+    def test_while_loop_converted(self) -> None:
+        code = "while (running) {\n    DoWork();\n}"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "while running do" in luau
+        assert "end" in luau
+
+    def test_elseif_converted(self) -> None:
+        code = "if (a) {\n    f();\n} else if (b) {\n    g();\n}"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "if a then" in luau
+        assert "elseif b then" in luau
+
+    def test_semicolons_stripped(self) -> None:
+        code = "int x = 5;\nint y = 10;"
+        luau, _, _ = _rule_based_transpile(code)
+        assert ";" not in luau
+
+    def test_mathf_calls_converted(self) -> None:
+        code = "float a = Mathf.Abs(-5);\nfloat b = Mathf.PI;"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "math.abs" in luau
+        assert "math.pi" in luau
+
+    def test_length_to_hash(self) -> None:
+        code = "int n = items.Length;"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "#items" in luau
+
+    def test_list_add_to_table_insert(self) -> None:
+        code = "myList.Add(item);"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "table.insert(myList, item)" in luau
+
+    def test_new_vector3_converted(self) -> None:
+        code = "var pos = new Vector3(1, 2, 3);"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "Vector3.new(1, 2, 3)" in luau
+
+    def test_tostring_converted(self) -> None:
+        code = "string s = x.ToString();"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "tostring(x)" in luau
+
+    def test_for_loop_less_equal(self) -> None:
+        code = "for(int i = 0; i <= count; i++)"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "for i = 0, count do" in luau
+
+    def test_new_list_to_table(self) -> None:
+        code = "var items = new List<int>();"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "{}" in luau
