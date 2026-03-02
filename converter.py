@@ -1,30 +1,17 @@
 """
-converter.py — Orchestrator for the Unity → Roblox conversion pipeline.
+converter.py — Batch (non-interactive) orchestrator for the Unity → Roblox pipeline.
 
-This is the single entry point that wires all pipeline modules together:
+This runs ALL phases end-to-end without stopping.  For the interactive,
+human-in-the-loop version that pauses at decision points, use the
+/convert-unity Claude Code skill (backed by convert_interactive.py).
 
-  Phase 1 — Discovery (lightweight YAML reads):
-    1. scene_parser     → parses .unity scene files, extracts material GUIDs
-    2. prefab_parser    → parses .prefab files, extracts material GUIDs
+Phases:
 
-  Phase 2 — Asset inventory + GUID resolution:
-    3. asset_extractor  → discovers and catalogues Unity assets
-    4. guid_resolver    → builds full bidirectional GUID ↔ asset-path index
-
-  Phase 3 — Heavy processing (informed by Phases 1 & 2):
-    5. material_mapper  → parses .mat files, converts to Roblox materials
-    6. code_transpiler  → converts C# MonoBehaviours to Luau scripts
-    7. mesh_decimator   → conservative decimation for Roblox polygon limits
-
-  Phase 4 — Assembly:
-    8. rbxl_writer      → writes the final .rbxl Roblox place file
-
-  Phase 5 — Portal upload (optional, requires Roblox API key):
-    9. roblox_uploader  → uploads .rbxl + textures to Roblox Open Cloud
-   10. report_generator → produces a JSON + stdout conversion report
-
-Scenes and prefabs are parsed first so material mapping can be filtered to
-only the materials actually referenced by MeshRenderer components.
+  1. Discovery    — scene_parser + prefab_parser
+  2. Inventory    — asset_extractor + guid_resolver
+  3. Processing   — material_mapper + code_transpiler + mesh_decimator
+  4. Assembly     — rbxl_writer
+  5. Upload       — roblox_uploader + report_generator
 
 Data flows linearly: each step's output is passed explicitly to the next.
 No module imports another module — all wiring happens here.

@@ -1,10 +1,41 @@
 # unity-roblox-game-converter
 
-A Python tool that converts Unity game projects into Roblox place files (`.rbxl`).
+A Unity-to-Roblox game converter available as an **interactive Claude Code skill**
+(`/convert-unity`) or as a standalone batch CLI. It walks a Unity project
+directory, extracts assets, parses scenes and prefabs, transpiles C#
+MonoBehaviour scripts to Luau (optionally using Claude AI), and writes a
+ready-to-open `.rbxl` file for Roblox Studio.
 
-It walks a Unity project directory, extracts assets, parses scenes and prefabs,
-transpiles C# MonoBehaviour scripts to Luau (optionally using Claude AI), and
-writes a ready-to-open `.rbxl` file for Roblox Studio.
+---
+
+## Quick Start
+
+### Interactive skill (recommended)
+
+In Claude Code, run:
+
+```
+/convert-unity
+```
+
+The skill walks you through each conversion phase, pausing at decision points:
+- **Scene selection** — pick which scenes to include
+- **Material review** — decide how to handle unconvertible materials
+- **Script triage** — review flagged C# → Luau transpilations (accept, retry with AI, edit, skip)
+- **Mesh quality** — confirm decimation results
+- **Upload** — optionally push to Roblox Cloud
+
+Conversion state is persisted to `<output_dir>/.convert_state.json`, so you can
+resume a partially completed conversion or re-run individual phases.
+
+### Batch CLI (no interaction)
+
+```bash
+python converter.py ./MyUnityProject ./roblox_output
+```
+
+Runs the full pipeline end-to-end without pausing. Best for CI/CD or when you
+don't need to review intermediate results.
 
 ---
 
@@ -23,8 +54,13 @@ writes a ready-to-open `.rbxl` file for Roblox Studio.
 | `rbxl_writer` | `write_rbxl(parts, scripts, output_path)` | Serialises geometry and scripts into a valid `.rbxl` XML place file. |
 | `report_generator` | `generate_report(report, output_path)` | Writes a JSON conversion report and prints a human-readable summary. |
 
-`converter.py` is the orchestrator — it imports all modules, calls them in order,
-and passes data between them. `config.py` holds all paths, keys, and options.
+### Entry points
+
+| File | Purpose |
+|---|---|
+| `converter.py` | Batch CLI — runs all phases end-to-end, no interaction |
+| `convert_interactive.py` | Phase-based CLI — called by the `/convert-unity` skill, one phase at a time with JSON output |
+| `config.py` | All paths, keys, and tunable options |
 
 ---
 
@@ -41,9 +77,32 @@ pip install -r requirements.txt
 
 ## How to Run
 
+### Option A: Interactive skill (`/convert-unity`)
+
+The recommended way to run a conversion. The skill asks you for the Unity
+project path and output directory, then guides you through each phase:
+
+1. **Discover** — scans scenes and prefabs, lets you choose which to include
+2. **Inventory** — catalogs assets and GUIDs, flags duplicates/orphans
+3. **Materials** — converts materials, presents unconvertible ones for review
+4. **Transpile** — converts C# to Luau, shows flagged scripts for triage
+5. **Validate** — checks generated Luau for syntax errors
+6. **Assemble** — builds the .rbxl file
+7. **Upload** — (optional) pushes to Roblox Cloud
+8. **Report** — generates the final conversion summary
+
+Each phase can be re-run independently if you change your mind or want to
+try different settings (e.g., re-transpile with AI after reviewing rule-based
+results).
+
+### Option B: Batch CLI (`converter.py`)
+
 ```bash
 python converter.py <unity_project_path> <output_dir> [OPTIONS]
 ```
+
+Runs the full pipeline without stopping. Use this for automation, CI/CD, or
+when you're confident the defaults are fine.
 
 ### Arguments
 

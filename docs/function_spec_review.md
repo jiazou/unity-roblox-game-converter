@@ -12,13 +12,15 @@ The function specification defines **37 functions** across 8 pipeline stages. Ag
 
 | Status | Count | Functions |
 |--------|-------|-----------|
-| Fully implemented | 8 | UnityAssetExporter, MeshSimplifier, MaterialMapper, LLMTranslatorWrapper, UnityProjectImporter, AssetUploader, BuildOrchestrator, JobScheduler |
-| Partially implemented | 5 | CSharpParser, APIMapper, AssetQualityAssurance, LoggingAndAudit, AuditTrail |
-| Not implemented | 24 | TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeValidator, CodeQA, TestGenerator, UIExtractor, LayoutTranslator, UIGenerator, UIQA, NetworkAnalyzer, RemoteEventGenerator, ServerAuthorityMapper, RojoIntegrator, PromptManager, BatchRequestHandler, CacheManager, CostEstimator, FineTuneManager, LLMMonitor, ReviewInterface, FeedbackIngestion, HITL_JobScheduler, RetryBackoff |
+| Fully implemented | 10 | UnityAssetExporter, MeshSimplifier, MaterialMapper, LLMTranslatorWrapper, UnityProjectImporter, AssetUploader, BuildOrchestrator, JobScheduler, ReviewInterface, HITL_JobScheduler |
+| Partially implemented | 6 | CSharpParser, APIMapper, AssetQualityAssurance, LoggingAndAudit, AuditTrail, FeedbackIngestion |
+| Not implemented | 21 | TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeValidator, CodeQA, TestGenerator, UIExtractor, LayoutTranslator, UIGenerator, UIQA, NetworkAnalyzer, RemoteEventGenerator, ServerAuthorityMapper, RojoIntegrator, PromptManager, BatchRequestHandler, CacheManager, CostEstimator, FineTuneManager, LLMMonitor, RetryBackoff |
 
 **Coverage: 8/37 fully implemented (22%), 13/37 at least partially (35%), 24/37 missing (65%).**
 
-The codebase is strongest in the asset pipeline (materials, meshes, scene parsing) and weakest in UI, networking, HITL, and LLM ops.
+The codebase is strongest in the asset pipeline (materials, meshes, scene parsing) and weakest in UI, networking, and LLM ops.
+
+> **Update (2026-03-02):** The HITL gap (ReviewInterface, FeedbackIngestion, HITL_JobScheduler) is now largely addressed by the `/convert-unity` Claude Code skill, which provides an interactive conversion workflow with human decision points at each phase. See the [Human-in-the-Loop](#human-in-the-loop) section for details.
 
 ---
 
@@ -506,40 +508,39 @@ This is adequate for a single-purpose call. A template system becomes valuable w
 
 ### Human-in-the-Loop
 
-#### 32. ReviewInterface (P0 in spec) — NOT IMPLEMENTED
+> **Update (2026-03-02):** The `/convert-unity` Claude Code skill now provides an interactive HITL workflow. It calls `convert_interactive.py` phase-by-phase, presenting results and decision points to the user between each step. This addresses the core intent of ReviewInterface, FeedbackIngestion, and HITL_JobScheduler without requiring a separate frontend.
+
+#### 32. ReviewInterface (P0 in spec) — IMPLEMENTED via skill
 
 | Aspect | Spec | Implementation |
 |--------|------|----------------|
-| Purpose | UI for humans to review and adjust automated outputs | N/A |
+| Purpose | UI for humans to review and adjust automated outputs | `/convert-unity` skill presents phase results and asks for decisions |
 
-**Needed?** The spec marks this P0, but the current tool outputs review-ready artifacts:
-- UNCONVERTED.md lists every material issue with severity and workarounds
-- conversion_report.json has per-script flagging for review
-- The `.rbxl` file can be opened in Roblox Studio for visual inspection
+**Implementation**: The `/convert-unity` Claude Code skill serves as the review interface. After each conversion phase, it presents structured results (material conversion stats, flagged scripts with source/output, validation errors) and asks the user to accept, retry, edit, or skip. This is backed by `convert_interactive.py`, which outputs JSON that the skill parses and presents conversationally.
 
-**Assessment**: A dedicated review UI would improve developer experience but is a significant frontend effort (5 pw estimated). The current CLI + file-based output workflow is functional for POC.
+Key review points in the skill:
+- Unconvertible materials → user decides: accept, provide manual mapping, or skip
+- Flagged scripts (low confidence) → user sees original C# and generated Luau side by side
+- Validation errors → user decides how to fix
+- Mesh decimation warnings → user confirms quality tradeoffs
 
-**Recommendation**: **Downgrade to P1 for POC.** The UNCONVERTED.md + conversion_report.json serve as the review interface for initial validation.
-
-**In master plan?** Not mentioned. The UNCONVERTED.md system in material_converter_plan.md serves a similar purpose.
-
----
-
-#### 33. FeedbackIngestion (P1) — NOT IMPLEMENTED
-
-**Needed?** For continuous improvement, yes. Not blocking POC.
-
-**Recommendation**: **Defer to post-POC.**
+**Assessment**: The skill-based approach avoids the 5 pw frontend effort while providing a better experience than file-based review — the user gets guided decisions in context rather than reading JSON reports after the fact.
 
 ---
 
-#### 34. HITL_JobScheduler (P1) — NOT IMPLEMENTED
+#### 33. FeedbackIngestion (P1) — PARTIALLY ADDRESSED via skill
 
-**Needed?** The code_transpiler already flags scripts below the confidence threshold. A formal job queue would help in team settings.
+The interactive skill naturally captures feedback: when a user rejects a transpiled script or provides manual corrections, that decision feeds into subsequent phases (e.g., the user can re-run transpilation with AI after reviewing rule-based output). Formal feedback persistence for model improvement is not yet implemented.
 
-**Assessment**: The confidence-based flagging mechanism exists (`flagged_for_review` on TranspiledScript). What's missing is the assignment/tracking workflow.
+**Recommendation**: Adequate for current use. Persistent feedback logging can be added later.
 
-**Recommendation**: **Defer to post-POC.** Current flagging is adequate for small teams.
+---
+
+#### 34. HITL_JobScheduler (P1) — IMPLEMENTED via skill
+
+The `/convert-unity` skill acts as the job scheduler for human review. It tracks conversion state in `<output_dir>/.convert_state.json`, allows resuming partially completed conversions, and ensures flagged items are presented for review before proceeding to assembly.
+
+**Assessment**: The confidence-based flagging mechanism (`flagged_for_review` on TranspiledScript) combined with the skill's interactive triage loop covers the spec's intent. The skill presents flagged scripts one by one (or in batch) and tracks which have been reviewed.
 
 ---
 
@@ -632,9 +633,11 @@ Based on actual implementation status and POC acceptance criteria ("convert a sm
 | RetryBackoff | NOT impl | Improves reliability |
 | PromptManager | NOT impl | Needed when more LLM call sites added |
 
-### Revised P2 (Nice-to-have) — 17 functions
+### Revised P2 (Nice-to-have) — 14 functions
 
-TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeQA, TestGenerator, UIGenerator, UIQA, ServerAuthorityMapper, RojoIntegrator, BatchRequestHandler, CostEstimator, FineTuneManager, LLMMonitor, ReviewInterface, FeedbackIngestion, HITL_JobScheduler, AuditTrail.
+TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeQA, TestGenerator, UIGenerator, UIQA, ServerAuthorityMapper, RojoIntegrator, BatchRequestHandler, CostEstimator, FineTuneManager, LLMMonitor, AuditTrail.
+
+*Note: ReviewInterface, FeedbackIngestion, and HITL_JobScheduler were previously listed here but are now addressed by the `/convert-unity` Claude Code skill.*
 
 ---
 
@@ -660,7 +663,7 @@ TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeQA, TestGenerato
 
 3. **FineTuneManager** — Claude doesn't support fine-tuning. Would need to switch providers or use a different approach entirely.
 
-4. **ReviewInterface** (P0→P2) — UNCONVERTED.md + Roblox Studio visual inspection serve this purpose for POC.
+4. **ReviewInterface** (P0→P2→Implemented) — Now provided by the `/convert-unity` Claude Code skill, which presents conversion results interactively and asks for human decisions at each phase.
 
 ---
 
