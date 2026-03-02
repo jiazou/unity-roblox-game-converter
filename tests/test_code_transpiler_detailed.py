@@ -1,0 +1,235 @@
+"""Fine-grained unit tests for modules/code_transpiler.py.
+
+Tests individual regex rule transformations, confidence scoring,
+warning generation, and complex C# patterns.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from modules.code_transpiler import (
+    TranspilationResult,
+    TranspiledScript,
+    transpile_scripts,
+    _rule_based_transpile,
+)
+
+
+class TestRuleBasedTranspilePatterns:
+    """Test each regex rule individually."""
+
+    def test_int_variable(self) -> None:
+        luau, _, _ = _rule_based_transpile("int x = 5;")
+        assert "local x =" in luau
+
+    def test_float_variable(self) -> None:
+        luau, _, _ = _rule_based_transpile("float speed = 3.5f;")
+        assert "local speed =" in luau
+
+    def test_double_variable(self) -> None:
+        luau, _, _ = _rule_based_transpile("double dist = 10.0;")
+        assert "local dist =" in luau
+
+    def test_bool_variable(self) -> None:
+        luau, _, _ = _rule_based_transpile("bool active = true;")
+        assert "local active =" in luau
+
+    def test_string_variable(self) -> None:
+        luau, _, _ = _rule_based_transpile('string name = "player";')
+        assert "local name =" in luau
+
+    def test_debug_log_to_print(self) -> None:
+        luau, _, _ = _rule_based_transpile('Debug.Log("hello");')
+        assert 'print("hello")' in luau
+        assert "Debug.Log" not in luau
+
+    def test_void_method_to_local_function(self) -> None:
+        luau, _, _ = _rule_based_transpile("void DoSomething()")
+        assert "local function DoSomething(" in luau
+
+    def test_this_to_self(self) -> None:
+        luau, _, _ = _rule_based_transpile("this.speed = 5;")
+        assert "self.speed" in luau
+        assert "this." not in luau
+
+    def test_using_directives_stripped(self) -> None:
+        code = "using UnityEngine;\nusing System.Collections;\n\nvoid Start() {}"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "using UnityEngine" not in luau
+        assert "using System" not in luau
+
+    def test_namespace_stripped(self) -> None:
+        code = "namespace Foo.Bar {\n    // stuff\n}"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "namespace" not in luau
+
+    def test_class_wrapper_stripped(self) -> None:
+        code = "public class Player : MonoBehaviour {\n    // stuff\n}"
+        luau, _, _ = _rule_based_transpile(code)
+        assert "public class" not in luau
+
+    def test_start_lifecycle(self) -> None:
+        luau, _, _ = _rule_based_transpile("void Start()")
+        assert "AncestryChanged" in luau
+
+    def test_update_lifecycle(self) -> None:
+        luau, _, _ = _rule_based_transpile("void Update()")
+        assert "Heartbeat" in luau
+
+
+class TestRuleBasedConfidence:
+    """Test confidence scoring logic."""
+
+    def test_no_changes_zero_confidence(self) -> None:
+        """Unrecognized code → no rules match → 0 confidence."""
+        _, confidence, _ = _rule_based_transpile("-- already luau\nlocal x = 5\n")
+        assert confidence == 0.0
+
+    def test_many_changes_higher_confidence(self) -> None:
+        code = (
+            "using UnityEngine;\n"
+            "public class Foo : MonoBehaviour {\n"
+            "    float speed = 5.0f;\n"
+            "    int count = 0;\n"
+            "    void Start() {\n"
+            "        Debug.Log(\"init\");\n"
+            "    }\n"
+            "}\n"
+        )
+        _, confidence, _ = _rule_based_transpile(code)
+        assert confidence > 0.0
+
+    def test_confidence_capped_at_1(self) -> None:
+        # Generate a script where every line gets changed
+        lines = [f"int var{i} = {i};" for i in range(20)]
+        code = "\n".join(lines)
+        _, confidence, _ = _rule_based_transpile(code)
+        assert confidence <= 1.0
+
+
+class TestRuleBasedWarnings:
+    """Test warning generation."""
+
+    def test_residual_class_keyword_warning(self) -> None:
+        code = "class InnerClass {\n    int x = 0;\n}"
+        _, _, warnings = _rule_based_transpile(code)
+        class_warnings = [w for w in warnings if "class" in w.lower()]
+        assert len(class_warnings) > 0
+
+    def test_residual_braces_warning(self) -> None:
+        code = "void Foo() {\n    int x = 0;\n}"
+        _, _, warnings = _rule_based_transpile(code)
+        brace_warnings = [w for w in warnings if "brace" in w.lower()]
+        assert len(brace_warnings) > 0
+
+    def test_clean_output_no_warnings(self) -> None:
+        """Plain text with no C# features should produce no warnings."""
+        code = "-- luau comment\nlocal x = 5\n"
+        _, _, warnings = _rule_based_transpile(code)
+        assert warnings == []
+
+
+class TestTranspileScriptsIntegration:
+    """Integration tests for transpile_scripts with real file I/O."""
+
+    def test_subdirectory_scripts(self, tmp_path: Path) -> None:
+        """Scripts in subdirectories of Assets/ should be found."""
+        project = tmp_path / "SubDir"
+        subdir = project / "Assets" / "Scripts" / "Player"
+        subdir.mkdir(parents=True)
+        (subdir / "Move.cs").write_text(
+            "void Update() { Debug.Log(\"move\"); }", encoding="utf-8"
+        )
+        result = transpile_scripts(project)
+        assert result.total == 1
+        assert result.scripts[0].output_filename == "Move.lua"
+
+    def test_confidence_threshold_all_pass(self, tmp_path: Path) -> None:
+        project = tmp_path / "Conf"
+        (project / "Assets").mkdir(parents=True)
+        (project / "Assets" / "A.cs").write_text(
+            "using UnityEngine;\nfloat x = 1;\nDebug.Log(x);\n", encoding="utf-8"
+        )
+        result = transpile_scripts(project, use_ai=False, confidence_threshold=0.0)
+        assert result.flagged == 0
+        assert result.succeeded == 1
+
+    def test_confidence_threshold_strict(self, tmp_path: Path) -> None:
+        project = tmp_path / "Strict"
+        (project / "Assets").mkdir(parents=True)
+        # Very simple script → low change ratio → low confidence
+        (project / "Assets" / "Simple.cs").write_text(
+            "// just a comment\n", encoding="utf-8"
+        )
+        result = transpile_scripts(project, use_ai=False, confidence_threshold=0.99)
+        assert result.flagged >= 1
+
+    def test_preserves_original_source(self, tmp_path: Path) -> None:
+        project = tmp_path / "Pres"
+        (project / "Assets").mkdir(parents=True)
+        original = "using UnityEngine;\nvoid Start() { Debug.Log(\"hi\"); }\n"
+        (project / "Assets" / "Keep.cs").write_text(original, encoding="utf-8")
+        result = transpile_scripts(project)
+        ts = result.scripts[0]
+        assert ts.csharp_source == original
+
+    def test_complex_csharp_patterns(self, tmp_path: Path) -> None:
+        """Test that complex C# doesn't crash the transpiler."""
+        project = tmp_path / "Complex"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "using System.Collections.Generic;\n"
+            "\n"
+            "namespace Game.Player {\n"
+            "    public class Controller : MonoBehaviour {\n"
+            "        [SerializeField] float speed = 5.0f;\n"
+            "        private List<int> scores = new List<int>();\n"
+            "\n"
+            "        void Start() {\n"
+            "            this.speed = 10.0f;\n"
+            "            Debug.Log(\"Starting\");\n"
+            "        }\n"
+            "\n"
+            "        void Update() {\n"
+            "            float dt = Time.deltaTime;\n"
+            "            this.transform.position += Vector3.forward * speed * dt;\n"
+            "        }\n"
+            "\n"
+            "        void OnCollisionEnter(Collision collision) {\n"
+            "            Debug.Log(\"Hit: \" + collision.gameObject.name);\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "Controller.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        assert result.total == 1
+        ts = result.scripts[0]
+        # Should not crash; verify key transformations applied
+        assert "using UnityEngine" not in ts.luau_source
+        assert "self.speed" in ts.luau_source
+        assert "print(" in ts.luau_source
+
+    def test_skipped_count_zero_for_rule_based(self, tmp_path: Path) -> None:
+        """Rule-based transpilation should never skip scripts."""
+        project = tmp_path / "NoSkip"
+        (project / "Assets").mkdir(parents=True)
+        (project / "Assets" / "X.cs").write_text("int a = 1;", encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        assert result.skipped == 0
+
+    def test_output_filenames_unique(self, tmp_path: Path) -> None:
+        """Each script should produce a unique output filename."""
+        project = tmp_path / "Unique"
+        (project / "Assets").mkdir(parents=True)
+        for name in ("Alpha", "Beta", "Gamma"):
+            (project / "Assets" / f"{name}.cs").write_text(
+                f"void Start() {{ Debug.Log(\"{name}\"); }}", encoding="utf-8"
+            )
+        result = transpile_scripts(project)
+        filenames = [ts.output_filename for ts in result.scripts]
+        assert len(filenames) == len(set(filenames))
