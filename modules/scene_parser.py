@@ -48,12 +48,17 @@ _CID_TRANSFORM = 4
 _CID_MESH_RENDERER = 23
 _CID_MESH_FILTER = 33
 _CID_BOX_COLLIDER = 65
+_CID_AUDIO_SOURCE = 82
+_CID_ANIMATOR = 95
+_CID_LIGHT = 108
 _CID_SPHERE_COLLIDER = 135
 _CID_CAPSULE_COLLIDER = 136
 _CID_MESH_COLLIDER = 64
 _CID_RIGIDBODY = 54
+_CID_CHARACTER_CONTROLLER = 143
 _CID_SKINNED_MESH_RENDERER = 137
 _CID_MONO_BEHAVIOUR = 114
+_CID_PARTICLE_SYSTEM = 198
 _CID_RECT_TRANSFORM = 224
 _CID_PREFAB_INSTANCE = 1001
 
@@ -263,7 +268,10 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
                      _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR,
                      _CID_BOX_COLLIDER, _CID_SPHERE_COLLIDER,
                      _CID_CAPSULE_COLLIDER, _CID_MESH_COLLIDER,
-                     _CID_RIGIDBODY):
+                     _CID_RIGIDBODY,
+                     _CID_AUDIO_SOURCE, _CID_LIGHT,
+                     _CID_PARTICLE_SYSTEM, _CID_ANIMATOR,
+                     _CID_CHARACTER_CONTROLLER):
             component_docs.append((fid, cid, body))
 
     # ------------------------------------------------------------------
@@ -338,6 +346,11 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         _CID_CAPSULE_COLLIDER: "CapsuleCollider",
         _CID_MESH_COLLIDER: "MeshCollider",
         _CID_RIGIDBODY: "Rigidbody",
+        _CID_AUDIO_SOURCE: "AudioSource",
+        _CID_LIGHT: "Light",
+        _CID_PARTICLE_SYSTEM: "ParticleSystem",
+        _CID_ANIMATOR: "Animator",
+        _CID_CHARACTER_CONTROLLER: "CharacterController",
     }
 
     for comp_fid, cid, body in component_docs:

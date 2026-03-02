@@ -12,6 +12,7 @@ No other module is imported here.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ class RbxSurfaceAppearance:
 class RbxPartEntry:
     name: str
     position: tuple[float, float, float] = (0.0, 4.0, 0.0)
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # quaternion (x,y,z,w)
     size: tuple[float, float, float] = (4.0, 1.0, 2.0)
     brick_color: str = "Medium stone grey"
     anchored: bool = True
@@ -96,6 +98,166 @@ def _make_color3(parent: ET.Element, name: str, rgb: tuple[float, float, float])
     return el
 
 
+def _quat_to_rotation_matrix(
+    qx: float, qy: float, qz: float, qw: float,
+) -> tuple[float, float, float, float, float, float, float, float, float]:
+    """
+    Convert a quaternion (x, y, z, w) to a 3×3 rotation matrix.
+
+    Returns (R00, R01, R02, R10, R11, R12, R20, R21, R22) in row-major order,
+    matching Roblox's CFrame CoordinateFrame property layout.
+    """
+    # Normalise
+    mag = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+    if mag < 1e-10:
+        return (1, 0, 0, 0, 1, 0, 0, 0, 1)
+    qx, qy, qz, qw = qx/mag, qy/mag, qz/mag, qw/mag
+
+    r00 = 1 - 2*(qy*qy + qz*qz)
+    r01 = 2*(qx*qy - qz*qw)
+    r02 = 2*(qx*qz + qy*qw)
+    r10 = 2*(qx*qy + qz*qw)
+    r11 = 1 - 2*(qx*qx + qz*qz)
+    r12 = 2*(qy*qz - qx*qw)
+    r20 = 2*(qx*qz - qy*qw)
+    r21 = 2*(qy*qz + qx*qw)
+    r22 = 1 - 2*(qx*qx + qy*qy)
+
+    return (r00, r01, r02, r10, r11, r12, r20, r21, r22)
+
+
+def _is_identity_quat(q: tuple[float, float, float, float]) -> bool:
+    """Check if a quaternion is approximately identity (no rotation)."""
+    return abs(q[0]) < 1e-6 and abs(q[1]) < 1e-6 and abs(q[2]) < 1e-6 and abs(q[3] - 1.0) < 1e-6
+
+
+def _make_cframe(
+    parent: ET.Element,
+    name: str,
+    pos: tuple[float, float, float],
+    quat: tuple[float, float, float, float],
+) -> ET.Element:
+    """Write a CFrame property as a CoordinateFrame element (position + 3×3 rotation matrix)."""
+    el = ET.SubElement(parent, "CoordinateFrame", name=name)
+    ET.SubElement(el, "X").text = str(pos[0])
+    ET.SubElement(el, "Y").text = str(pos[1])
+    ET.SubElement(el, "Z").text = str(pos[2])
+    r = _quat_to_rotation_matrix(*quat)
+    ET.SubElement(el, "R00").text = f"{r[0]:.8f}"
+    ET.SubElement(el, "R01").text = f"{r[1]:.8f}"
+    ET.SubElement(el, "R02").text = f"{r[2]:.8f}"
+    ET.SubElement(el, "R10").text = f"{r[3]:.8f}"
+    ET.SubElement(el, "R11").text = f"{r[4]:.8f}"
+    ET.SubElement(el, "R12").text = f"{r[5]:.8f}"
+    ET.SubElement(el, "R20").text = f"{r[6]:.8f}"
+    ET.SubElement(el, "R21").text = f"{r[7]:.8f}"
+    ET.SubElement(el, "R22").text = f"{r[8]:.8f}"
+    return el
+
+
+def _make_light(
+    parent: ET.Element,
+    light_class: str,
+    color: tuple[float, float, float],
+    brightness: float,
+    range_val: float,
+    shadows: bool,
+    angle: float = 90.0,
+) -> ET.Element:
+    """Emit a PointLight, SpotLight, or SurfaceLight child item under a Part."""
+    item = ET.SubElement(parent, "Item", **{"class": light_class})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", light_class)
+    _make_color3(props, "Color", color)
+    _make_property(props, "float", "Brightness", f"{brightness:.4f}")
+    _make_property(props, "float", "Range", f"{range_val:.2f}")
+    _make_property(props, "bool", "Shadows", str(shadows).lower())
+    _make_property(props, "bool", "Enabled", "true")
+    if light_class == "SpotLight":
+        _make_property(props, "float", "Angle", f"{angle:.2f}")
+        _make_property(props, "token", "Face", "5")  # Front face
+    return item
+
+
+def _make_sound(
+    parent: ET.Element,
+    name: str,
+    sound_path: str,
+    volume: float,
+    looped: bool,
+    playback_speed: float,
+    playing: bool,
+    roll_off_min: float,
+    roll_off_max: float,
+) -> ET.Element:
+    """Emit a Sound child item under a Part."""
+    item = ET.SubElement(parent, "Item", **{"class": "Sound"})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", name)
+    # SoundId will need to be an uploaded asset URL; for now store the path as a comment
+    _make_property(props, "Content", "SoundId", f"-- TODO: upload {sound_path}")
+    _make_property(props, "float", "Volume", f"{volume:.4f}")
+    _make_property(props, "bool", "Looped", str(looped).lower())
+    _make_property(props, "float", "PlaybackSpeed", f"{playback_speed:.4f}")
+    _make_property(props, "bool", "Playing", str(playing).lower())
+    _make_property(props, "float", "RollOffMinDistance", f"{roll_off_min:.2f}")
+    _make_property(props, "float", "RollOffMaxDistance", f"{roll_off_max:.2f}")
+    return item
+
+
+def _make_particle_emitter(
+    parent: ET.Element,
+    name: str,
+    rate: float,
+    lifetime_min: float,
+    lifetime_max: float,
+    speed_min: float,
+    speed_max: float,
+    size: float,
+    color: tuple[float, float, float],
+    texture_path: str | None,
+    light_emission: float,
+    transparency: float,
+) -> ET.Element:
+    """Emit a ParticleEmitter child item under a Part."""
+    item = ET.SubElement(parent, "Item", **{"class": "ParticleEmitter"})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", name)
+    _make_property(props, "float", "Rate", f"{rate:.2f}")
+    _make_property(props, "bool", "Enabled", "true")
+    # Lifetime as NumberRange
+    lr = ET.SubElement(props, "NumberRange", name="Lifetime")
+    lr.text = f"{lifetime_min:.4f} {lifetime_max:.4f}"
+    # Speed as NumberRange
+    sr = ET.SubElement(props, "NumberRange", name="Speed")
+    sr.text = f"{speed_min:.4f} {speed_max:.4f}"
+    # Size as NumberSequence (constant)
+    ss = ET.SubElement(props, "NumberSequence", name="Size")
+    k1 = ET.SubElement(ss, "Keypoint")
+    k1.set("time", "0")
+    k1.set("value", f"{size:.4f}")
+    k1.set("envelope", "0")
+    k2 = ET.SubElement(ss, "Keypoint")
+    k2.set("time", "1")
+    k2.set("value", f"{size:.4f}")
+    k2.set("envelope", "0")
+    _make_color3(props, "Color", color)
+    if texture_path:
+        _make_property(props, "Content", "Texture", f"-- TODO: upload {texture_path}")
+    _make_property(props, "float", "LightEmission", f"{light_emission:.4f}")
+    # Transparency as NumberSequence (constant)
+    ts = ET.SubElement(props, "NumberSequence", name="Transparency")
+    tk1 = ET.SubElement(ts, "Keypoint")
+    tk1.set("time", "0")
+    tk1.set("value", f"{transparency:.4f}")
+    tk1.set("envelope", "0")
+    tk2 = ET.SubElement(ts, "Keypoint")
+    tk2.set("time", "1")
+    tk2.set("value", "1")  # fade out at end of lifetime
+    tk2.set("envelope", "0")
+    return item
+
+
 def _make_surface_appearance(parent: ET.Element, sa: RbxSurfaceAppearance) -> ET.Element:
     """Emit a SurfaceAppearance child item under a Part/MeshPart."""
     item = ET.SubElement(parent, "Item", **{"class": "SurfaceAppearance"})
@@ -131,7 +293,14 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     props = ET.SubElement(item, "Properties")
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
-    _make_vector3(props, "Position", part.position)
+
+    # Write CFrame (position + rotation). When rotation is identity, just set Position
+    # for cleaner output. Otherwise, write a full CoordinateFrame with rotation matrix.
+    if _is_identity_quat(part.rotation):
+        _make_vector3(props, "Position", part.position)
+    else:
+        _make_cframe(props, "CFrame", part.position, part.rotation)
+
     _make_vector3(props, "Size", part.size)
     _make_property(props, "BrickColor", "BrickColor", part.brick_color)
 
@@ -152,6 +321,18 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         # No mesh — SurfaceAppearance won't render on a plain Part.
         # Apply what we can: color/transparency are already set via BasePart properties.
         pass
+
+    # Light children (PointLight, SpotLight) — set by converter.py
+    for lc in getattr(part, "light_children", ()):
+        _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
+
+    # Sound children — set by converter.py
+    for sc in getattr(part, "sound_children", ()):
+        _make_sound(item, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7])
+
+    # ParticleEmitter children — set by converter.py
+    for pc in getattr(part, "particle_children", ()):
+        _make_particle_emitter(item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7], pc[8], pc[9], pc[10])
 
     for script in part.scripts:
         script_item = ET.SubElement(item, "Item", **{"class": script.script_type})

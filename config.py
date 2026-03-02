@@ -34,6 +34,7 @@ SUPPORTED_ASSET_EXTENSIONS: list[str] = [
     ".wav", ".mp3", ".ogg",
     ".mat",
     ".anim",
+    ".asset",
 ]
 COPY_ASSETS: bool = True
 
