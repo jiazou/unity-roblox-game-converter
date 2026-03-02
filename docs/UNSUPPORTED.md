@@ -56,6 +56,11 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Companion Luau scripts | Medium | Generated for blink/rotation effects |
 | Directional Light → Lighting | High | Maps to Roblox `Lighting` service properties |
 | Unity primitives → Roblox shapes | Medium | Cube→Block, Sphere→Ball, Cylinder→Cylinder |
+| Camera → Workspace.CurrentCamera | High | FOV, CFrame, near/far clip |
+| Unlit game detection | Medium | Auto-adjusts Lighting when >70% unlit shaders |
+| Skybox material → Sky object | Medium | 6-sided skybox textures in Lighting |
+| Mesh bounding box → Part size | Medium | trimesh AABB used as base size for MeshParts |
+| Rule-based transpiler (improved) | Medium | Braces→end, if/while/for/foreach, Mathf, types, semicolons |
 | Collider → Part sizing | High | Box, Sphere, Capsule colliders set part size |
 | Rigidbody kinematic detection | High | `m_IsKinematic` → `Anchored` property |
 
@@ -68,16 +73,16 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | UV tiling ≠ (1,1) | **HIGH** | Partial | [UV Tiling](#uv-tiling-and-offset) |
 | Terrain / splat maps | **HIGH** | Future | [Terrain](#terrain-conversion) |
 | ~~Directional Light → Lighting~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Directional Lights](#directional-lights)~~ FIXED |
-| Camera objects | **MEDIUM** | Yes | [Cameras](#cameras) |
-| C# transpilation (rule-based) | **MEDIUM** | Yes | [Script Transpilation](#c-to-luau-transpilation-quality) |
+| ~~Camera objects~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Cameras](#cameras)~~ FIXED |
+| C# transpilation (rule-based) | **LOW** | Yes | [Script Transpilation](#c-to-luau-transpilation-quality) |
 | Height/parallax maps | MEDIUM | Future | [Height Maps](#heightparallax-maps) |
 | Detail maps | MEDIUM | Future | [Detail Maps](#detail-maps) |
 | Custom Shader Graph | MEDIUM | Partial | [Shader Graph](#custom-shader-graph) |
-| Part size from mesh bounds | MEDIUM | Yes | [Mesh-Based Sizing](#mesh-based-part-sizing) |
-| Skybox generation | MEDIUM | Future | [Skybox](#skybox-and-atmosphere) |
+| ~~Part size from mesh bounds~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Mesh-Based Sizing](#mesh-based-part-sizing)~~ FIXED |
+| ~~Skybox generation~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Skybox](#skybox-and-atmosphere)~~ FIXED |
 | ~~Unity primitive → Roblox shape~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Primitive Mapping](#unity-primitive-to-roblox-shape-mapping)~~ FIXED |
 | Canvas / UI | MEDIUM | Future | [UI Canvas](#ui-canvas) |
-| Unlit rendering | LOW | Partial | [Unlit Materials](#unlit-materials) |
+| ~~Unlit rendering~~ | ~~LOW~~ | ~~Yes~~ | ~~[Unlit Materials](#unlit-materials)~~ FIXED (auto-detection) |
 | SSS / anisotropy / iridescence | LOW | No | [HDRP Advanced](#hdrp-advanced-features) |
 | ~~Normal map scale baking~~ | ~~LOW~~ | ~~Yes~~ | ~~[Normal Scale](#normal-map-scale)~~ FIXED |
 
@@ -445,13 +450,13 @@ This is a significant implementation effort and is tracked as a Phase 3 feature.
 
 ---
 
-## Report Accuracy Issues
+## Report Accuracy Notes
 
 ### Parts Written Count
 
-The conversion report's `parts_written` field counts only root-level parts passed to
-`write_rbxl()`, not their children. If a scene has 1 root with 5 children, the report
-says "1 part" but the .rbxl contains 6.
+~~Previously root-only.~~ **FIXED**: `_count_parts()` now recursively counts all parts
+including nested children. The `parts_written` field accurately reflects every Part and
+MeshPart written to the .rbxl.
 
 ### Materials Processed Count
 
@@ -476,11 +481,11 @@ only processed materials, not all `.mat` files found.
 ### Phase 2 — Near Term (Feature Gaps)
 8. ~~UV pre-tiling texture processor~~ — Done (offset also implemented)
 9. ~~Normal map scale baking~~ — Done
-10. Unlit game detection + Lighting configuration
-11. Skybox/Atmosphere generation
-12. Improved rule-based transpiler (strip class/namespace, convert loops)
-13. Camera → `Workspace.CurrentCamera` mapping
-14. Mesh bounding box → Part size for MeshParts
+10. ~~Unlit game detection + Lighting configuration~~ — Done
+11. ~~Skybox/Atmosphere generation~~ — Done
+12. ~~Improved rule-based transpiler~~ — Done (braces→end, if/while/for, types, Mathf, ternary, semicolons)
+13. ~~Camera → `Workspace.CurrentCamera` mapping~~ — Done
+14. ~~Mesh bounding box → Part size for MeshParts~~ — Done
 
 ### Phase 3 — Long Term (Major Features)
 15. Vertex color baking (FBX parse → UV map → texture multiply)

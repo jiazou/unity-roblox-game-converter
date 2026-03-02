@@ -1060,3 +1060,134 @@ class TestPartsWrittenCounting:
         rbxl = tmp_path / "test.rbxl"
         result = write_rbxl([root], [], rbxl)
         assert result.parts_written == 3  # root + mid + leaf
+
+
+# ── Camera extraction ────────────────────────────────────────────────
+
+
+class TestCameraExtraction:
+    def test_camera_from_main_camera_node(self) -> None:
+        from modules.conversion_helpers import _extract_camera_from_scenes
+        from modules.scene_parser import ParsedScene, SceneNode, ComponentData
+
+        cam_node = SceneNode(
+            name="Main Camera", file_id="1",
+            active=True, layer=0, tag="MainCamera",
+            position=(0.0, 10.0, -20.0),
+            rotation=(0.0, 0.0, 0.0, 1.0),
+        )
+        cam_node.components.append(ComponentData(
+            component_type="Camera",
+            file_id="2",
+            properties={"field of view": 75.0, "near clip plane": 0.5, "far clip plane": 500.0},
+        ))
+        scene = ParsedScene(
+            scene_path=Path("/s.unity"),
+            roots=[cam_node],
+            all_nodes={"1": cam_node},
+        )
+        config = _extract_camera_from_scenes([scene], {"1": cam_node})
+        assert config is not None
+        assert config.field_of_view == 75.0
+        assert config.near_clip == 0.5
+        assert config.far_clip == 500.0
+
+    def test_no_camera_returns_none(self) -> None:
+        from modules.conversion_helpers import _extract_camera_from_scenes
+        from modules.scene_parser import ParsedScene, SceneNode
+
+        node = SceneNode(name="Empty", file_id="1", active=True, layer=0, tag="Untagged")
+        scene = ParsedScene(
+            scene_path=Path("/s.unity"),
+            roots=[node],
+            all_nodes={"1": node},
+        )
+        assert _extract_camera_from_scenes([scene], {"1": node}) is None
+
+
+# ── Unlit game detection ─────────────────────────────────────────────
+
+
+class TestUnlitDetection:
+    def test_mostly_unlit_detected(self) -> None:
+        from modules.conversion_helpers import _detect_unlit_game
+        from types import SimpleNamespace
+
+        results = [
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/Texture"),
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/Color"),
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/CurvedUnlit"),
+            SimpleNamespace(pipeline="BUILTIN", shader_name="Standard"),
+        ]
+        assert _detect_unlit_game(results) is True  # 3/4 = 75% > 70%
+
+    def test_mostly_lit_not_detected(self) -> None:
+        from modules.conversion_helpers import _detect_unlit_game
+        from types import SimpleNamespace
+
+        results = [
+            SimpleNamespace(pipeline="BUILTIN", shader_name="Standard"),
+            SimpleNamespace(pipeline="BUILTIN", shader_name="Standard"),
+            SimpleNamespace(pipeline="CUSTOM", shader_name="Unlit/Texture"),
+        ]
+        assert _detect_unlit_game(results) is False  # 1/3 = 33% < 70%
+
+    def test_empty_not_detected(self) -> None:
+        from modules.conversion_helpers import _detect_unlit_game
+        assert _detect_unlit_game([]) is False
+        assert _detect_unlit_game(None) is False
+
+
+# ── Camera and Skybox in rbxl output ─────────────────────────────────
+
+
+class TestCameraInRbxl:
+    def test_camera_written_to_workspace(self, tmp_path: Path) -> None:
+        from modules.rbxl_writer import RbxPartEntry, RbxCameraConfig, write_rbxl
+
+        cam = RbxCameraConfig(
+            position=(5.0, 10.0, -15.0),
+            field_of_view=80.0,
+        )
+        rbxl = tmp_path / "cam.rbxl"
+        result = write_rbxl([], [], rbxl, camera=cam)
+        content = rbxl.read_text()
+        assert "Camera" in content
+        assert "FieldOfView" in content
+
+    def test_skybox_written_to_lighting(self, tmp_path: Path) -> None:
+        from modules.rbxl_writer import RbxPartEntry, RbxSkyboxConfig, write_rbxl
+
+        sky = RbxSkyboxConfig(front="/tex/front.png", back="/tex/back.png")
+        rbxl = tmp_path / "sky.rbxl"
+        result = write_rbxl([], [], rbxl, skybox=sky)
+        content = rbxl.read_text()
+        assert "Sky" in content
+        assert "SkyboxFt" in content
+
+
+# ── Scene parser Camera CID ──────────────────────────────────────────
+
+
+class TestSceneParserCamera:
+    def test_camera_component_parsed(self, tmp_path: Path) -> None:
+        from modules.scene_parser import parse_scene
+
+        scene_file = tmp_path / "test.unity"
+        scene_file.write_text(
+            "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n"
+            "--- !u!1 &100\nGameObject:\n  m_Name: MainCam\n  m_IsActive: 1\n"
+            "  m_Layer: 0\n  m_TagString: MainCamera\n"
+            "--- !u!4 &200\nTransform:\n  m_GameObject: {fileID: 100}\n"
+            "  m_LocalPosition: {x: 0, y: 5, z: -10}\n"
+            "  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}\n"
+            "  m_LocalScale: {x: 1, y: 1, z: 1}\n"
+            "  m_Father: {fileID: 0}\n  m_Children: []\n"
+            "--- !u!20 &300\nCamera:\n  m_GameObject: {fileID: 100}\n"
+            "  field of view: 60\n  near clip plane: 0.3\n  far clip plane: 1000\n",
+            encoding="utf-8",
+        )
+        result = parse_scene(scene_file)
+        assert len(result.roots) == 1
+        cam_comps = [c for c in result.roots[0].components if c.component_type == "Camera"]
+        assert len(cam_comps) == 1

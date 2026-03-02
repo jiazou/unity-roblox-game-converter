@@ -46,7 +46,9 @@ from modules.unity_yaml_utils import (
     CID_SKINNED_MESH_RENDERER as _CID_SKINNED_MESH_RENDERER,
     CID_MONO_BEHAVIOUR as _CID_MONO_BEHAVIOUR,
     CID_PARTICLE_SYSTEM as _CID_PARTICLE_SYSTEM,
+    CID_CAMERA as _CID_CAMERA,
     CID_RECT_TRANSFORM as _CID_RECT_TRANSFORM,
+    CID_RENDER_SETTINGS as _CID_RENDER_SETTINGS,
     CID_PREFAB_INSTANCE as _CID_PREFAB_INSTANCE,
     extract_vec3 as _extract_vec3,
     extract_quat as _extract_quat,
@@ -115,6 +117,8 @@ class ParsedScene:
     referenced_material_guids: set[str] = field(default_factory=set)
     referenced_mesh_guids: set[str] = field(default_factory=set)
     prefab_instances: list[PrefabInstanceData] = field(default_factory=list)
+    skybox_material_guid: str | None = None  # from RenderSettings.m_SkyboxMaterial
+    render_settings: dict[str, Any] = field(default_factory=dict)  # raw RenderSettings
 
 
 
@@ -160,6 +164,7 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
     transform_docs: dict[str, dict] = {}             # fileID → Transform body
     component_docs: list[tuple[str, int, dict]] = [] # (fileID, classID, body)
     prefab_instance_docs: list[tuple[str, dict]] = []  # (fileID, body)
+    render_settings_docs: list[tuple[str, dict]] = []  # (fileID, body)
 
     for cid, fid, doc in triples:
         body = _doc_body(doc)
@@ -172,12 +177,15 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
             transform_docs[fid] = body
         elif cid == _CID_PREFAB_INSTANCE:
             prefab_instance_docs.append((fid, body))
+        elif cid == _CID_RENDER_SETTINGS:
+            # Store RenderSettings for skybox extraction (no m_GameObject)
+            render_settings_docs.append((fid, body))
         elif cid in (_CID_MESH_FILTER, _CID_MESH_RENDERER,
                      _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR,
                      _CID_BOX_COLLIDER, _CID_SPHERE_COLLIDER,
                      _CID_CAPSULE_COLLIDER, _CID_MESH_COLLIDER,
                      _CID_RIGIDBODY,
-                     _CID_AUDIO_SOURCE, _CID_LIGHT,
+                     _CID_AUDIO_SOURCE, _CID_LIGHT, _CID_CAMERA,
                      _CID_PARTICLE_SYSTEM, _CID_ANIMATOR,
                      _CID_CHARACTER_CONTROLLER):
             component_docs.append((fid, cid, body))
@@ -259,6 +267,7 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         _CID_PARTICLE_SYSTEM: "ParticleSystem",
         _CID_ANIMATOR: "Animator",
         _CID_CHARACTER_CONTROLLER: "CharacterController",
+        _CID_CAMERA: "Camera",
     }
 
     for comp_fid, cid, body in component_docs:
@@ -338,5 +347,19 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
             modifications=modifications,
             removed_components=removed,
         ))
+
+    # ------------------------------------------------------------------
+    # Pass 7: Extract RenderSettings (skybox material, fog, ambient)
+    # ------------------------------------------------------------------
+
+    for _rs_fid, rs_body in render_settings_docs:
+        result.render_settings = rs_body
+        skybox_ref = rs_body.get("m_SkyboxMaterial", {})
+        if isinstance(skybox_ref, dict):
+            guid = _ref_guid(skybox_ref)
+            if guid:
+                result.skybox_material_guid = guid
+                result.referenced_material_guids.add(guid)
+        break  # Only one RenderSettings per scene
 
     return result

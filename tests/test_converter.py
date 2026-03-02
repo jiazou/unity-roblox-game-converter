@@ -233,9 +233,11 @@ class TestSceneNodesToParts:
     """Tests for _scene_nodes_to_parts."""
 
     def test_empty_scenes(self) -> None:
-        parts, lighting = _scene_nodes_to_parts([])
+        parts, lighting, cam, sky = _scene_nodes_to_parts([])
         assert parts == []
         assert lighting is None
+        assert cam is None
+        assert sky is None
 
     def test_single_root_node(self) -> None:
         node = _snode(name="Root")
@@ -243,7 +245,7 @@ class TestSceneNodesToParts:
             scene_path=Path("/fake/scene.unity"),
             roots=[node],
         )
-        parts, _ = _scene_nodes_to_parts([scene])
+        parts, *_ = _scene_nodes_to_parts([scene])
         assert len(parts) == 1
         assert parts[0].name == "Root"
 
@@ -252,14 +254,14 @@ class TestSceneNodesToParts:
         node2 = _snode(name="B", file_id="200")
         s1 = scene_parser.ParsedScene(scene_path=Path("/s1.unity"), roots=[node1])
         s2 = scene_parser.ParsedScene(scene_path=Path("/s2.unity"), roots=[node2])
-        parts, _ = _scene_nodes_to_parts([s1, s2])
+        parts, *_ = _scene_nodes_to_parts([s1, s2])
         assert len(parts) == 2
 
     def test_hierarchy_preserved(self) -> None:
         child = _snode(name="Child", file_id="200")
         parent = _snode(name="Parent", file_id="100", children=[child])
         scene = scene_parser.ParsedScene(scene_path=Path("/s.unity"), roots=[parent])
-        parts, _ = _scene_nodes_to_parts([scene])
+        parts, *_ = _scene_nodes_to_parts([scene])
         assert len(parts[0].children) == 1
         assert parts[0].children[0].name == "Child"
 

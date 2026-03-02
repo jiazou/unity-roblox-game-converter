@@ -338,20 +338,48 @@ def _rule_based_transpile(csharp: str) -> tuple[str, float, list[str]]:
     # Strip using directives (no equivalent in Luau)
     luau = re.sub(r"^using\s+[\w.]+;\s*\n", "", luau, flags=re.MULTILINE)
 
-    # Strip namespace / class wrappers (simplified)
-    luau = re.sub(r"\bnamespace\s+\w[\w.]*\s*\{", "", luau)
-    luau = re.sub(r"\bpublic\s+class\s+\w+\s*(?::\s*\w+)?\s*\{", "", luau)
+    # Strip namespace wrapper and its closing brace
+    luau = re.sub(r"\bnamespace\s+\w[\w.]*\s*\{?\s*\n?", "", luau)
+
+    # Strip class declarations (with optional inheritance) and their opening brace
+    luau = re.sub(
+        r"\b(?:public\s+|private\s+|internal\s+|abstract\s+|sealed\s+|partial\s+)*"
+        r"class\s+\w+\s*(?::\s*[\w.,\s<>]+)?\s*\{?\s*\n?",
+        "", luau,
+    )
 
     # Strip access modifiers
-    luau = re.sub(r"\b(public|private|protected|internal|static)\s+", "", luau)
+    luau = re.sub(r"\b(public|private|protected|internal|static|sealed|abstract|partial|virtual|override|readonly|const)\s+", "", luau)
 
-    # Convert C# type casts to comments
+    # Strip return type annotations from methods (e.g., "int Foo(" → "local function Foo(")
+    luau = re.sub(
+        r"\b(?:int|float|double|bool|string|void|var|Vector[23]|Color|GameObject|Transform|Quaternion|List<[^>]*>|IEnumerator)\s+(\w+)\s*\(",
+        r"local function \1(",
+        luau,
+    )
+
+    # Strip type annotations from variable declarations (e.g., "List<int> items = " → "local items = ")
+    luau = re.sub(
+        r"\b(?:var|List<[^>]*>|Dictionary<[^>]*>|int\[\]|float\[\]|string\[\]|bool\[\]|GameObject\[\]|Transform\[\]|Vector[23]\[\])\s+(\w+)\s*=",
+        r"local \1 =",
+        luau,
+    )
+
+    # Convert C# type casts to nothing
     luau = re.sub(r"\((?:int|float|double|string|bool)\)\s*", "", luau)
+
+    # Convert C# new keyword for common types
+    luau = re.sub(r"\bnew\s+Vector3\(", "Vector3.new(", luau)
+    luau = re.sub(r"\bnew\s+Vector2\(", "Vector2.new(", luau)
+    luau = re.sub(r"\bnew\s+Color\(", "Color3.new(", luau)
+    luau = re.sub(r"\bnew\s+List<[^>]*>\(\)", "{}", luau)
+    luau = re.sub(r"\bnew\s+Dictionary<[^>]*>\(\)", "{}", luau)
+    luau = re.sub(r"\bnew\s+\w+\(\)", "nil --[[ new object ]]", luau)
 
     # Convert != to ~= (Luau inequality operator)
     luau = re.sub(r"!=", "~=", luau)
 
-    # Convert && to and, || to or, ! to not
+    # Convert && to and, || to or, ! to not (with word boundary)
     luau = re.sub(r"&&", " and ", luau)
     luau = re.sub(r"\|\|", " or ", luau)
     luau = re.sub(r"!(\w)", r"not \1", luau)
@@ -368,9 +396,17 @@ def _rule_based_transpile(csharp: str) -> tuple[str, float, list[str]]:
     luau = re.sub(r'\s*\+\s*"', ' .. "', luau)
 
     # Convert for(int i = 0; i < n; i++) to for i = 0, n-1 do
+    # Note: (?:int|local) because _RULE_PATTERNS may already convert "int" to "local"
     luau = re.sub(
-        r"for\s*\(\s*(?:int\s+)?(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<\s*(\w+)\s*;\s*\1\+\+\s*\)",
+        r"for\s*\(\s*(?:(?:int|local)\s+)?(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<\s*(\w+)\s*;\s*\1\+\+\s*\)",
         r"for \1 = \2, \3 - 1 do",
+        luau,
+    )
+
+    # Convert for(int i = 0; i <= n; i++) to for i = 0, n do
+    luau = re.sub(
+        r"for\s*\(\s*(?:(?:int|local)\s+)?(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<=\s*(\w+)\s*;\s*\1\+\+\s*\)",
+        r"for \1 = \2, \3 do",
         luau,
     )
 
@@ -380,6 +416,67 @@ def _rule_based_transpile(csharp: str) -> tuple[str, float, list[str]]:
         r"for _, \1 in \2 do",
         luau,
     )
+
+    # Convert while (condition) { to while condition do
+    luau = re.sub(r"\bwhile\s*\(([^)]+)\)\s*\{", r"while \1 do", luau)
+
+    # Convert } else if (condition) { to elseif condition then  (MUST be before standalone if)
+    luau = re.sub(r"\}\s*else\s+if\s*\(([^)]+)\)\s*\{", r"elseif \1 then", luau)
+
+    # Convert } else { to else  (MUST be before standalone if)
+    luau = re.sub(r"\}\s*else\s*\{", "else", luau)
+
+    # Convert if (condition) { to if condition then
+    luau = re.sub(r"\bif\s*\(([^)]+)\)\s*\{", r"if \1 then", luau)
+
+    # Convert remaining closing braces to end (heuristic: standalone } on a line)
+    luau = re.sub(r"^\s*\}\s*$", "end", luau, flags=re.MULTILINE)
+
+    # Strip semicolons at end of lines (Luau doesn't need them)
+    luau = re.sub(r";\s*$", "", luau, flags=re.MULTILINE)
+
+    # Convert ternary operator: condition ? a : b → if condition then a else b
+    luau = re.sub(
+        r"(\w+)\s*\?\s*([^:]+)\s*:\s*([^;\n]+)",
+        r"if \1 then \2 else \3",
+        luau,
+    )
+
+    # Convert .Length / .Count to # operator
+    luau = re.sub(r"(\w+)\.Length\b", r"#\1", luau)
+    luau = re.sub(r"(\w+)\.Count\b", r"#\1", luau)
+
+    # Convert .Add() to table.insert()
+    luau = re.sub(r"(\w+)\.Add\(([^)]+)\)", r"table.insert(\1, \2)", luau)
+
+    # Convert .Remove() to table.remove()
+    luau = re.sub(r"(\w+)\.Remove\(([^)]+)\)", r"table.remove(\1, \2)", luau)
+
+    # Convert .Contains() to table.find()
+    luau = re.sub(r"(\w+)\.Contains\(([^)]+)\)", r"table.find(\1, \2)", luau)
+
+    # Convert .ToString() to tostring()
+    luau = re.sub(r"(\w+)\.ToString\(\)", r"tostring(\1)", luau)
+
+    # Convert Mathf calls to math calls
+    luau = re.sub(r"\bMathf\.Abs\b", "math.abs", luau)
+    luau = re.sub(r"\bMathf\.Sin\b", "math.sin", luau)
+    luau = re.sub(r"\bMathf\.Cos\b", "math.cos", luau)
+    luau = re.sub(r"\bMathf\.Sqrt\b", "math.sqrt", luau)
+    luau = re.sub(r"\bMathf\.Floor\b", "math.floor", luau)
+    luau = re.sub(r"\bMathf\.Ceil\b", "math.ceil", luau)
+    luau = re.sub(r"\bMathf\.Min\b", "math.min", luau)
+    luau = re.sub(r"\bMathf\.Max\b", "math.max", luau)
+    luau = re.sub(r"\bMathf\.Clamp\(([^,]+),\s*([^,]+),\s*([^)]+)\)", r"math.clamp(\1, \2, \3)", luau)
+    luau = re.sub(r"\bMathf\.Lerp\(([^,]+),\s*([^,]+),\s*([^)]+)\)", r"(\1 + (\2 - \1) * \3)", luau)
+    luau = re.sub(r"\bMathf\.PI\b", "math.pi", luau)
+    luau = re.sub(r"\bMathf\.Infinity\b", "math.huge", luau)
+
+    # Convert Time.deltaTime to common Roblox pattern
+    luau = re.sub(r"\bTime\.deltaTime\b", "dt", luau)
+
+    # Clean up multiple blank lines
+    luau = re.sub(r"\n{3,}", "\n\n", luau)
 
     # Add Roblox service imports at the top if AST detected usage
     service_header = ""
@@ -411,10 +508,12 @@ def _rule_based_transpile(csharp: str) -> tuple[str, float, list[str]]:
 
     confidence = base_confidence
 
-    if "class " in luau:
+    # Warnings are now more targeted since we handle braces and classes
+    if re.search(r"\bclass\s+\w+", luau):
         warnings.append("Residual 'class' keyword detected — manual cleanup needed.")
-    if "{" in luau or "}" in luau:
-        warnings.append("Curly braces remain — Luau uses 'end' blocks, not braces.")
+    remaining_braces = luau.count("{") + luau.count("}")
+    if remaining_braces > 0:
+        warnings.append(f"Curly braces remain ({remaining_braces}) — may need manual conversion to 'end' blocks.")
 
     if ast_info and ast_info.unity_apis_used:
         unmapped = [

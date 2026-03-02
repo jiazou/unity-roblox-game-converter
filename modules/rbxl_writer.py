@@ -79,6 +79,29 @@ class RbxLightingConfig:
 
 
 @dataclass
+class RbxCameraConfig:
+    """Camera settings derived from Unity's main Camera component."""
+    position: tuple[float, float, float] = (0.0, 10.0, -20.0)
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # quaternion
+    field_of_view: float = 70.0
+    near_clip: float = 0.3
+    far_clip: float = 1000.0
+
+
+@dataclass
+class RbxSkyboxConfig:
+    """Skybox settings derived from Unity's RenderSettings + Skybox material."""
+    front: str | None = None   # texture paths for 6-sided skybox
+    back: str | None = None
+    left: str | None = None
+    right: str | None = None
+    up: str | None = None
+    down: str | None = None
+    celestial_bodies_shown: bool = True
+    star_count: int = 3000
+
+
+@dataclass
 class RbxWriteResult:
     """Outcome of writing a .rbxl file."""
     output_path: Path
@@ -393,6 +416,8 @@ def write_rbxl(
     output_path: str | Path,
     place_name: str = "ConvertedPlace",
     lighting: RbxLightingConfig | None = None,
+    camera: RbxCameraConfig | None = None,
+    skybox: RbxSkyboxConfig | None = None,
 ) -> RbxWriteResult:
     """
     Serialise the converted scene into a Roblox place file (.rbxl).
@@ -403,6 +428,8 @@ def write_rbxl(
         output_path: Destination .rbxl file path (created/overwritten).
         place_name: Name embedded in the DataModel root.
         lighting: Optional lighting configuration from directional lights.
+        camera: Optional camera configuration from Unity Camera component.
+        skybox: Optional skybox configuration from Unity RenderSettings.
 
     Returns:
         RbxWriteResult describing what was written.
@@ -432,10 +459,49 @@ def write_rbxl(
         _make_property(lp, "float", "ClockTime", f"{lighting.clock_time:.2f}")
         _make_property(lp, "float", "GeographicLatitude", f"{lighting.geographic_latitude:.2f}")
 
+        # Skybox child of Lighting
+        if skybox:
+            sky_item = ET.SubElement(light_item, "Item", **{"class": "Sky"})
+            sp = ET.SubElement(sky_item, "Properties")
+            _make_property(sp, "string", "Name", "Sky")
+            _make_property(sp, "bool", "CelestialBodiesShown",
+                           str(skybox.celestial_bodies_shown).lower())
+            _make_property(sp, "int", "StarCount", str(skybox.star_count))
+            for face, attr in [("SkyboxFt", "front"), ("SkyboxBk", "back"),
+                                ("SkyboxLf", "left"), ("SkyboxRt", "right"),
+                                ("SkyboxUp", "up"), ("SkyboxDn", "down")]:
+                tex_path = getattr(skybox, attr)
+                if tex_path:
+                    _make_property(sp, "Content", face, tex_path)
+    elif skybox:
+        # Skybox without explicit lighting — create Lighting container for it
+        light_item = ET.SubElement(root, "Item", **{"class": "Lighting"})
+        lp = ET.SubElement(light_item, "Properties")
+        _make_property(lp, "string", "Name", "Lighting")
+        sky_item = ET.SubElement(light_item, "Item", **{"class": "Sky"})
+        sp = ET.SubElement(sky_item, "Properties")
+        _make_property(sp, "string", "Name", "Sky")
+        for face, attr in [("SkyboxFt", "front"), ("SkyboxBk", "back"),
+                            ("SkyboxLf", "left"), ("SkyboxRt", "right"),
+                            ("SkyboxUp", "up"), ("SkyboxDn", "down")]:
+            tex_path = getattr(skybox, attr)
+            if tex_path:
+                _make_property(sp, "Content", face, tex_path)
+
     # Workspace
     workspace_item = ET.SubElement(root, "Item", **{"class": "Workspace"})
     ws_props = ET.SubElement(workspace_item, "Properties")
     _make_property(ws_props, "string", "Name", "Workspace")
+
+    # Camera configuration (set on Workspace.CurrentCamera)
+    if camera:
+        cam_item = ET.SubElement(workspace_item, "Item", **{"class": "Camera"})
+        cp = ET.SubElement(cam_item, "Properties")
+        _make_property(cp, "string", "Name", "Camera")
+        _make_cframe(cp, "CFrame", camera.position, camera.rotation)
+        _make_property(cp, "float", "FieldOfView", f"{camera.field_of_view:.1f}")
+        _make_property(cp, "float", "NearPlaneZ", f"{camera.near_clip:.2f}")
+        _make_property(cp, "float", "FarPlaneZ", f"{camera.far_clip:.1f}")
 
     for part in parts:
         _make_part(workspace_item, part)
