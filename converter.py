@@ -357,6 +357,7 @@ def convert(
         lighting=lighting_config,
         camera=camera_config,
         skybox=skybox_config,
+        server_storage_templates=package_result.server_storage_templates or None,
     )
     click.echo(f"    → Written to {write_result.output_path}")
 

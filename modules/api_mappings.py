@@ -338,6 +338,7 @@ SERVICE_IMPORTS: dict[str, str] = {
     "CollectionService": 'local CollectionService = game:GetService("CollectionService")',
     "Players": 'local Players = game:GetService("Players")',
     "ReplicatedStorage": 'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
+    "ServerStorage": 'local ServerStorage = game:GetService("ServerStorage")',
     "DataStoreService": 'local DataStoreService = game:GetService("DataStoreService")',
     "TeleportService": 'local TeleportService = game:GetService("TeleportService")',
     "SoundService": 'local SoundService = game:GetService("SoundService")',

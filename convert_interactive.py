@@ -674,11 +674,17 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
+    # Collect ServerStorage templates if packages were generated
+    ss_templates = None
+    if emit_packages and package_info:
+        ss_templates = package_result.server_storage_templates or None
+
     write_result = rbxl_writer.write_rbxl(
         parts=parts,
         scripts=rbx_scripts,
         output_path=rbxl_path,
         place_name=unity_path.name,
+        server_storage_templates=ss_templates,
     )
 
     # Store assembly info in state for the report phase

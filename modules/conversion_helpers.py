@@ -494,8 +494,10 @@ def generate_prefab_packages(
             directional_lights,
         )
 
-        # Collect scripts attached to parts (they're already inline on the parts)
-        # No top-level scripts for packages — all scripts live on the parts
+        # Store the template for embedding in ServerStorage inside the .rbxl
+        result.server_storage_templates.append((template.name, root_part))
+
+        # Also write a standalone .rbxm file for Toolbox / manual import
         rbxm_path = packages_dir / f"{template.name}.rbxm"
         entry = rbxl_writer.write_rbxm(
             parts=[root_part],
@@ -533,6 +535,7 @@ def resolve_prefab_instances(
                 continue
 
             root_node = prefab_node_to_scene_node(template.root)
+            root_node.source_prefab_name = template.name
             apply_prefab_modifications(root_node, pi.modifications)
 
             scene.referenced_material_guids |= template.referenced_material_guids
