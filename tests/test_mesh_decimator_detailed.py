@@ -63,7 +63,7 @@ class TestLoadMeshStats:
         assert stats.faces == 50
 
     def test_quad_faces_counted(self, tmp_path: Path) -> None:
-        """Quads are triangulated by trimesh, so 1 quad → 2 triangles."""
+        """Quads are counted as single faces (process=False skips triangulation)."""
         obj = tmp_path / "quad.obj"
         content = (
             "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
@@ -71,8 +71,8 @@ class TestLoadMeshStats:
         )
         obj.write_text(content, encoding="utf-8")
         stats = _load_mesh_stats(obj)
-        # trimesh with force="mesh" triangulates quads: 1 quad → 2 triangular faces
-        assert stats.faces == 2
+        # process=False preserves raw face count; 1 quad = 1 face
+        assert stats.faces == 1
 
     def test_comments_and_blanks_ignored(self, tmp_path: Path) -> None:
         obj = tmp_path / "comments.obj"
