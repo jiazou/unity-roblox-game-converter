@@ -76,6 +76,8 @@ RETRY_BACKOFF_FACTOR: float = 2.0
 
 RBXL_OUTPUT_FILENAME: str = "converted_place.rbxl"
 ROBLOX_XML_NAMESPACE: str = "roblox.com"
+EMIT_PACKAGES: bool = False                 # generate .rbxm per prefab
+PACKAGES_SUBDIR: str = "packages"           # subdirectory under output_dir
 
 # ---------------------------------------------------------------------------
 # Roblox Open Cloud upload (portal upload)

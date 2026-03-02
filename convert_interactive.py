@@ -50,6 +50,7 @@ from modules import (
 )
 from modules.conversion_helpers import (
     resolve_prefab_instances as _resolve_prefab_instances,
+    generate_prefab_packages as _generate_prefab_packages,
     scene_nodes_to_parts as _scene_nodes_to_parts,
     transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
     build_report as _build_report,
@@ -488,7 +489,9 @@ def validate(output_dir: str) -> None:
 @click.argument("unity_project_path", type=click.Path(exists=True, file_okay=False))
 @click.argument("output_dir", type=click.Path())
 @click.option("--decimate/--no-decimate", default=config.MESH_DECIMATION_ENABLED)
-def assemble(unity_project_path: str, output_dir: str, decimate: bool) -> None:
+@click.option("--emit-packages/--no-packages", default=config.EMIT_PACKAGES,
+              help="Generate .rbxm package files for each prefab.")
+def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_packages: bool) -> None:
     """Phase 4: Assemble the .rbxl file from all converted data."""
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
@@ -629,6 +632,26 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool) -> None:
             if scripts:
                 guid_to_companion[guid] = scripts
 
+    # Prefab → .rbxm package generation
+    package_info: dict = {}
+    if emit_packages and prefabs.prefabs:
+        package_result = _generate_prefab_packages(
+            prefabs, out_dir,
+            guid_to_roblox_def=guid_to_roblox_def,
+            guid_to_companion_scripts=guid_to_companion,
+            guid_index=guid_index,
+            mesh_path_remap=mesh_path_remap,
+        )
+        package_info = {
+            "total_packages": package_result.total_packages,
+            "packages": [
+                {"name": p.prefab_name, "path": str(p.output_path),
+                 "parts": p.parts_written, "scripts": p.scripts_written}
+                for p in package_result.packages
+            ],
+            "warnings": package_result.warnings,
+        }
+
     # UI translation
     all_scene_roots = [node for ps in parsed_scenes for node in ps.roots]
     ui_result = ui_translator.translate_ui_hierarchy(all_scene_roots)
@@ -683,6 +706,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool) -> None:
         "warnings": write_result.warnings,
         "decimation": decimation_info,
         "ui_translation": ui_info,
+        "packages": package_info,
         "errors": errors,
     })
 

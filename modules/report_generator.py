@@ -58,11 +58,19 @@ class SceneSummary:
 
 
 @dataclass
+class PackageSummary:
+    total_packages: int = 0
+    package_names: list[str] = field(default_factory=list)
+    packages_dir: str = ""
+
+
+@dataclass
 class OutputSummary:
     rbxl_path: str = ""
     parts_written: int = 0
     scripts_in_place: int = 0
     report_path: str = ""
+    packages: PackageSummary = field(default_factory=PackageSummary)
 
 
 @dataclass
@@ -145,6 +153,8 @@ def generate_report(
             f"{report.scene.meshes_decimated} decimated",
             f"  Parts in .rbxl: {report.output.parts_written}",
         ]
+        if report.output.packages.total_packages:
+            lines.append(f"  Packages     : {report.output.packages.total_packages} .rbxm file(s)")
         if report.warnings:
             lines.append(f"  Warnings     : {len(report.warnings)}")
         if report.errors:

@@ -55,6 +55,7 @@ from modules import (
 )
 from modules.conversion_helpers import (
     resolve_prefab_instances as _resolve_prefab_instances,
+    generate_prefab_packages as _generate_prefab_packages,
     scene_nodes_to_parts as _scene_nodes_to_parts,
     transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
     build_report as _build_report,
@@ -84,6 +85,8 @@ from modules.retry import call_with_retry
               help="Roblox place ID for upload.")
 @click.option("--decimate/--no-decimate", default=config.MESH_DECIMATION_ENABLED,
               help="Decimate meshes exceeding Roblox polygon limits.")
+@click.option("--emit-packages/--no-packages", default=config.EMIT_PACKAGES,
+              help="Generate .rbxm package files for each prefab.")
 def convert(
     unity_project_path: str,
     output_dir: str,
@@ -94,6 +97,7 @@ def convert(
     universe_id: int | None,
     place_id: int | None,
     decimate: bool,
+    emit_packages: bool,
 ) -> None:
     """
     Convert a Unity project at UNITY_PROJECT_PATH to a Roblox place in OUTPUT_DIR.
@@ -302,6 +306,22 @@ def convert(
             if scripts:
                 guid_to_companion[guid] = scripts
 
+    # ── Prefab → .rbxm package generation ───────────────────────────
+    package_result = rbxl_writer.RbxPackageResult()
+    if emit_packages and prefabs.prefabs:
+        click.echo("📦  Generating .rbxm packages …")
+        package_result = _generate_prefab_packages(
+            prefabs, out_dir,
+            guid_to_roblox_def=guid_to_roblox_def,
+            guid_to_companion_scripts=guid_to_companion,
+            guid_index=guid_index,
+            mesh_path_remap=mesh_path_remap,
+        )
+        click.echo(f"    → {package_result.total_packages} package(s) written to "
+                   f"{out_dir / config.PACKAGES_SUBDIR}")
+        for w in package_result.warnings:
+            click.echo(f"    ⚠ {w}")
+
     # ── UI Translation (RectTransform → UDim2) ─────────────────────
     all_scene_roots = [node for ps in parsed_scenes for node in ps.roots]
     ui_result = ui_translator.translate_ui_hierarchy(all_scene_roots)
@@ -377,6 +397,7 @@ def convert(
         unity_path, out_dir, manifest, mat_result, parsed_scenes,
         prefabs, transpilation, write_result, decimation_result,
         resolved_count, duration, errors,
+        package_result=package_result if emit_packages else None,
     )
 
     report_path = out_dir / config.REPORT_FILENAME
