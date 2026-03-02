@@ -22,6 +22,7 @@ from modules.api_mappings import API_CALL_MAP, LIFECYCLE_MAP, SERVICE_IMPORTS, T
 
 
 TranspilationStrategy = Literal["ai", "rule_based", "skipped"]
+RobloxScriptType = Literal["Script", "LocalScript", "ModuleScript"]
 
 
 @dataclass
@@ -35,6 +36,7 @@ class TranspiledScript:
     confidence: float              # 0.0–1.0; <threshold → flagged for review
     warnings: list[str] = field(default_factory=list)
     flagged_for_review: bool = False
+    script_type: RobloxScriptType = "Script"  # classified placement target
 
 
 @dataclass
@@ -179,6 +181,93 @@ def _parse_csharp_ast(source: str) -> CSharpClassInfo | None:
                 info.services_needed.add(svc)
 
     return info
+
+
+# ---------------------------------------------------------------------------
+# Script type classification (client / server / shared)
+# ---------------------------------------------------------------------------
+
+# Unity APIs that indicate client-side execution (LocalScript in Roblox).
+# These access player input, camera, screen, or GUI — services only
+# available on the Roblox client.
+_CLIENT_INDICATORS: set[str] = {
+    "Input.GetKey", "Input.GetKeyDown", "Input.GetKeyUp",
+    "Input.GetMouseButton", "Input.GetMouseButtonDown",
+    "Input.GetAxis", "Input.mousePosition", "Input.GetTouch",
+    "Camera.main", "Camera.fieldOfView",
+    "Camera.ScreenToWorldPoint", "Camera.WorldToScreenPoint",
+    "Screen.width", "Screen.height",
+    "Canvas", "Text.text", "Image.sprite", "Button.onClick",
+    "RectTransform",
+    "OnMouseDown", "OnMouseEnter", "OnMouseExit", "OnGUI",
+}
+
+# Unity APIs / attributes that indicate server-side execution.
+_SERVER_INDICATORS: set[str] = {
+    "[Command]", "[SyncVar]", "[ClientRpc]",
+    "PlayerPrefs.SetInt", "PlayerPrefs.GetInt",
+    "PlayerPrefs.SetFloat", "PlayerPrefs.GetFloat",
+    "PlayerPrefs.SetString", "PlayerPrefs.GetString",
+    "SceneManager.LoadScene",
+}
+
+# Lifecycle hooks that are inherently client-side in Roblox.
+_CLIENT_LIFECYCLE: set[str] = {
+    "LateUpdate",  # maps to RenderStepped, client-only
+    "OnGUI",
+    "OnMouseDown", "OnMouseEnter", "OnMouseExit",
+}
+
+
+def _classify_script_type(
+    source: str,
+    ast_info: CSharpClassInfo | None,
+) -> RobloxScriptType:
+    """
+    Classify a C# script as LocalScript, Script, or ModuleScript based on
+    which Unity APIs it uses and its structural characteristics.
+
+    Heuristic:
+      - No MonoBehaviour base class and no lifecycle hooks → ModuleScript
+      - Uses client-only APIs (Input, Camera, GUI, etc.) → LocalScript
+      - Otherwise → Script (server)
+    """
+    client_score = 0
+    server_score = 0
+
+    if ast_info:
+        # Pure utility class — no MonoBehaviour, no lifecycle hooks
+        if ast_info.base_class not in ("MonoBehaviour", "NetworkBehaviour") and not ast_info.lifecycle_hooks:
+            # Check if it has any class at all (not just a loose file)
+            if ast_info.class_name:
+                return "ModuleScript"
+
+        # Score based on detected API usage
+        for api in ast_info.unity_apis_used:
+            if api in _CLIENT_INDICATORS:
+                client_score += 1
+            if api in _SERVER_INDICATORS:
+                server_score += 1
+
+        # Client-only lifecycle hooks
+        for hook in ast_info.lifecycle_hooks:
+            if hook in _CLIENT_LIFECYCLE:
+                client_score += 1
+
+    # Fallback: regex scan for patterns AST might miss
+    for pattern in _CLIENT_INDICATORS:
+        if pattern.startswith("[") or pattern.startswith("On"):
+            continue  # skip attribute/lifecycle patterns for regex
+        if pattern in source:
+            client_score += 1
+    for pattern in _SERVER_INDICATORS:
+        if pattern in source:
+            server_score += 1
+
+    if client_score > 0 and client_score >= server_score:
+        return "LocalScript"
+
+    return "Script"
 
 
 # ---------------------------------------------------------------------------
@@ -415,12 +504,18 @@ def transpile_scripts(
         csharp_source = cs_path.read_text(encoding="utf-8", errors="replace")
         result.total += 1
 
+        # AST analysis for classification (needed regardless of transpilation strategy)
+        ast_info = _parse_csharp_ast(csharp_source)
+
         if use_ai and api_key:
             luau, confidence, warnings = _ai_transpile(csharp_source, api_key, model, max_tokens)
             strategy: TranspilationStrategy = "ai"
         else:
             luau, confidence, warnings = _rule_based_transpile(csharp_source)
             strategy = "rule_based"
+
+        # Classify script type based on Unity API usage
+        script_type = _classify_script_type(csharp_source, ast_info)
 
         flagged = confidence < confidence_threshold
         ts = TranspiledScript(
@@ -432,6 +527,7 @@ def transpile_scripts(
             confidence=confidence,
             warnings=warnings,
             flagged_for_review=flagged,
+            script_type=script_type,
         )
         result.scripts.append(ts)
 

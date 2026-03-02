@@ -50,6 +50,7 @@ from modules import (
     roblox_uploader,
     rbxl_writer,
     report_generator,
+    ui_translator,
 )
 from modules.llm_cache import LLMCache
 from modules.retry import call_with_retry
@@ -100,6 +101,35 @@ def _node_to_part(
             if mesh_path_remap and mesh_str in mesh_path_remap:
                 mesh_str = mesh_path_remap[mesh_str]
             part.mesh_id = mesh_str
+
+    # Apply physics collider properties to the part.
+    # Unity separates visual (MeshRenderer) and physical (Collider) components.
+    # In Roblox, BasePart is both visual and physical — CanCollide, Size, and
+    # Shape are set directly on the Part.
+    for comp in node.components:
+        if comp.component_type == "BoxCollider":
+            part.anchored = False  # colliders imply dynamic physics
+            # BoxCollider.m_Size gives the extents in local space
+            size = comp.properties.get("m_Size", {})
+            if isinstance(size, dict):
+                sx = float(size.get("x", 4.0))
+                sy = float(size.get("y", 1.0))
+                sz = float(size.get("z", 4.0))
+                part.size = (sx, sy, sz)
+        elif comp.component_type == "SphereCollider":
+            part.anchored = False
+            radius = float(comp.properties.get("m_Radius", 0.5))
+            diameter = radius * 2
+            part.size = (diameter, diameter, diameter)
+        elif comp.component_type == "CapsuleCollider":
+            part.anchored = False
+            radius = float(comp.properties.get("m_Radius", 0.5))
+            height = float(comp.properties.get("m_Height", 2.0))
+            diameter = radius * 2
+            part.size = (diameter, height, diameter)
+        elif comp.component_type == "Rigidbody":
+            is_kinematic = comp.properties.get("m_IsKinematic", 0)
+            part.anchored = bool(is_kinematic)
 
     # Attach material data and companion scripts
     if guid_to_roblox_def:
@@ -328,13 +358,18 @@ def _scene_nodes_to_parts(
 def _transpiled_to_rbx_scripts(
     transpilation: code_transpiler.TranspilationResult,
 ) -> list[rbxl_writer.RbxScriptEntry]:
-    """Map TranspiledScript objects to RbxScriptEntry objects for rbxl_writer."""
+    """Map TranspiledScript objects to RbxScriptEntry objects for rbxl_writer.
+
+    Uses the classified script_type from code_transpiler to place scripts in
+    the correct Roblox container (ServerScriptService, StarterPlayerScripts,
+    or ReplicatedStorage).
+    """
     entries: list[rbxl_writer.RbxScriptEntry] = []
     for ts in transpilation.scripts:
         entries.append(rbxl_writer.RbxScriptEntry(
             name=ts.output_filename.replace(".lua", ""),
             luau_source=ts.luau_source,
-            script_type="Script",
+            script_type=ts.script_type,
         ))
     return entries
 
@@ -631,6 +666,15 @@ def convert(
             scripts = mat_result.companion_scripts.get(entry.asset_path)
             if scripts:
                 guid_to_companion[guid] = scripts
+
+    # ── UI Translation (RectTransform → UDim2) ─────────────────────
+    all_scene_roots = [node for ps in parsed_scenes for node in ps.roots]
+    ui_result = ui_translator.translate_ui_hierarchy(all_scene_roots)
+    if ui_result.total:
+        click.echo(f"🖼   UI translation: {ui_result.converted}/{ui_result.total} "
+                   f"RectTransform(s) → UDim2")
+        for w in ui_result.warnings:
+            click.echo(f"    ⚠ {w}")
 
     click.echo("🏗   Writing .rbxl …")
     parts = _scene_nodes_to_parts(

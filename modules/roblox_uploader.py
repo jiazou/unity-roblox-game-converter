@@ -11,10 +11,20 @@ No other module is imported here.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Roblox Open Cloud payload size limits (bytes)
+# ---------------------------------------------------------------------------
+
+ASSET_MAX_BYTES: int = 20 * 1024 * 1024      # 20 MB for assets (decals, meshes, audio)
+PLACE_MAX_BYTES: int = 100 * 1024 * 1024     # 100 MB for place files
 
 
 @dataclass
@@ -38,6 +48,35 @@ def _validate_api_key(api_key: str) -> bool:
     return api_key.strip() not in placeholders
 
 
+def _check_rate_limit_headers(resp: Any) -> None:
+    """
+    Inspect Roblox rate-limit response headers and sleep proactively
+    when approaching the limit.
+
+    Roblox Open Cloud returns:
+      x-ratelimit-remaining: number of requests left in the current window
+      x-ratelimit-reset: seconds until the rate-limit window resets
+    """
+    remaining = resp.headers.get("x-ratelimit-remaining")
+    reset = resp.headers.get("x-ratelimit-reset")
+
+    if remaining is not None:
+        try:
+            remaining_int = int(remaining)
+        except (ValueError, TypeError):
+            return
+        if remaining_int <= 1 and reset is not None:
+            try:
+                sleep_seconds = min(float(reset), 60.0)  # cap at 60s
+            except (ValueError, TypeError):
+                sleep_seconds = 5.0
+            logger.info(
+                "Rate limit nearly exhausted (remaining=%d), sleeping %.1fs",
+                remaining_int, sleep_seconds,
+            )
+            time.sleep(sleep_seconds)
+
+
 def _upload_place(
     rbxl_path: Path,
     api_key: str,
@@ -51,6 +90,14 @@ def _upload_place(
     """
     import urllib.request
     import urllib.error
+
+    # Validate file size before upload
+    file_size = rbxl_path.stat().st_size
+    if file_size > PLACE_MAX_BYTES:
+        raise ValueError(
+            f"Place file too large for Roblox Open Cloud: "
+            f"{file_size / 1_048_576:.1f} MB (limit: {PLACE_MAX_BYTES // 1_048_576} MB)"
+        )
 
     url = (
         f"https://apis.roblox.com/universes/v1/"
@@ -71,6 +118,7 @@ def _upload_place(
     )
 
     resp = urllib.request.urlopen(req, timeout=120)
+    _check_rate_limit_headers(resp)
     return json.loads(resp.read().decode("utf-8"))
 
 
@@ -107,6 +155,14 @@ def _upload_image_asset(
     })
 
     image_bytes = image_path.read_bytes()
+
+    # Validate file size before upload
+    if len(image_bytes) > ASSET_MAX_BYTES:
+        raise ValueError(
+            f"Asset file too large for Roblox Open Cloud: "
+            f"{len(image_bytes) / 1_048_576:.1f} MB (limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
+        )
+
     content_type = "image/png" if image_path.suffix.lower() == ".png" else "application/octet-stream"
 
     body_parts = [
@@ -137,6 +193,7 @@ def _upload_image_asset(
     )
 
     resp = urllib.request.urlopen(req, timeout=120)
+    _check_rate_limit_headers(resp)
     return json.loads(resp.read().decode("utf-8"))
 
 

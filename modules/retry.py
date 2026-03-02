@@ -26,11 +26,12 @@ _TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = (
     OSError,
 )
 
-# Try to include urllib errors if available
+# Try to include urllib errors if available (includes HTTP 429 rate limits)
 try:
     import urllib.error
     _TRANSIENT_EXCEPTIONS = _TRANSIENT_EXCEPTIONS + (
         urllib.error.URLError,
+        urllib.error.HTTPError,  # covers HTTP 429, 500, 502, 503, etc.
     )
 except ImportError:
     pass

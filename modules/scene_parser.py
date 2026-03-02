@@ -47,6 +47,11 @@ _CID_GAME_OBJECT = 1
 _CID_TRANSFORM = 4
 _CID_MESH_RENDERER = 23
 _CID_MESH_FILTER = 33
+_CID_BOX_COLLIDER = 65
+_CID_SPHERE_COLLIDER = 135
+_CID_CAPSULE_COLLIDER = 136
+_CID_MESH_COLLIDER = 64
+_CID_RIGIDBODY = 54
 _CID_SKINNED_MESH_RENDERER = 137
 _CID_MONO_BEHAVIOUR = 114
 _CID_RECT_TRANSFORM = 224
@@ -255,7 +260,10 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         elif cid == _CID_PREFAB_INSTANCE:
             prefab_instance_docs.append((fid, body))
         elif cid in (_CID_MESH_FILTER, _CID_MESH_RENDERER,
-                     _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR):
+                     _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR,
+                     _CID_BOX_COLLIDER, _CID_SPHERE_COLLIDER,
+                     _CID_CAPSULE_COLLIDER, _CID_MESH_COLLIDER,
+                     _CID_RIGIDBODY):
             component_docs.append((fid, cid, body))
 
     # ------------------------------------------------------------------
@@ -325,6 +333,11 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         _CID_MESH_RENDERER: "MeshRenderer",
         _CID_SKINNED_MESH_RENDERER: "SkinnedMeshRenderer",
         _CID_MONO_BEHAVIOUR: "MonoBehaviour",
+        _CID_BOX_COLLIDER: "BoxCollider",
+        _CID_SPHERE_COLLIDER: "SphereCollider",
+        _CID_CAPSULE_COLLIDER: "CapsuleCollider",
+        _CID_MESH_COLLIDER: "MeshCollider",
+        _CID_RIGIDBODY: "Rigidbody",
     }
 
     for comp_fid, cid, body in component_docs:
