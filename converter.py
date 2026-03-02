@@ -40,6 +40,7 @@ import click
 import config
 from modules import (
     asset_extractor,
+    code_validator,
     guid_resolver,
     material_mapper,
     mesh_decimator,
@@ -50,6 +51,8 @@ from modules import (
     rbxl_writer,
     report_generator,
 )
+from modules.llm_cache import LLMCache
+from modules.retry import call_with_retry
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +564,23 @@ def convert(
         errors.append(str(exc))
         transpilation = code_transpiler.TranspilationResult()
 
+    # ── Validate generated Luau code ──────────────────────────────
+    validation_errors = 0
+    validation_warnings = 0
+    for ts in transpilation.scripts:
+        vr = code_validator.validate_luau(ts.luau_source, ts.output_filename)
+        if not vr.valid:
+            validation_errors += vr.error_count
+            ts.flagged_for_review = True
+            ts.warnings.extend(
+                f"[{i.code}] L{i.line}: {i.message}" for i in vr.issues
+                if i.severity == "error"
+            )
+        validation_warnings += vr.warning_count
+    if validation_errors or validation_warnings:
+        click.echo(f"    → Luau validation: {validation_errors} error(s), "
+                   f"{validation_warnings} warning(s)")
+
     # ── Mesh decimation (conservative) ─────────────────────────────
     decimation_result = mesh_decimator.DecimationResult()
     if decimate:
@@ -637,12 +657,17 @@ def convert(
 
     click.echo("☁️   Checking Roblox upload …")
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
-    upload_result = roblox_uploader.upload_to_roblox(
+    upload_result = call_with_retry(
+        roblox_uploader.upload_to_roblox,
         rbxl_path=rbxl_path,
         textures_dir=textures_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
+        max_retries=config.RETRY_MAX_ATTEMPTS,
+        base_delay=config.RETRY_BASE_DELAY,
+        max_delay=config.RETRY_MAX_DELAY,
+        backoff_factor=config.RETRY_BACKOFF_FACTOR,
     )
     if upload_result.skipped:
         for w in upload_result.warnings:
