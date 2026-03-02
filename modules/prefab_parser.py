@@ -9,34 +9,29 @@ This module applies the same document-resolution strategy as scene_parser:
   2. Build nodes from GameObjects, resolve Transforms for hierarchy and
      position/rotation/scale, attach components.
   3. Extract mesh GUIDs from MeshFilter and material GUIDs from renderers.
-
-No other module is imported here.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-
-# ---------------------------------------------------------------------------
-# Unity YAML helpers (same patterns as scene_parser)
-# ---------------------------------------------------------------------------
-
-_UNITY_YAML_HEADER = re.compile(r"^%YAML.*\n%TAG.*\n", re.MULTILINE)
-_UNITY_DOC_SEPARATOR = re.compile(r"^--- !u!(\d+) &(\d+).*$", re.MULTILINE)
-
-_CID_GAME_OBJECT = 1
-_CID_TRANSFORM = 4
-_CID_MESH_RENDERER = 23
-_CID_MESH_FILTER = 33
-_CID_SKINNED_MESH_RENDERER = 137
-_CID_MONO_BEHAVIOUR = 114
-_CID_RECT_TRANSFORM = 224
+from modules.unity_yaml_utils import (
+    CID_GAME_OBJECT as _CID_GAME_OBJECT,
+    CID_TRANSFORM as _CID_TRANSFORM,
+    CID_MESH_RENDERER as _CID_MESH_RENDERER,
+    CID_MESH_FILTER as _CID_MESH_FILTER,
+    CID_SKINNED_MESH_RENDERER as _CID_SKINNED_MESH_RENDERER,
+    CID_MONO_BEHAVIOUR as _CID_MONO_BEHAVIOUR,
+    CID_RECT_TRANSFORM as _CID_RECT_TRANSFORM,
+    extract_vec3 as _extract_vec3,
+    extract_quat as _extract_quat,
+    ref_file_id as _ref_file_id,
+    ref_guid as _ref_guid,
+    parse_documents as _parse_documents,
+    doc_body as _doc_body,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -88,75 +83,6 @@ class PrefabLibrary:
     referenced_mesh_guids: set[str] = field(default_factory=set)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _extract_vec3(d: dict, key: str) -> tuple[float, float, float]:
-    v = d.get(key, {})
-    if not isinstance(v, dict):
-        return (0.0, 0.0, 0.0)
-    return (float(v.get("x", 0)), float(v.get("y", 0)), float(v.get("z", 0)))
-
-
-def _extract_quat(d: dict, key: str) -> tuple[float, float, float, float]:
-    v = d.get(key, {})
-    if not isinstance(v, dict):
-        return (0.0, 0.0, 0.0, 1.0)
-    return (float(v.get("x", 0)), float(v.get("y", 0)),
-            float(v.get("z", 0)), float(v.get("w", 1)))
-
-
-def _ref_file_id(ref: Any) -> str | None:
-    if isinstance(ref, dict):
-        fid = ref.get("fileID", 0)
-        if fid:
-            return str(fid)
-    return None
-
-
-def _ref_guid(ref: Any) -> str | None:
-    if isinstance(ref, dict):
-        guid = ref.get("guid", "")
-        if guid and guid != "0" * 32:
-            return guid
-    return None
-
-
-def _doc_body(doc: dict) -> dict:
-    for v in doc.values():
-        if isinstance(v, dict):
-            return v
-    return doc
-
-
-def _parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
-    """Parse Unity YAML into (classID, fileID, body_dict) triples."""
-    doc_headers: list[tuple[int, str]] = []
-    for m in _UNITY_DOC_SEPARATOR.finditer(raw_text):
-        doc_headers.append((int(m.group(1)), m.group(2)))
-
-    cleaned = _UNITY_YAML_HEADER.sub("", raw_text, count=1)
-    cleaned = _UNITY_DOC_SEPARATOR.sub("---", cleaned)
-
-    try:
-        docs: list[dict] = list(yaml.safe_load_all(cleaned))
-    except yaml.YAMLError:
-        return []
-
-    result: list[tuple[int, str, dict]] = []
-    header_idx = 0
-    for doc in docs:
-        if not isinstance(doc, dict):
-            continue
-        if header_idx < len(doc_headers):
-            cid, fid = doc_headers[header_idx]
-            header_idx += 1
-        else:
-            cid, fid = 0, "0"
-        result.append((cid, fid, doc))
-
-    return result
 
 
 # ---------------------------------------------------------------------------

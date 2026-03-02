@@ -60,6 +60,10 @@ class RbxPartEntry:
     material_enum: str | None = None     # e.g. "SmoothPlastic"
     surface_appearance: RbxSurfaceAppearance | None = None
     mesh_id: str | None = None           # rbxassetid:// or file path for MeshPart
+    # Child objects converted from Unity Light, AudioSource, ParticleSystem components
+    light_children: list[tuple] = field(default_factory=list)
+    sound_children: list[tuple] = field(default_factory=list)
+    particle_children: list[tuple] = field(default_factory=list)
 
 
 @dataclass
@@ -322,16 +326,16 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         # Apply what we can: color/transparency are already set via BasePart properties.
         pass
 
-    # Light children (PointLight, SpotLight) — set by converter.py
-    for lc in getattr(part, "light_children", ()):
+    # Light children (PointLight, SpotLight)
+    for lc in part.light_children:
         _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
 
-    # Sound children — set by converter.py
-    for sc in getattr(part, "sound_children", ()):
+    # Sound children
+    for sc in part.sound_children:
         _make_sound(item, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7])
 
-    # ParticleEmitter children — set by converter.py
-    for pc in getattr(part, "particle_children", ()):
+    # ParticleEmitter children
+    for pc in part.particle_children:
         _make_particle_emitter(item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7], pc[8], pc[9], pc[10])
 
     for script in part.scripts:

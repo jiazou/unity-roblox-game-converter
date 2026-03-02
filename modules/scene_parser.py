@@ -21,46 +21,40 @@ This module:
   8. Extracts material GUIDs from MeshRenderer.m_Materials.
   9. Records PrefabInstance docs (classID 1001) with their source GUID
      and property modifications for downstream resolution.
-
-No other module is imported here.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml  # PyYAML
-
-
-# ---------------------------------------------------------------------------
-# Unity YAML helpers
-# ---------------------------------------------------------------------------
-
-_UNITY_YAML_HEADER = re.compile(r"^%YAML.*\n%TAG.*\n", re.MULTILINE)
-_UNITY_DOC_SEPARATOR = re.compile(r"^--- !u!(\d+) &(\d+).*$", re.MULTILINE)
-
-# Well-known Unity classIDs
-_CID_GAME_OBJECT = 1
-_CID_TRANSFORM = 4
-_CID_MESH_RENDERER = 23
-_CID_MESH_FILTER = 33
-_CID_BOX_COLLIDER = 65
-_CID_AUDIO_SOURCE = 82
-_CID_ANIMATOR = 95
-_CID_LIGHT = 108
-_CID_SPHERE_COLLIDER = 135
-_CID_CAPSULE_COLLIDER = 136
-_CID_MESH_COLLIDER = 64
-_CID_RIGIDBODY = 54
-_CID_CHARACTER_CONTROLLER = 143
-_CID_SKINNED_MESH_RENDERER = 137
-_CID_MONO_BEHAVIOUR = 114
-_CID_PARTICLE_SYSTEM = 198
-_CID_RECT_TRANSFORM = 224
-_CID_PREFAB_INSTANCE = 1001
+from modules.unity_yaml_utils import (
+    CID_GAME_OBJECT as _CID_GAME_OBJECT,
+    CID_TRANSFORM as _CID_TRANSFORM,
+    CID_MESH_RENDERER as _CID_MESH_RENDERER,
+    CID_MESH_FILTER as _CID_MESH_FILTER,
+    CID_BOX_COLLIDER as _CID_BOX_COLLIDER,
+    CID_AUDIO_SOURCE as _CID_AUDIO_SOURCE,
+    CID_ANIMATOR as _CID_ANIMATOR,
+    CID_LIGHT as _CID_LIGHT,
+    CID_SPHERE_COLLIDER as _CID_SPHERE_COLLIDER,
+    CID_CAPSULE_COLLIDER as _CID_CAPSULE_COLLIDER,
+    CID_MESH_COLLIDER as _CID_MESH_COLLIDER,
+    CID_RIGIDBODY as _CID_RIGIDBODY,
+    CID_CHARACTER_CONTROLLER as _CID_CHARACTER_CONTROLLER,
+    CID_SKINNED_MESH_RENDERER as _CID_SKINNED_MESH_RENDERER,
+    CID_MONO_BEHAVIOUR as _CID_MONO_BEHAVIOUR,
+    CID_PARTICLE_SYSTEM as _CID_PARTICLE_SYSTEM,
+    CID_RECT_TRANSFORM as _CID_RECT_TRANSFORM,
+    CID_PREFAB_INSTANCE as _CID_PREFAB_INSTANCE,
+    extract_vec3 as _extract_vec3,
+    extract_quat as _extract_quat,
+    ref_file_id as _ref_file_id,
+    ref_guid as _ref_guid,
+    parse_documents as _parse_documents,
+    doc_body as _doc_body,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -123,92 +117,6 @@ class ParsedScene:
     prefab_instances: list[PrefabInstanceData] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _extract_vec3(d: dict, key: str) -> tuple[float, float, float]:
-    v = d.get(key, {})
-    if not isinstance(v, dict):
-        return (0.0, 0.0, 0.0)
-    return (float(v.get("x", 0)), float(v.get("y", 0)), float(v.get("z", 0)))
-
-
-def _extract_quat(d: dict, key: str) -> tuple[float, float, float, float]:
-    v = d.get(key, {})
-    if not isinstance(v, dict):
-        return (0.0, 0.0, 0.0, 1.0)
-    return (float(v.get("x", 0)), float(v.get("y", 0)),
-            float(v.get("z", 0)), float(v.get("w", 1)))
-
-
-def _ref_file_id(ref: Any) -> str | None:
-    """Extract fileID from a Unity object reference dict, or None."""
-    if isinstance(ref, dict):
-        fid = ref.get("fileID", 0)
-        if fid:
-            return str(fid)
-    return None
-
-
-def _ref_guid(ref: Any) -> str | None:
-    """Extract guid from a Unity object reference dict, or None."""
-    if isinstance(ref, dict):
-        guid = ref.get("guid", "")
-        if guid and guid != "0" * 32:
-            return guid
-    return None
-
-
-def _parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
-    """
-    Parse a Unity YAML file into (classID, fileID, body_dict) triples.
-
-    Pre-scans the document separators to capture classID and fileID before
-    handing the cleaned text to PyYAML.
-    """
-    # Step 1: collect (classID, fileID) for every document separator
-    doc_headers: list[tuple[int, str]] = []
-    for m in _UNITY_DOC_SEPARATOR.finditer(raw_text):
-        doc_headers.append((int(m.group(1)), m.group(2)))
-
-    # Step 2: strip the non-standard header and replace separators
-    cleaned = _UNITY_YAML_HEADER.sub("", raw_text, count=1)
-    cleaned = _UNITY_DOC_SEPARATOR.sub("---", cleaned)
-
-    # Step 3: parse YAML documents
-    try:
-        docs: list[dict] = list(yaml.safe_load_all(cleaned))
-    except yaml.YAMLError:
-        return []
-
-    # Step 4: pair each document with its header
-    # PyYAML may produce fewer docs than separators (empty docs are skipped),
-    # and it may produce extra None docs.  Filter non-dict results.
-    result: list[tuple[int, str, dict]] = []
-    header_idx = 0
-    for doc in docs:
-        if not isinstance(doc, dict):
-            continue
-        if header_idx < len(doc_headers):
-            cid, fid = doc_headers[header_idx]
-            header_idx += 1
-        else:
-            cid, fid = 0, "0"
-        result.append((cid, fid, doc))
-
-    return result
-
-
-def _doc_body(doc: dict) -> dict:
-    """
-    Unity YAML documents are wrapped: ``{ClassName: {actual_props}}``.
-    Return the inner dict.
-    """
-    for v in doc.values():
-        if isinstance(v, dict):
-            return v
-    return doc
 
 
 # ---------------------------------------------------------------------------
