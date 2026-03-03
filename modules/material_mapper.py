@@ -46,7 +46,7 @@ class ShaderInfo:
 @dataclass
 class TextureOperation:
     """A deferred texture-processing operation."""
-    operation: str          # copy | extract_channel | invert | resize | bake_ao | threshold_alpha | pre_tile | to_grayscale
+    operation: str          # copy | extract_channel | invert | resize | bake_ao | threshold_alpha | pre_tile | to_grayscale | composite_detail | blend_normal_detail | heightmap_to_normal
     source_path: Path
     output_filename: str
     channel: str | None = None          # R | G | B | A
@@ -425,6 +425,13 @@ class ParsedMaterial:
     specular_color: tuple[float, float, float] | None = None  # for Specular workflow
     specular_tex_path: Path | None = None  # _SpecGlossMap
     hdrp_mask_map_path: Path | None = None  # HDRP _MaskMap (MODS packing)
+    detail_albedo_tex_path: Path | None = None   # _DetailAlbedoMap
+    detail_normal_tex_path: Path | None = None   # _DetailNormalMapScale
+    detail_mask_tex_path: Path | None = None     # _DetailMask
+    detail_normal_scale: float = 1.0             # _DetailNormalMapScale
+    detail_tiling: tuple[float, float] = (1.0, 1.0)  # _DetailAlbedoMap tiling
+    height_tex_path: Path | None = None          # _ParallaxMap / _HeightMap
+    height_strength: float = 0.02                # _Parallax / _HeightAmplitude
     active_tex_names: set[str] = field(default_factory=set)  # texture props with non-null refs
 
 
@@ -620,6 +627,36 @@ def _parse_material(
                 if ec_name in colors:
                     parsed.emission_color = _color_rgb(colors[ec_name])
                     break
+
+        # Detail maps
+        for dm_name in ("_DetailAlbedoMap",):
+            if dm_name in tex_envs:
+                _, path = _resolve_texture(tex_envs[dm_name], guid_map)
+                if path:
+                    parsed.detail_albedo_tex_path = path
+                    parsed.detail_tiling = _get_tiling(tex_envs[dm_name])
+                break
+        for dnm_name in ("_DetailNormalMap",):
+            if dnm_name in tex_envs:
+                _, path = _resolve_texture(tex_envs[dnm_name], guid_map)
+                if path:
+                    parsed.detail_normal_tex_path = path
+                break
+        if "_DetailMask" in tex_envs:
+            _, path = _resolve_texture(tex_envs["_DetailMask"], guid_map)
+            if path:
+                parsed.detail_mask_tex_path = path
+        parsed.detail_normal_scale = floats.get("_DetailNormalMapScale", 1.0)
+
+        # Height / parallax map
+        for hm_name in ("_ParallaxMap", "_HeightMap"):
+            if hm_name in tex_envs:
+                _, path = _resolve_texture(tex_envs[hm_name], guid_map)
+                if path:
+                    parsed.height_tex_path = path
+                    break
+        parsed.height_strength = floats.get(
+            "_Parallax", floats.get("_HeightAmplitude", 0.02))
 
         # Render mode — handle both Built-in (_Mode) and URP (_Surface + _AlphaClip)
         if "_Mode" in floats:
@@ -926,20 +963,68 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
         else:
             rdef.alpha_mode = "Transparency"
 
-        # Detail maps — log as unconverted
-        for detail_prop in ("_DetailAlbedoMap", "_DetailNormalMap", "_DetailMask"):
-            if detail_prop in parsed.active_tex_names:
-                result.unconverted.append(UnconvertedFeature(
-                    "Detail map", detail_prop, "MEDIUM",
-                    "Bake detail into base texture offline", True,
-                ))
-                break
+        # Detail albedo map → composite into base albedo
+        if parsed.detail_albedo_tex_path and parsed.detail_albedo_tex_path.exists() and rdef.color_map:
+            result.texture_ops.append(TextureOperation(
+                "composite_detail", parsed.detail_albedo_tex_path, rdef.color_map,
+                params={
+                    "base_path": str(parsed.albedo_tex_path) if parsed.albedo_tex_path else "",
+                    "mask_path": str(parsed.detail_mask_tex_path) if parsed.detail_mask_tex_path else "",
+                    "detail_tiling_x": parsed.detail_tiling[0],
+                    "detail_tiling_y": parsed.detail_tiling[1],
+                },
+            ))
+            result.warnings.append("Detail albedo composited into ColorMap")
+        elif "_DetailAlbedoMap" in parsed.active_tex_names:
+            result.unconverted.append(UnconvertedFeature(
+                "Detail albedo map", "_DetailAlbedoMap", "MEDIUM",
+                "Detail map exists but base albedo missing — composite skipped", True,
+            ))
 
-        # Height map — log as unconverted
-        if "_ParallaxMap" in parsed.active_tex_names or "_HeightMap" in parsed.active_tex_names:
+        # Detail normal map → blend into base normal
+        if parsed.detail_normal_tex_path and parsed.detail_normal_tex_path.exists() and rdef.normal_map:
+            result.texture_ops.append(TextureOperation(
+                "blend_normal_detail", parsed.detail_normal_tex_path, rdef.normal_map,
+                params={
+                    "base_path": str(parsed.normal_tex_path) if parsed.normal_tex_path else "",
+                    "mask_path": str(parsed.detail_mask_tex_path) if parsed.detail_mask_tex_path else "",
+                    "detail_tiling_x": parsed.detail_tiling[0],
+                    "detail_tiling_y": parsed.detail_tiling[1],
+                    "detail_normal_scale": parsed.detail_normal_scale,
+                },
+            ))
+            result.warnings.append("Detail normal blended into NormalMap")
+        elif "_DetailNormalMap" in parsed.active_tex_names:
+            result.unconverted.append(UnconvertedFeature(
+                "Detail normal map", "_DetailNormalMap", "MEDIUM",
+                "Detail normal exists but base normal missing — blend skipped", True,
+            ))
+
+        # Height/parallax map → convert to additional normal detail
+        if parsed.height_tex_path and parsed.height_tex_path.exists():
+            if rdef.normal_map:
+                # Blend heightmap-derived normals into existing normal map
+                result.texture_ops.append(TextureOperation(
+                    "heightmap_to_normal", parsed.height_tex_path, rdef.normal_map,
+                    params={
+                        "base_normal_path": str(parsed.normal_tex_path) if parsed.normal_tex_path else "",
+                        "strength": parsed.height_strength,
+                    },
+                ))
+                result.warnings.append("Height map converted to normal detail and blended into NormalMap")
+            else:
+                # No existing normal map — generate one from heightmap
+                nm_out = _safe_filename(mat_name, "_normal.png")
+                result.texture_ops.append(TextureOperation(
+                    "heightmap_to_normal", parsed.height_tex_path, nm_out,
+                    params={"strength": parsed.height_strength},
+                ))
+                rdef.normal_map = nm_out
+                result.warnings.append("Normal map generated from height map")
+        elif "_ParallaxMap" in parsed.active_tex_names or "_HeightMap" in parsed.active_tex_names:
             result.unconverted.append(UnconvertedFeature(
                 "Height/parallax map", "_ParallaxMap", "MEDIUM",
-                "Convert to normal map detail or bake into mesh", True,
+                "Height map referenced but texture file not resolved", True,
             ))
 
     # --- Transparency from shader (for custom shaders) ---
@@ -1208,6 +1293,212 @@ def _process_textures(
                 factor = 1.0 - strength + strength * ao_arr[..., np.newaxis]
                 result_arr = np.clip(alb_arr * factor, 0, 255).astype(np.uint8)
                 Image.fromarray(result_arr).save(out_path, "PNG")
+                generated.append(out_path)
+
+            elif op.operation == "composite_detail":
+                # Composite detail albedo into base albedo using Unity's
+                # overlay blend: result = base * (detail * 2).  Detail maps
+                # are expected to be centred on 0.5 grey.
+                import numpy as np
+                base_path = Path(op.params.get("base_path", ""))
+                mask_path_str = op.params.get("mask_path", "")
+                tile_x = max(1, int(op.params.get("detail_tiling_x", 1)))
+                tile_y = max(1, int(op.params.get("detail_tiling_y", 1)))
+
+                if not base_path.exists():
+                    continue
+                base = Image.open(base_path).convert("RGB")
+                detail = Image.open(op.source_path).convert("RGB")
+
+                # Pre-tile detail map to match base UV space
+                if tile_x > 1 or tile_y > 1:
+                    tw = detail.width * tile_x
+                    th = detail.height * tile_y
+                    tiled = Image.new("RGB", (tw, th))
+                    for tx in range(tile_x):
+                        for ty in range(tile_y):
+                            tiled.paste(detail, (tx * detail.width, ty * detail.height))
+                    detail = tiled
+
+                detail = detail.resize(base.size, Image.LANCZOS)
+
+                base_arr = np.array(base, dtype=np.float32) / 255.0
+                det_arr = np.array(detail, dtype=np.float32) / 255.0
+
+                # Unity overlay blend: base < 0.5 → 2*base*detail,
+                #                      base >= 0.5 → 1 - 2*(1-base)*(1-detail)
+                low = 2.0 * base_arr * det_arr
+                high = 1.0 - 2.0 * (1.0 - base_arr) * (1.0 - det_arr)
+                blended = np.where(base_arr < 0.5, low, high)
+
+                # Apply detail mask if present (R channel = blend weight)
+                if mask_path_str:
+                    mask_path = Path(mask_path_str)
+                    if mask_path.exists():
+                        mask = Image.open(mask_path).convert("L")
+                        mask = mask.resize(base.size, Image.LANCZOS)
+                        mask_arr = np.array(mask, dtype=np.float32) / 255.0
+                        blended = base_arr + (blended - base_arr) * mask_arr[..., np.newaxis]
+
+                result_arr = np.clip(blended * 255.0, 0, 255).astype(np.uint8)
+                Image.fromarray(result_arr).save(out_path, "PNG")
+                generated.append(out_path)
+
+            elif op.operation == "blend_normal_detail":
+                # Blend detail normal map into base normal using UDN
+                # (Unreal Derivative Normal) blending:
+                #   result.xy = base.xy + detail.xy
+                #   result.z  = base.z
+                #   normalize
+                import numpy as np
+                base_path = Path(op.params.get("base_path", ""))
+                mask_path_str = op.params.get("mask_path", "")
+                tile_x = max(1, int(op.params.get("detail_tiling_x", 1)))
+                tile_y = max(1, int(op.params.get("detail_tiling_y", 1)))
+                detail_scale = op.params.get("detail_normal_scale", 1.0)
+
+                if not base_path.exists():
+                    continue
+                base = Image.open(base_path).convert("RGB")
+                detail = Image.open(op.source_path).convert("RGB")
+
+                # Pre-tile detail
+                if tile_x > 1 or tile_y > 1:
+                    tw = detail.width * tile_x
+                    th = detail.height * tile_y
+                    tiled = Image.new("RGB", (tw, th))
+                    for tx in range(tile_x):
+                        for ty in range(tile_y):
+                            tiled.paste(detail, (tx * detail.width, ty * detail.height))
+                    detail = tiled
+
+                detail = detail.resize(base.size, Image.LANCZOS)
+
+                base_arr = np.array(base, dtype=np.float32)
+                det_arr = np.array(detail, dtype=np.float32)
+
+                # Decode from [0,255] to [-1,1]
+                bx = base_arr[..., 0] / 127.5 - 1.0
+                by = base_arr[..., 1] / 127.5 - 1.0
+                bz = base_arr[..., 2] / 127.5 - 1.0
+                dx = (det_arr[..., 0] / 127.5 - 1.0) * detail_scale
+                dy = (det_arr[..., 1] / 127.5 - 1.0) * detail_scale
+
+                # Apply mask if present
+                if mask_path_str:
+                    mask_path = Path(mask_path_str)
+                    if mask_path.exists():
+                        mask = Image.open(mask_path).convert("L")
+                        mask = mask.resize(base.size, Image.LANCZOS)
+                        mask_arr = np.array(mask, dtype=np.float32) / 255.0
+                        dx *= mask_arr
+                        dy *= mask_arr
+
+                # UDN blend
+                rx = bx + dx
+                ry = by + dy
+                rz = bz  # keep base Z
+                length = np.sqrt(rx*rx + ry*ry + rz*rz)
+                length = np.maximum(length, 1e-6)
+                rx /= length
+                ry /= length
+                rz /= length
+
+                # Encode back to [0,255]
+                out_arr = np.zeros_like(base_arr)
+                out_arr[..., 0] = np.clip((rx + 1.0) * 127.5, 0, 255)
+                out_arr[..., 1] = np.clip((ry + 1.0) * 127.5, 0, 255)
+                out_arr[..., 2] = np.clip((rz + 1.0) * 127.5, 0, 255)
+                Image.fromarray(out_arr.astype(np.uint8)).save(out_path, "PNG")
+                generated.append(out_path)
+
+            elif op.operation == "heightmap_to_normal":
+                # Convert a heightmap to normal map detail using Sobel
+                # filter, then optionally blend into an existing normal.
+                import numpy as np
+                strength = op.params.get("strength", 0.02)
+                base_normal_path_str = op.params.get("base_normal_path", "")
+
+                hmap = Image.open(op.source_path).convert("L")
+                h_arr = np.array(hmap, dtype=np.float32) / 255.0
+
+                # Sobel kernels for X and Y gradients
+                # Pad edges by wrapping
+                padded = np.pad(h_arr, 1, mode="wrap")
+                # Sobel X: [-1 0 1; -2 0 2; -1 0 1]
+                sx = (
+                    -padded[:-2, :-2] + padded[:-2, 2:]
+                    - 2.0 * padded[1:-1, :-2] + 2.0 * padded[1:-1, 2:]
+                    - padded[2:, :-2] + padded[2:, 2:]
+                )
+                # Sobel Y: [-1 -2 -1; 0 0 0; 1 2 1]
+                sy = (
+                    -padded[:-2, :-2] - 2.0 * padded[:-2, 1:-1] - padded[:-2, 2:]
+                    + padded[2:, :-2] + 2.0 * padded[2:, 1:-1] + padded[2:, 2:]
+                )
+
+                # Scale strength (parallax values are typically 0.02-0.1,
+                # multiply up to get visible normal perturbation)
+                scale = strength * 50.0
+                nx = -sx * scale
+                ny = -sy * scale
+                nz = np.ones_like(nx)
+
+                length = np.sqrt(nx*nx + ny*ny + nz*nz)
+                length = np.maximum(length, 1e-6)
+                nx /= length
+                ny /= length
+                nz /= length
+
+                if base_normal_path_str:
+                    base_normal_path = Path(base_normal_path_str)
+                    if base_normal_path.exists():
+                        base_img = Image.open(base_normal_path).convert("RGB")
+                        # Resize heightmap-derived normals to match base
+                        if (h_arr.shape[1], h_arr.shape[0]) != base_img.size:
+                            # Recompute at base resolution
+                            hmap_r = hmap.resize(base_img.size, Image.LANCZOS)
+                            h_arr_r = np.array(hmap_r, dtype=np.float32) / 255.0
+                            padded_r = np.pad(h_arr_r, 1, mode="wrap")
+                            sx = (
+                                -padded_r[:-2, :-2] + padded_r[:-2, 2:]
+                                - 2.0 * padded_r[1:-1, :-2] + 2.0 * padded_r[1:-1, 2:]
+                                - padded_r[2:, :-2] + padded_r[2:, 2:]
+                            )
+                            sy = (
+                                -padded_r[:-2, :-2] - 2.0 * padded_r[:-2, 1:-1] - padded_r[:-2, 2:]
+                                + padded_r[2:, :-2] + 2.0 * padded_r[2:, 1:-1] + padded_r[2:, 2:]
+                            )
+                            nx = -sx * scale
+                            ny = -sy * scale
+                            nz = np.ones_like(nx)
+                            length = np.sqrt(nx*nx + ny*ny + nz*nz)
+                            length = np.maximum(length, 1e-6)
+                            nx /= length
+                            ny /= length
+                            nz /= length
+
+                        # UDN blend with existing normal
+                        base_arr = np.array(base_img, dtype=np.float32)
+                        bx = base_arr[..., 0] / 127.5 - 1.0
+                        by = base_arr[..., 1] / 127.5 - 1.0
+                        bz = base_arr[..., 2] / 127.5 - 1.0
+
+                        rx = bx + nx
+                        ry = by + ny
+                        rz = bz
+                        length = np.sqrt(rx*rx + ry*ry + rz*rz)
+                        length = np.maximum(length, 1e-6)
+                        nx = rx / length
+                        ny = ry / length
+                        nz = rz / length
+
+                # Encode to [0,255]
+                out_arr = np.zeros((*nx.shape, 3), dtype=np.uint8)
+                out_arr[..., 0] = np.clip((nx + 1.0) * 127.5, 0, 255).astype(np.uint8)
+                out_arr[..., 1] = np.clip((ny + 1.0) * 127.5, 0, 255).astype(np.uint8)
+                out_arr[..., 2] = np.clip((nz + 1.0) * 127.5, 0, 255).astype(np.uint8)
+                Image.fromarray(out_arr).save(out_path, "PNG")
                 generated.append(out_path)
 
         except Exception:

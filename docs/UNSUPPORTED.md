@@ -1,6 +1,6 @@
 # Unsupported Conversions & Known Limitations
 
-> Last updated: 2026-03-02
+> Last updated: 2026-03-03
 > Converter version: 0.2.0 (pre-release)
 > Status: Living document — shrinks as converter improves
 
@@ -53,6 +53,11 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Texture offset (pixel shift) | High | UV offset applied via pixel shifting |
 | Custom shader identification | Medium | Source parsing + `#include` resolution |
 | Ghost property detection | High | Only converts properties the shader actually reads |
+| Detail albedo compositing | High | Overlay blend into ColorMap with tiling + mask |
+| Detail normal blending | High | UDN blend into NormalMap with tiling + mask + scale |
+| Height map → normal detail | High | Sobel filter conversion with optional base blend |
+| Vertex color baking | Medium | Rasterise vertex colors to UV texture, multiply into albedo |
+| UI Canvas → ScreenGui | High | Canvas/Text/Image/Button → ScreenGui/TextLabel/ImageLabel/TextButton |
 | Companion Luau scripts | Medium | Generated for blink/rotation effects |
 | Directional Light → Lighting | High | Maps to Roblox `Lighting` service properties |
 | Unity primitives → Roblox shapes | Medium | Cube→Block, Sphere→Ball, Cylinder→Cylinder |
@@ -68,23 +73,15 @@ limitations (permanent) and converter gaps (fixable in future releases).
 
 | Feature | Severity | Fixable? | Section |
 |---------|----------|----------|---------|
-| Vertex colors | **HIGH** | Future | [Vertex Colors](#vertex-colors) |
+| Vertex colors | **HIGH** | Partial | [Vertex Colors](#vertex-colors) |
 | Multi-material meshes | **HIGH** | Future | [Multi-Material Meshes](#multi-material-meshes) |
 | UV tiling ≠ (1,1) | **HIGH** | Partial | [UV Tiling](#uv-tiling-and-offset) |
 | Terrain / splat maps | **HIGH** | Future | [Terrain](#terrain-conversion) |
-| ~~Directional Light → Lighting~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Directional Lights](#directional-lights)~~ FIXED |
-| ~~Camera objects~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Cameras](#cameras)~~ FIXED |
-| C# transpilation (rule-based) | **LOW** | Yes | [Script Transpilation](#c-to-luau-transpilation-quality) |
-| Height/parallax maps | MEDIUM | Future | [Height Maps](#heightparallax-maps) |
-| Detail maps | MEDIUM | Future | [Detail Maps](#detail-maps) |
+| ~~Height/parallax maps~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Height Maps](#heightparallax-maps)~~ FIXED |
+| ~~Detail maps~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Detail Maps](#detail-maps)~~ FIXED |
 | Custom Shader Graph | MEDIUM | Partial | [Shader Graph](#custom-shader-graph) |
-| ~~Part size from mesh bounds~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Mesh-Based Sizing](#mesh-based-part-sizing)~~ FIXED |
-| ~~Skybox generation~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Skybox](#skybox-and-atmosphere)~~ FIXED |
-| ~~Unity primitive → Roblox shape~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Primitive Mapping](#unity-primitive-to-roblox-shape-mapping)~~ FIXED |
-| Canvas / UI | MEDIUM | Future | [UI Canvas](#ui-canvas) |
-| ~~Unlit rendering~~ | ~~LOW~~ | ~~Yes~~ | ~~[Unlit Materials](#unlit-materials)~~ FIXED (auto-detection) |
+| ~~Canvas / UI~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[UI Canvas](#ui-canvas)~~ FIXED |
 | SSS / anisotropy / iridescence | LOW | No | [HDRP Advanced](#hdrp-advanced-features) |
-| ~~Normal map scale baking~~ | ~~LOW~~ | ~~Yes~~ | ~~[Normal Scale](#normal-map-scale)~~ FIXED |
 
 ---
 
@@ -194,17 +191,12 @@ nested children, giving accurate part counts in the conversion report.
 
 ### Geometry & Transform
 
-#### Mesh-Based Part Sizing
+#### ~~Mesh-Based Part Sizing~~ — FIXED
 
-**Severity**: MEDIUM
-**Status**: Not implemented
+~~**Severity**: MEDIUM~~
+~~**Status**: Not implemented~~
 
-For MeshParts with resolved mesh GUIDs, size is set from Transform scale but not from
-the mesh's actual bounding box. This can cause aspect ratio mismatch when the mesh
-geometry doesn't match the transform scale assumptions.
-
-**Fix**: Parse mesh bounding box from FBX/OBJ and use it as the base size before
-applying transform scale.
+Mesh bounding box sizing is now implemented using trimesh AABB. See Recently Fixed.
 
 #### ~~Unity Primitive to Roblox Shape Mapping~~ — FIXED
 
@@ -224,47 +216,65 @@ Unity built-in primitives now map to Roblox shape equivalents. See Recently Fixe
 
 Directional lights now map to Roblox `Lighting` service properties. See Recently Fixed.
 
-#### Cameras
+#### ~~Cameras~~ — FIXED
 
-**Severity**: MEDIUM
-**Status**: Not implemented
+~~**Severity**: MEDIUM~~
+~~**Status**: Not implemented~~
 
-Unity Camera objects become regular Parts. They should be mapped to
-`Workspace.CurrentCamera` configuration (CFrame, FieldOfView, etc.) or skipped.
+Camera objects are now mapped to `Workspace.CurrentCamera` with FOV, CFrame, and
+near/far clip plane configuration. See Recently Fixed.
 
-#### UI Canvas
+#### ~~UI Canvas~~ — FIXED
 
-**Severity**: MEDIUM
-**Status**: Not implemented
+~~**Severity**: MEDIUM~~
+~~**Status**: Not implemented~~
 
-Unity Canvas / UI elements are not converted to Roblox `ScreenGui` / `SurfaceGui`.
+Unity Canvas / RectTransform UI hierarchy is now converted to Roblox ScreenGui:
+- `Canvas` → `ScreenGui` (placed in `StarterGui`)
+- `Text` → `TextLabel` (with text content, size, colour, alignment)
+- `Image` / `RawImage` → `ImageLabel` (with sprite GUID, colour tint)
+- `Button` → `TextButton` (with text from associated Text component)
+- `InputField` → `TextBox`
+- `ScrollRect` → `ScrollingFrame`
+- Other RectTransform nodes → `Frame`
+- Full anchor/pivot/SizeDelta → UDim2 position/size conversion
+- Nested hierarchy preserved (parent Frame → child TextLabel etc.)
+- Background color extracted from Image components on Frame nodes
 
-#### Skybox and Atmosphere
+See `modules/ui_translator.py` and `modules/rbxl_writer.py`.
 
-**Severity**: MEDIUM
-**Status**: Not converted
+#### ~~Skybox and Atmosphere~~ — FIXED
 
-Unity Skybox materials (6-sided, Procedural, Panoramic) are not mapped to Roblox
-`Skybox` and `Atmosphere` objects.
+~~**Severity**: MEDIUM~~
+~~**Status**: Not converted~~
+
+Unity Skybox materials (6-sided) are now mapped to Roblox `Sky` + `Atmosphere`
+objects in Lighting. See Recently Fixed.
 
 ---
 
 ### Material & Shader Gaps
 
-#### Vertex Colors
+#### Vertex Colors — PARTIALLY FIXED
 
-**Severity**: HIGH
-**Impact**: Any material that multiplies `_MainTex` by vertex colors (e.g., the entire
-Trash Dash game — 43 of 72 materials) loses per-vertex color variation.
+**Severity**: HIGH → MEDIUM (automated baking now available for supported formats)
+
+**Impact**: Any material that multiplies `_MainTex` by vertex colors loses per-vertex
+color variation. This affects 43 of 72 materials in Trash Dash.
 
 **Why**: Roblox `MeshPart` + `SurfaceAppearance` does not read vertex colors from mesh
 data. There is no property to enable vertex color multiplication.
 
-**Workaround** (manual): Bake vertex colors into the albedo texture using Blender or
-Substance Painter.
+**What's now automated** (`modules/vertex_color_baker.py`):
+- Loads mesh via trimesh (supports OBJ, PLY, GLB/GLTF formats)
+- Extracts per-vertex RGBA colors and UV coordinates
+- Rasterises vertex colors onto UV-space texture via barycentric interpolation
+- Multiplies rasterised color map into albedo texture
+- Batch processing API for all meshes in a project
 
-**Future automation**: Parse FBX mesh → extract vertex colors at each UV coordinate →
-multiply into albedo texture → export new texture. Requires FBX parsing library.
+**Remaining limitation**: FBX format is not natively supported by trimesh. Meshes in
+FBX format need to be converted to OBJ/GLB first, or processed through a separate
+FBX parsing library (pyassimp, Blender Python API) for vertex color extraction.
 
 #### Multi-Material Meshes
 
@@ -302,25 +312,29 @@ the texture will appear un-tiled.
 and `_process_textures()` now fully executes them, including offset pixel shifting.
 Tiling factors ≤ 4x are pre-tiled automatically; factors > 4x are logged to UNCONVERTED.md.
 
-#### Height/Parallax Maps
+#### ~~Height/Parallax Maps~~ — FIXED
 
-**Severity**: MEDIUM
-**Why**: Roblox has no displacement or parallax mapping.
+~~**Severity**: MEDIUM~~
 
-**Properties affected**: `_ParallaxMap`, `_HeightMap`, `_Parallax`, `_HeightAmplitude`
+Height maps are now converted to normal detail via Sobel filter:
+- `_ParallaxMap` / `_HeightMap` → Sobel X/Y gradients → normal vectors
+- Strength scaled by `_Parallax` value (typically 0.02–0.1)
+- When a base normal map exists, the height-derived normals are UDN-blended in
+- When no base normal exists, a new normal map is generated from the height map
 
-**Workaround**: Convert height map to additional normal map detail (Sobel filter).
-Or drop entirely — visual impact is often subtle.
+The `heightmap_to_normal` texture operation handles both standalone and blend modes.
 
-#### Detail Maps
+#### ~~Detail Maps~~ — FIXED
 
-**Severity**: MEDIUM
-**Why**: Roblox has no secondary texture layer system.
+~~**Severity**: MEDIUM~~
 
-**Properties affected**: `_DetailAlbedoMap`, `_DetailNormalMap`, `_DetailMask`, `_UVSec`
+Detail maps are now composited into the base textures:
+- `_DetailAlbedoMap` → overlay-blended into `ColorMap` (with tiling + mask support)
+- `_DetailNormalMap` → UDN-blended into `NormalMap` (with tiling + mask + scale support)
+- `_DetailMask` → used as blend weight for both operations
 
-**Workaround** (future): Composite detail albedo into main albedo respecting the
-detail mask and different tiling rates. Blend detail normal into main normal.
+The `composite_detail` and `blend_normal_detail` texture operations handle tiling
+(pre-tiling the detail texture) and masking (R channel of `_DetailMask`).
 
 #### Custom Shader Graph
 
@@ -341,20 +355,14 @@ names (`_BaseMap`, `_Color`) exist in the material's saved properties.
 
 Normal map scale baking is now implemented. See Recently Fixed.
 
-#### Unlit Materials
+#### ~~Unlit Materials~~ — FIXED
 
-**Severity**: LOW
-**Impact**: Games designed as unlit (pre-baked lighting in textures) will receive
-Roblox's realtime lighting on top, causing double-lighting.
+~~**Severity**: LOW~~
 
-**Why**: Roblox has no "unlit" `SurfaceAppearance` mode. `BasePart.Material = Neon`
-is self-lit but has a strong glow effect.
-
-**Workaround**: Set Roblox `Lighting.Ambient` high and `Lighting.Brightness` low to
-approximate an unlit environment.
-
-**Future**: Auto-detect unlit game (all materials use unlit shaders) and generate
-appropriate Lighting configuration in the .rbxl.
+Unlit game detection is now implemented. When >70% of materials use unlit shaders
+(URP Unlit, Legacy Diffuse, Particle Unlit, etc.), the converter auto-adjusts
+`Lighting.Brightness` low and `Lighting.Ambient` high in the .rbxl output.
+See Recently Fixed.
 
 ---
 
@@ -362,39 +370,56 @@ appropriate Lighting configuration in the .rbxl.
 
 ### C# to Luau Transpilation Quality
 
-**Severity**: MEDIUM (rule-based mode) / LOW (AI mode)
-**Status**: Rule-based transpiler is extremely simplistic
+**Severity**: LOW (rule-based mode) / NEGLIGIBLE (AI mode)
+**Status**: Rule-based transpiler handles common patterns; AI mode recommended for production
 
-**What rule-based mode does**:
-- Variable declarations: `int x = 5` → `local x = 5`
+**What rule-based mode handles**:
+- Variable declarations (`int/float/bool/string/var/List<T>` → `local`)
 - Debug.Log → print
 - `void Foo()` → `local function Foo()`
 - Unity lifecycle stubs: `Start()` → `AncestryChanged`, `Update()` → `Heartbeat`
 - `this.` → `self.`
+- Braces `{ }` → `do/then...end` block conversion
+- `using` directives and `namespace` wrappers (stripped)
+- Class declarations with inheritance (stripped)
+- Access modifiers (`public/private/protected/static` etc., stripped)
+- Return type annotations on methods (stripped)
+- C# type casts (stripped)
+- `for(int i=0; i<n; i++)` → `for i = 0, n-1 do`
+- `foreach (Type item in collection)` → `for _, item in collection do`
+- `while (cond) {` → `while cond do`
+- `if/else if/else` chains → `if/elseif/else...then...end`
+- `!=` → `~=`, `&&` → `and`, `||` → `or`, `!x` → `not x`
+- `null` → `nil`
+- Ternary `? :` → `if then else`
+- `.Length/.Count` → `#table`
+- `.Add/.Remove/.Contains` → `table.insert/remove/find`
+- `.ToString()` → `tostring()`
+- `Mathf.*` → `math.*` (abs, sin, cos, sqrt, floor, ceil, min, max, clamp, lerp, PI, Infinity)
+- `Time.deltaTime` → `dt`
+- `new Vector3/Vector2/Color()` → `.new()` constructors
+- `new List<T>()/Dictionary<T>()` → `{}`
+- String concatenation `+` → `..`
+- Semicolons stripped
+- Comprehensive API mapping table (50+ Unity API → Roblox equivalents)
+- Tree-sitter AST parsing (when available) for structural analysis, service imports, and classification
+- `[SerializeField]` fields with prefab refs → `ServerStorage:WaitForChild()`
+- Script client/server/module classification based on API usage
 
-**What rule-based mode does NOT handle**:
-- C# class/namespace declarations (left as-is, produces invalid Luau)
-- Braces `{ }` (left as-is)
-- Type system (`int`, `float`, `bool`, `string`, generic types)
-- Method calls (`.GetComponent<T>()`, `.AddForce()`, etc.)
-- Loops (`for`, `foreach`, `while`)
-- Conditional operators (`? :`, `??`)
+**What rule-based mode does NOT handle well**:
 - Properties (getters/setters)
-- Inheritance / interfaces
-- LINQ
-- Coroutines (`IEnumerator`, `yield return`)
-- Unity-specific APIs (Input, Physics, Collision, UI, NavMesh, etc.)
-- Access modifiers (`public`, `private`, `protected`)
-- `using` statements
+- Inheritance / interfaces (class structure stripped, not restructured)
+- LINQ expressions
+- Coroutines (`IEnumerator`, `yield return`) — APIs mapped but not structurally rewritten
+- Complex generic types
+- Event subscriptions / delegates
 
-**Result**: Rule-based output is essentially **invalid Luau with C# syntax artifacts**.
-Scripts are flagged for review but the confidence scoring is unreliable.
+**AI mode** (requires Claude API key): Produces significantly better results —
+handles all of the above correctly. Recommended for production.
 
-**AI mode** (requires Claude API key): Produces much better results but requires
-network access and API credits.
-
-**Recommendation**: Always use `--use-ai` for production conversions. Rule-based mode
-is only useful as a rough starting point for manual cleanup.
+**Post-transpilation validation**: `code_validator.py` checks generated Luau for
+block keyword balance, residual C# syntax, curly braces, trailing semicolons, and
+bracket balance. Scripts with validation errors are flagged for review.
 
 ---
 
@@ -512,18 +537,22 @@ only processed materials, not all `.mat` files found.
 13. ~~Camera → `Workspace.CurrentCamera` mapping~~ — Done
 14. ~~Mesh bounding box → Part size for MeshParts~~ — Done
 
+### Phase 2.5 — Recently Completed
+15. ~~Detail map compositing~~ — Done (overlay blend albedo + UDN blend normal + mask + tiling)
+16. ~~Height map → normal detail~~ — Done (Sobel filter + optional base normal blend)
+17. ~~Vertex color baking~~ — Done (trimesh + barycentric raster + albedo multiply; OBJ/PLY/GLB)
+18. ~~UI Canvas → ScreenGui~~ — Done (Text/Image/Button → TextLabel/ImageLabel/TextButton + UDim2)
+
 ### Phase 3 — Long Term (Major Features)
-15. Vertex color baking (FBX parse → UV map → texture multiply)
-16. Multi-material mesh splitting
-17. Terrain splat map → MaterialVariant conversion
-18. Custom Shader Graph analysis (.shadergraph parsing)
-19. UI Canvas → ScreenGui mapping
+19. Multi-material mesh splitting
+20. Terrain splat map → MaterialVariant conversion
+21. Custom Shader Graph analysis (.shadergraph parsing)
 
 ---
 
 ## Test Coverage
 
-**Current**: 701 automated tests across 12 test files covering:
+**Current**: 811 automated tests across 16 test files covering:
 - `test_unity_yaml_utils.py` — YAML parsing, vector/quaternion extraction, references
 - `test_conversion_helpers.py` — All component conversion helpers (colliders, lights, audio, particles, materials)
 - `test_converter.py` — End-to-end node-to-part, prefab resolution, scene conversion, report building
@@ -540,3 +569,8 @@ only processed materials, not all `.mat` files found.
 **Still needed**:
 - Integration test: full pipeline on synthetic project, assert output structure
 - Regression test: known-good .rbxl output comparison
+
+**Infrastructure modules** (implemented, not yet listed in test coverage section above):
+- `modules/code_validator.py` — Luau syntax validation (block balance, C# residue, bracket balance)
+- `modules/retry.py` — Exponential backoff retry decorator and callable wrapper
+- `modules/llm_cache.py` — Hash-based disk cache for LLM responses (SHA-256 keyed, TTL-based eviction)
