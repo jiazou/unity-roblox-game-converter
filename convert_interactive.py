@@ -688,7 +688,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         }
 
     # Write .rbxl
-    parts = _scene_nodes_to_parts(
+    parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
         guid_to_companion_scripts=guid_to_companion,
@@ -708,6 +708,9 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         scripts=rbx_scripts,
         output_path=rbxl_path,
         place_name=unity_path.name,
+        lighting=lighting_config,
+        camera=camera_config,
+        skybox=skybox_config,
         server_storage_templates=ss_templates,
     )
 
