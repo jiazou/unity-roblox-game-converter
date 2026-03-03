@@ -687,6 +687,13 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
             "warnings": ui_result.warnings,
         }
 
+    # Convert UI elements to RbxScreenGui objects for the writer
+    rbx_screen_guis = None
+    if ui_result.elements:
+        rbx_screen_guis = [
+            ui_translator.to_rbx_screen_gui("ConvertedUI", ui_result.elements)
+        ]
+
     # Write .rbxl
     parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
         parsed_scenes,
@@ -712,6 +719,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         camera=camera_config,
         skybox=skybox_config,
         server_storage_templates=ss_templates,
+        screen_guis=rbx_screen_guis,
     )
 
     # Store assembly info in state for the report phase
@@ -719,6 +727,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         "rbxl_path": str(write_result.output_path),
         "parts_written": write_result.parts_written,
         "scripts_written": write_result.scripts_written,
+        "prefab_instances_resolved": resolved_count,
     }
     state["errors"].extend(errors)
     if "assemble" not in state["completed_phases"]:
@@ -871,7 +880,7 @@ def report(unity_project_path: str, output_dir: str, verbose: bool) -> None:
     )
 
     decimation_result = mesh_decimator.DecimationResult()
-    resolved_count = 0
+    resolved_count = assembly.get("prefab_instances_resolved", 0)
     duration = time.monotonic() - t_start
 
     rpt = _build_report(

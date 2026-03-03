@@ -327,6 +327,13 @@ def convert(
         for w in ui_result.warnings:
             click.echo(f"    ⚠ {w}")
 
+    # Convert UI elements to RbxScreenGui objects for the writer
+    rbx_screen_guis = None
+    if ui_result.elements:
+        rbx_screen_guis = [
+            ui_translator.to_rbx_screen_gui("ConvertedUI", ui_result.elements)
+        ]
+
     click.echo("🏗   Writing .rbxl …")
     parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
         parsed_scenes,
@@ -354,6 +361,7 @@ def convert(
         camera=camera_config,
         skybox=skybox_config,
         server_storage_templates=package_result.server_storage_templates or None,
+        screen_guis=rbx_screen_guis,
     )
     click.echo(f"    → Written to {write_result.output_path}")
 
