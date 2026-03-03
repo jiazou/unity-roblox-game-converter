@@ -40,6 +40,7 @@ from modules.material_mapper import (
     _pipeline_label,
     _resolve_texture,
     _safe_filename,
+    _process_textures,
     map_materials,
 )
 from tests.conftest import make_meta
@@ -604,6 +605,84 @@ class TestConvertMaterial:
         result = _convert_material(parsed)
         height_entries = [u for u in result.unconverted if "Height" in u.feature_name or "parallax" in u.feature_name.lower()]
         assert len(height_entries) > 0
+
+    def test_detail_albedo_composite_op(self, tmp_path: Path) -> None:
+        """Detail albedo map with resolved texture should produce composite_detail op."""
+        albedo = tmp_path / "albedo.png"
+        albedo.write_bytes(b"PNG")
+        detail = tmp_path / "detail.png"
+        detail.write_bytes(b"PNG")
+        parsed = self._make_parsed(
+            albedo_tex_path=albedo,
+            albedo_tex_guid="abc",
+            detail_albedo_tex_path=detail,
+            detail_tiling=(2.0, 2.0),
+            active_tex_names={"_DetailAlbedoMap"},
+        )
+        result = _convert_material(parsed)
+        composite_ops = [op for op in result.texture_ops if op.operation == "composite_detail"]
+        assert len(composite_ops) == 1
+        assert composite_ops[0].params["detail_tiling_x"] == 2.0
+
+    def test_detail_normal_blend_op(self, tmp_path: Path) -> None:
+        """Detail normal map with resolved texture should produce blend_normal_detail op."""
+        albedo = tmp_path / "albedo.png"
+        albedo.write_bytes(b"PNG")
+        normal = tmp_path / "normal.png"
+        normal.write_bytes(b"PNG")
+        detail_normal = tmp_path / "detail_normal.png"
+        detail_normal.write_bytes(b"PNG")
+        parsed = self._make_parsed(
+            albedo_tex_path=albedo,
+            albedo_tex_guid="abc",
+            normal_tex_path=normal,
+            detail_normal_tex_path=detail_normal,
+            detail_normal_scale=0.5,
+            active_tex_names={"_DetailNormalMap"},
+        )
+        result = _convert_material(parsed)
+        blend_ops = [op for op in result.texture_ops if op.operation == "blend_normal_detail"]
+        assert len(blend_ops) == 1
+        assert blend_ops[0].params["detail_normal_scale"] == 0.5
+
+    def test_heightmap_to_normal_with_existing_normal(self, tmp_path: Path) -> None:
+        """Height map with existing normal should produce heightmap_to_normal op with blend."""
+        albedo = tmp_path / "albedo.png"
+        albedo.write_bytes(b"PNG")
+        normal = tmp_path / "normal.png"
+        normal.write_bytes(b"PNG")
+        height = tmp_path / "height.png"
+        height.write_bytes(b"PNG")
+        parsed = self._make_parsed(
+            albedo_tex_path=albedo,
+            albedo_tex_guid="abc",
+            normal_tex_path=normal,
+            height_tex_path=height,
+            height_strength=0.05,
+        )
+        result = _convert_material(parsed)
+        h2n_ops = [op for op in result.texture_ops if op.operation == "heightmap_to_normal"]
+        assert len(h2n_ops) == 1
+        assert h2n_ops[0].params["strength"] == 0.05
+        assert h2n_ops[0].params["base_normal_path"] == str(normal)
+
+    def test_heightmap_to_normal_generates_normal(self, tmp_path: Path) -> None:
+        """Height map without existing normal should generate a new normal map."""
+        albedo = tmp_path / "albedo.png"
+        albedo.write_bytes(b"PNG")
+        height = tmp_path / "height.png"
+        height.write_bytes(b"PNG")
+        parsed = self._make_parsed(
+            albedo_tex_path=albedo,
+            albedo_tex_guid="abc",
+            height_tex_path=height,
+            height_strength=0.03,
+        )
+        result = _convert_material(parsed)
+        h2n_ops = [op for op in result.texture_ops if op.operation == "heightmap_to_normal"]
+        assert len(h2n_ops) == 1
+        assert result.roblox_def.normal_map is not None
+        assert "normal" in result.roblox_def.normal_map.lower()
 
     def test_tiling_pre_tile(self, tmp_path: Path) -> None:
         """Tiling within PRE_TILE_MAX_FACTOR should produce a pre_tile op."""
@@ -1191,3 +1270,134 @@ class TestSceneParserCamera:
         assert len(result.roots) == 1
         cam_comps = [c for c in result.roots[0].components if c.component_type == "Camera"]
         assert len(cam_comps) == 1
+
+
+# ── Texture processing: detail/height operations ─────────────────────
+
+
+class TestTextureProcessingDetailOps:
+    """Integration tests for composite_detail, blend_normal_detail, heightmap_to_normal."""
+
+    def _make_rgb_image(self, path: Path, color: tuple[int, int, int], size: int = 8) -> Path:
+        from PIL import Image
+        img = Image.new("RGB", (size, size), color)
+        img.save(path, "PNG")
+        return path
+
+    def _make_grayscale_image(self, path: Path, value: int, size: int = 8) -> Path:
+        from PIL import Image
+        img = Image.new("L", (size, size), value)
+        img.save(path, "PNG")
+        return path
+
+    def test_composite_detail_produces_output(self, tmp_path: Path) -> None:
+        base = self._make_rgb_image(tmp_path / "base.png", (200, 100, 50))
+        detail = self._make_rgb_image(tmp_path / "detail.png", (128, 128, 128))  # neutral grey
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "composite_detail", detail, "result.png",
+            params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 1, "detail_tiling_y": 1},
+        )]
+        result = _process_textures(ops, out_dir)
+        assert len(result) == 1
+        assert (out_dir / "result.png").exists()
+
+    def test_composite_detail_neutral_grey_preserves_base(self, tmp_path: Path) -> None:
+        """Neutral grey (128,128,128) detail should roughly preserve the base color."""
+        from PIL import Image
+        import numpy as np
+        base = self._make_rgb_image(tmp_path / "base.png", (200, 100, 50))
+        detail = self._make_rgb_image(tmp_path / "detail.png", (128, 128, 128))
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "composite_detail", detail, "result.png",
+            params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 1, "detail_tiling_y": 1},
+        )]
+        _process_textures(ops, out_dir)
+        result = np.array(Image.open(out_dir / "result.png"))
+        # With neutral grey overlay, result ≈ base (within rounding)
+        expected = np.array(Image.open(base))
+        assert np.allclose(result, expected, atol=5)
+
+    def test_composite_detail_with_tiling(self, tmp_path: Path) -> None:
+        from PIL import Image
+        base = self._make_rgb_image(tmp_path / "base.png", (200, 100, 50))
+        detail = self._make_rgb_image(tmp_path / "detail.png", (128, 128, 128), size=4)
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "composite_detail", detail, "result.png",
+            params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 2, "detail_tiling_y": 2},
+        )]
+        result = _process_textures(ops, out_dir)
+        assert len(result) == 1
+
+    def test_blend_normal_detail_produces_output(self, tmp_path: Path) -> None:
+        # Flat normal map: (128, 128, 255) = pointing straight up
+        base = self._make_rgb_image(tmp_path / "base.png", (128, 128, 255))
+        detail = self._make_rgb_image(tmp_path / "detail.png", (128, 128, 255))
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "blend_normal_detail", detail, "result.png",
+            params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 1,
+                    "detail_tiling_y": 1, "detail_normal_scale": 1.0},
+        )]
+        result = _process_textures(ops, out_dir)
+        assert len(result) == 1
+
+    def test_blend_normal_flat_detail_preserves_base(self, tmp_path: Path) -> None:
+        """Flat detail normal (128,128,255) should preserve the base normal."""
+        from PIL import Image
+        import numpy as np
+        base = self._make_rgb_image(tmp_path / "base.png", (128, 128, 255))
+        detail = self._make_rgb_image(tmp_path / "detail.png", (128, 128, 255))
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "blend_normal_detail", detail, "result.png",
+            params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 1,
+                    "detail_tiling_y": 1, "detail_normal_scale": 1.0},
+        )]
+        _process_textures(ops, out_dir)
+        result = np.array(Image.open(out_dir / "result.png"))
+        # Flat + flat should still be flat (128, 128, 255) ± rounding
+        assert np.allclose(result[..., 0], 128, atol=2)
+        assert np.allclose(result[..., 1], 128, atol=2)
+        assert result[..., 2].mean() > 200  # Z should remain dominant
+
+    def test_heightmap_to_normal_produces_output(self, tmp_path: Path) -> None:
+        height = self._make_grayscale_image(tmp_path / "height.png", 128)
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "heightmap_to_normal", height, "normal.png",
+            params={"strength": 0.05},
+        )]
+        result = _process_textures(ops, out_dir)
+        assert len(result) == 1
+        assert (out_dir / "normal.png").exists()
+
+    def test_heightmap_flat_produces_flat_normal(self, tmp_path: Path) -> None:
+        """Flat heightmap (uniform value) should produce a flat normal map."""
+        from PIL import Image
+        import numpy as np
+        height = self._make_grayscale_image(tmp_path / "height.png", 128)
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "heightmap_to_normal", height, "normal.png",
+            params={"strength": 0.05},
+        )]
+        _process_textures(ops, out_dir)
+        result = np.array(Image.open(out_dir / "normal.png"))
+        # Flat heightmap → Sobel gradients are 0 → normal is (0,0,1) → (128,128,255)
+        assert np.allclose(result[..., 0], 128, atol=2)
+        assert np.allclose(result[..., 1], 128, atol=2)
+        assert np.allclose(result[..., 2], 255, atol=2)
+
+    def test_heightmap_blended_into_existing_normal(self, tmp_path: Path) -> None:
+        base_normal = self._make_rgb_image(tmp_path / "base_normal.png", (128, 128, 255))
+        height = self._make_grayscale_image(tmp_path / "height.png", 128)
+        out_dir = tmp_path / "out"
+        ops = [TextureOperation(
+            "heightmap_to_normal", height, "normal.png",
+            params={"strength": 0.05, "base_normal_path": str(base_normal)},
+        )]
+        result = _process_textures(ops, out_dir)
+        assert len(result) == 1

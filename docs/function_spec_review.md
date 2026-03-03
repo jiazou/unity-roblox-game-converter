@@ -12,11 +12,11 @@ The function specification defines **37 functions** across 8 pipeline stages. Ag
 
 | Status | Count | Functions |
 |--------|-------|-----------|
-| Fully implemented | 10 | UnityAssetExporter, MeshSimplifier, MaterialMapper, LLMTranslatorWrapper, UnityProjectImporter, AssetUploader, BuildOrchestrator, JobScheduler, ReviewInterface, HITL_JobScheduler |
+| Fully implemented | 13 | UnityAssetExporter, MeshSimplifier, MaterialMapper, LLMTranslatorWrapper, UnityProjectImporter, AssetUploader, BuildOrchestrator, JobScheduler, ReviewInterface, HITL_JobScheduler, CodeValidator, RetryBackoff, CacheManager |
 | Partially implemented | 6 | CSharpParser, APIMapper, AssetQualityAssurance, LoggingAndAudit, AuditTrail, FeedbackIngestion |
-| Not implemented | 21 | TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeValidator, CodeQA, TestGenerator, UIExtractor, LayoutTranslator, UIGenerator, UIQA, NetworkAnalyzer, RemoteEventGenerator, ServerAuthorityMapper, RojoIntegrator, PromptManager, BatchRequestHandler, CacheManager, CostEstimator, FineTuneManager, LLMMonitor, RetryBackoff |
+| Not implemented | 18 | TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeQA, TestGenerator, UIExtractor, LayoutTranslator, UIGenerator, UIQA, NetworkAnalyzer, RemoteEventGenerator, ServerAuthorityMapper, RojoIntegrator, PromptManager, BatchRequestHandler, CostEstimator, FineTuneManager, LLMMonitor |
 
-**Coverage: 8/37 fully implemented (22%), 13/37 at least partially (35%), 24/37 missing (65%).**
+**Coverage: 13/37 fully implemented (35%), 19/37 at least partially (51%), 18/37 missing (49%).**
 
 The codebase is strongest in the asset pipeline (materials, meshes, scene parsing) and weakest in UI, networking, and LLM ops.
 
@@ -234,20 +234,25 @@ Again, the AI transpilation path (Claude) implicitly handles API mapping as part
 
 ---
 
-#### 11. CodeValidator (P1) — NOT IMPLEMENTED
+#### 11. CodeValidator (P1) — IMPLEMENTED
 
 | Aspect | Spec | Implementation |
 |--------|------|----------------|
-| Purpose | Verify semantic validity of translated code | N/A |
-| Deps | Roblox Runtime or mock environment | N/A |
+| Module | — | `modules/code_validator.py` (235 lines) |
+| Purpose | Verify syntactic validity of translated code | Static analysis for common Luau issues |
+| Tests | — | `tests/test_code_validator.py` |
 
-**Needed?** Yes — without validation, translation correctness is unknown.
+**Assessment**: Fully implemented. Checks for:
+- Block keyword balance (`function/if/for/while/repeat` vs `end/until`)
+- Residual C# syntax (`using`, `class`, `namespace`, access modifiers, `new` constructors)
+- Stray curly braces (C# artifact in Luau)
+- Trailing semicolons (valid but non-idiomatic)
+- Parenthesis/bracket balance
+- Strips comments and strings before analysis to avoid false positives
 
-**Assessment**: No Luau code validation exists. The transpiler assigns confidence scores but doesn't actually verify the generated code compiles or runs correctly. A Roblox Luau linter/parser (like `luau-analyze` or `selene`) could provide static validation. Runtime validation would require a Roblox sandbox.
+Returns `ValidationResult` with per-issue line numbers, severity levels, and error codes. **No gap.**
 
-**Recommendation**: **Important gap.** At minimum, add Luau syntax validation (parse check). Consider integrating `luau` CLI for type checking. Runtime validation (test execution) is post-POC scope.
-
-**In master plan?** Not mentioned.
+**In master plan?** Listed in test coverage section of UNSUPPORTED.md.
 
 ---
 
@@ -472,13 +477,25 @@ This is adequate for a single-purpose call. A template system becomes valuable w
 
 ---
 
-#### 28. CacheManager (P1) — NOT IMPLEMENTED
+#### 28. CacheManager (P1) — IMPLEMENTED
 
-**Needed?** Yes for iterative development workflows (re-running the converter on the same project). Avoids redundant LLM calls.
+| Aspect | Spec | Implementation |
+|--------|------|----------------|
+| Module | — | `modules/llm_cache.py` (234 lines) |
+| Purpose | Hash-based disk cache for LLM responses | SHA-256 keyed JSON cache with TTL |
+| Tests | — | `tests/test_llm_cache.py` |
 
-**Recommendation**: **Keep at P1.** Simple hash-based disk cache would be 50-100 lines.
+**Assessment**: Fully implemented. Features:
+- SHA-256 hash of prompt+model as cache key
+- JSON file-per-entry storage in configurable directory
+- TTL-based expiration (default 7 days)
+- `get()`/`put()` API with `CacheEntry` dataclass
+- `CacheStats` tracking (hits, misses, evictions, writes, hit rate)
+- `evict_expired()` and `clear()` maintenance methods
+- Disabled mode (pass-through) for testing
+- Tracks token counts per entry for cost analysis
 
-**In master plan?** Not mentioned.
+**In master plan?** Now listed in UNSUPPORTED.md infrastructure modules.
 
 ---
 
@@ -562,15 +579,21 @@ The `/convert-unity` skill acts as the job scheduler for human review. It tracks
 
 ---
 
-#### 36. RetryBackoff (P1) — NOT IMPLEMENTED
+#### 36. RetryBackoff (P1) — IMPLEMENTED
 
-**Needed?** Yes for LLM API calls and Roblox API uploads, which can have transient failures.
+| Aspect | Spec | Implementation |
+|--------|------|----------------|
+| Module | — | `modules/retry.py` (165 lines) |
+| Purpose | Exponential backoff retry for transient failures | Decorator + callable wrapper |
+| Tests | — | `tests/test_retry.py` |
 
-**Assessment**: The current code catches exceptions broadly but doesn't retry. API rate limits and network timeouts will cause permanent failures.
+**Assessment**: Fully implemented. Provides:
+- `@retry_with_backoff()` decorator with configurable max_retries, base_delay, max_delay, backoff_factor
+- `call_with_retry()` callable wrapper for functions that can't be decorated
+- Handles `ConnectionError`, `TimeoutError`, `OSError`, `urllib.error.URLError/HTTPError`
+- Structured logging of retry attempts and final failures
 
-**Recommendation**: **Keep at P1.** Simple exponential backoff decorator would be 20-30 lines.
-
-**In master plan?** Not mentioned.
+**In master plan?** Now listed in UNSUPPORTED.md infrastructure modules.
 
 ---
 
@@ -616,21 +639,21 @@ Based on actual implementation status and POC acceptance criteria ("convert a sm
 | BuildOrchestrator | Implemented | None |
 | JobScheduler | Implemented | None |
 
-### Revised P1 (Should-have for POC) — 12 functions, 3 implemented
+### Revised P1 (Should-have for POC) — 12 functions, 6 implemented
 
 | Function | Status | Gap |
 |----------|--------|-----|
 | MaterialMapper | Implemented | None |
 | AssetUploader | Implemented | None |
 | LoggingAndAudit | Partial | Adequate for POC |
-| CodeValidator | NOT impl | Add Luau syntax check |
+| CodeValidator | Implemented | None |
 | AssetQualityAssurance | Partial | Adequate for POC |
 | UIExtractor | NOT impl | Needed if target game has UI |
 | LayoutTranslator | NOT impl | Needed if target game has UI |
 | NetworkAnalyzer | NOT impl | Needed if target game is multiplayer |
 | RemoteEventGenerator | NOT impl | Needed if target game is multiplayer |
-| CacheManager | NOT impl | Improves iteration speed |
-| RetryBackoff | NOT impl | Improves reliability |
+| CacheManager | Implemented | None |
+| RetryBackoff | Implemented | None |
 | PromptManager | NOT impl | Needed when more LLM call sites added |
 
 ### Revised P2 (Nice-to-have) — 14 functions
@@ -643,15 +666,15 @@ TextureAtlasGenerator, AnimationRetargeter, AudioConverter, CodeQA, TestGenerato
 
 ## Key Gaps to Address Before POC
 
-1. **CodeValidator** — Add basic Luau syntax validation. Can use `luau-analyze` or at minimum check for unbalanced `end` keywords. ~50-100 lines. Prevents shipping broken scripts.
+1. ~~**CodeValidator**~~ — **DONE.** `modules/code_validator.py` provides Luau syntax validation (block balance, C# residue detection, bracket balance).
 
-2. **CSharpParser (tree-sitter)** — The dependencies are already in `requirements.txt` but unused. Implementing AST-based parsing would significantly improve rule-based transpilation accuracy.
+2. **CSharpParser (tree-sitter)** — Tree-sitter is now integrated when available. The `_parse_csharp_ast()` function extracts class structure, fields, methods, lifecycle hooks, and Unity API usage. Falls back to regex when tree-sitter is not installed.
 
-3. **APIMapper expansion** — Expand from 7 regex rules to a comprehensive mapping table. Can be a JSON data file loaded at startup. Critical for rule-based path.
+3. **APIMapper expansion** — Expanded from 7 to 50+ regex rules. `api_mappings.py` provides a comprehensive mapping table and the rule-based transpiler now handles braces→end, if/while/for/foreach, type stripping, operators, Mathf, collections, and more.
 
-4. **RetryBackoff** — Add exponential retry to `_ai_transpile()` and `roblox_uploader.py`. Simple decorator, high reliability impact.
+4. ~~**RetryBackoff**~~ — **DONE.** `modules/retry.py` provides `@retry_with_backoff()` decorator and `call_with_retry()` wrapper.
 
-5. **CacheManager** — Hash-based cache for LLM responses. Prevents redundant API calls during iterative development. Simple implementation.
+5. ~~**CacheManager**~~ — **DONE.** `modules/llm_cache.py` provides SHA-256 keyed disk cache with TTL-based eviction.
 
 ---
 

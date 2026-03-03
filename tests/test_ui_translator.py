@@ -16,6 +16,11 @@ from modules.ui_translator import (
     UITranslationResult,
     translate_rect_transform,
     translate_ui_hierarchy,
+    to_rbx_ui_element,
+    to_rbx_screen_gui,
+    _detect_ui_class,
+    _extract_text_properties,
+    _extract_image_properties,
     _safe_float,
     _extract_vec2,
 )
@@ -267,3 +272,200 @@ class TestTranslateUIHierarchy:
         )
         result = translate_ui_hierarchy([node])
         assert len(result.warnings) >= 1
+
+
+# ---------------------------------------------------------------------------
+# UI component type detection
+# ---------------------------------------------------------------------------
+
+class TestDetectUIClass:
+    def test_text_detected_as_text_label(self) -> None:
+        comps = [_FakeComp("Text", {})]
+        assert _detect_ui_class(comps) == "TextLabel"
+
+    def test_button_detected_as_text_button(self) -> None:
+        comps = [_FakeComp("Button", {})]
+        assert _detect_ui_class(comps) == "TextButton"
+
+    def test_image_detected_as_image_label(self) -> None:
+        comps = [_FakeComp("Image", {})]
+        assert _detect_ui_class(comps) == "ImageLabel"
+
+    def test_no_ui_component_defaults_to_frame(self) -> None:
+        comps = [_FakeComp("RectTransform", {})]
+        assert _detect_ui_class(comps) == "Frame"
+
+    def test_qualified_name_detected(self) -> None:
+        comps = [_FakeComp("UnityEngine.UI.Text", {})]
+        assert _detect_ui_class(comps) == "TextLabel"
+
+
+class TestExtractTextProperties:
+    def test_extracts_text_and_size(self) -> None:
+        comps = [_FakeComp("Text", {
+            "m_Text": "Hello World",
+            "m_FontSize": 24,
+            "m_Color": {"r": 1, "g": 0, "b": 0, "a": 1},
+            "m_Alignment": 4,  # MiddleCenter
+        })]
+        props = _extract_text_properties(comps)
+        assert props["text"] == "Hello World"
+        assert props["text_size"] == 24
+        assert props["text_color"] == (1.0, 0.0, 0.0)
+        assert props["text_x_alignment"] == "Center"
+        assert props["text_y_alignment"] == "Center"
+
+    def test_left_alignment(self) -> None:
+        comps = [_FakeComp("Text", {"m_Alignment": 0})]  # UpperLeft
+        props = _extract_text_properties(comps)
+        assert props["text_x_alignment"] == "Left"
+        assert props["text_y_alignment"] == "Top"
+
+    def test_no_text_component_returns_empty(self) -> None:
+        comps = [_FakeComp("Image", {})]
+        assert _extract_text_properties(comps) == {}
+
+
+class TestExtractImageProperties:
+    def test_extracts_image_color(self) -> None:
+        comps = [_FakeComp("Image", {
+            "m_Color": {"r": 0.5, "g": 0.8, "b": 1.0, "a": 0.7},
+        })]
+        props = _extract_image_properties(comps)
+        assert props["image_color"] == pytest.approx((0.5, 0.8, 1.0))
+        assert props["image_transparency"] == pytest.approx(0.3)
+
+    def test_sprite_guid_converted(self) -> None:
+        comps = [_FakeComp("Image", {
+            "m_Sprite": {"guid": "abc123def456"},
+            "m_Color": {"r": 1, "g": 1, "b": 1, "a": 1},
+        })]
+        props = _extract_image_properties(comps)
+        assert "abc123def456" in props.get("image", "")
+
+
+class TestHierarchyWithUITypes:
+    def test_text_node_classified(self) -> None:
+        node = _FakeNode(
+            name="Score",
+            components=[
+                _FakeComp("RectTransform", _rect_props()),
+                _FakeComp("Text", {"m_Text": "0", "m_FontSize": 32}),
+            ],
+        )
+        result = translate_ui_hierarchy([node])
+        assert result.elements[0].class_name == "TextLabel"
+        assert result.elements[0].text == "0"
+        assert result.elements[0].text_size == 32
+
+    def test_image_node_classified(self) -> None:
+        node = _FakeNode(
+            name="Icon",
+            components=[
+                _FakeComp("RectTransform", _rect_props()),
+                _FakeComp("Image", {
+                    "m_Color": {"r": 1, "g": 0.5, "b": 0, "a": 1},
+                }),
+            ],
+        )
+        result = translate_ui_hierarchy([node])
+        assert result.elements[0].class_name == "ImageLabel"
+
+    def test_button_node_classified(self) -> None:
+        node = _FakeNode(
+            name="PlayBtn",
+            components=[
+                _FakeComp("RectTransform", _rect_props()),
+                _FakeComp("Button", {}),
+                _FakeComp("Text", {"m_Text": "Play", "m_FontSize": 20}),
+            ],
+        )
+        result = translate_ui_hierarchy([node])
+        assert result.elements[0].class_name == "TextButton"
+        assert result.elements[0].text == "Play"
+
+
+class TestToRbxConversion:
+    def test_to_rbx_ui_element(self) -> None:
+        elem = RobloxUIElement(
+            name="TestLabel",
+            class_name="TextLabel",
+            position_x_scale=0.5,
+            position_y_scale=0.5,
+            size_x_offset=200,
+            size_y_offset=50,
+            text="Hello",
+            text_size=18,
+        )
+        rbx = to_rbx_ui_element(elem)
+        assert rbx.name == "TestLabel"
+        assert rbx.class_name == "TextLabel"
+        assert rbx.text == "Hello"
+        assert rbx.text_size == 18
+
+    def test_to_rbx_screen_gui(self) -> None:
+        elem = RobloxUIElement(name="Panel")
+        gui = to_rbx_screen_gui("GameUI", [elem])
+        assert gui.name == "GameUI"
+        assert len(gui.elements) == 1
+
+    def test_children_converted(self) -> None:
+        child = RobloxUIElement(name="Child", class_name="TextLabel", text="Hi")
+        parent = RobloxUIElement(name="Parent", children=[child])
+        rbx = to_rbx_ui_element(parent)
+        assert len(rbx.children) == 1
+        assert rbx.children[0].text == "Hi"
+
+
+class TestScreenGuiInRbxl:
+    def test_screen_gui_written(self, tmp_path) -> None:
+        from modules.rbxl_writer import RbxUIElement, RbxScreenGui, write_rbxl
+
+        gui = RbxScreenGui(
+            name="HUD",
+            elements=[
+                RbxUIElement(
+                    name="ScoreLabel",
+                    class_name="TextLabel",
+                    position_x_scale=0.5,
+                    position_y_scale=0.0,
+                    size_x_offset=200,
+                    size_y_offset=50,
+                    text="Score: 0",
+                    text_size=24,
+                ),
+            ],
+        )
+        rbxl = tmp_path / "ui_test.rbxl"
+        result = write_rbxl([], [], rbxl, screen_guis=[gui])
+        content = rbxl.read_text()
+        assert "StarterGui" in content
+        assert "ScreenGui" in content
+        assert "ScoreLabel" in content
+        assert "TextLabel" in content
+        assert "Score: 0" in content
+        assert result.ui_elements_written == 1
+
+    def test_nested_ui_elements(self, tmp_path) -> None:
+        from modules.rbxl_writer import RbxUIElement, RbxScreenGui, write_rbxl
+
+        gui = RbxScreenGui(
+            name="Menu",
+            elements=[
+                RbxUIElement(
+                    name="Panel",
+                    class_name="Frame",
+                    children=[
+                        RbxUIElement(name="Title", class_name="TextLabel", text="Game"),
+                        RbxUIElement(name="Icon", class_name="ImageLabel", image="rbxassetid://123"),
+                    ],
+                ),
+            ],
+        )
+        rbxl = tmp_path / "nested_ui.rbxl"
+        result = write_rbxl([], [], rbxl, screen_guis=[gui])
+        content = rbxl.read_text()
+        assert "Panel" in content
+        assert "Title" in content
+        assert "Icon" in content
+        assert result.ui_elements_written == 3  # Panel + Title + Icon

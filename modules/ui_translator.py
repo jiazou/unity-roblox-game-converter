@@ -45,6 +45,23 @@ class RobloxUIElement:
     anchor_point_x: float = 0.0
     anchor_point_y: float = 0.0
 
+    # Text properties
+    text: str = ""
+    text_color: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    text_size: int = 14
+    font: str = "SourceSans"
+    text_x_alignment: str = "Center"
+    text_y_alignment: str = "Center"
+
+    # Image properties
+    image: str = ""
+    image_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    image_transparency: float = 0.0
+
+    # Appearance
+    background_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    background_transparency: float = 0.0
+
     children: list["RobloxUIElement"] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -74,6 +91,135 @@ def _extract_vec2(d: dict, key: str) -> tuple[float, float]:
     if not isinstance(v, dict):
         return (0.0, 0.0)
     return (_safe_float(v.get("x", 0)), _safe_float(v.get("y", 0)))
+
+
+# Unity UI component type names (from MonoBehaviour script references)
+# These are detected via component_type matching in scene_parser output
+_UI_TYPE_MAP: dict[str, str] = {
+    "Text": "TextLabel",
+    "UnityEngine.UI.Text": "TextLabel",
+    "Button": "TextButton",
+    "UnityEngine.UI.Button": "TextButton",
+    "Image": "ImageLabel",
+    "UnityEngine.UI.Image": "ImageLabel",
+    "RawImage": "ImageLabel",
+    "UnityEngine.UI.RawImage": "ImageLabel",
+    "Canvas": "ScreenGui",
+    "UnityEngine.Canvas": "ScreenGui",
+    "InputField": "TextBox",
+    "UnityEngine.UI.InputField": "TextBox",
+    "ScrollRect": "ScrollingFrame",
+    "UnityEngine.UI.ScrollRect": "ScrollingFrame",
+    "Slider": "Frame",
+    "UnityEngine.UI.Slider": "Frame",
+    "Toggle": "Frame",
+    "UnityEngine.UI.Toggle": "Frame",
+}
+
+# Unity font style → Roblox font mapping (approximate)
+_FONT_MAP: dict[str, str] = {
+    "Arial": "Arial",
+    "Arial-Bold": "ArialBold",
+    "Roboto": "Roboto",
+    "Roboto-Bold": "RobotoBold",
+}
+
+# Unity TextAnchor → Roblox alignment
+_TEXT_ANCHOR_X: dict[int, str] = {
+    0: "Left", 1: "Center", 2: "Right",     # upper-left, upper-center, upper-right
+    3: "Left", 4: "Center", 5: "Right",     # middle-left, middle-center, middle-right
+    6: "Left", 7: "Center", 8: "Right",     # lower-left, lower-center, lower-right
+}
+_TEXT_ANCHOR_Y: dict[int, str] = {
+    0: "Top", 1: "Top", 2: "Top",
+    3: "Center", 4: "Center", 5: "Center",
+    6: "Bottom", 7: "Bottom", 8: "Bottom",
+}
+
+
+def _detect_ui_class(components: list[Any]) -> str:
+    """
+    Determine the Roblox UI class from a node's components.
+
+    Returns the Roblox class name (TextLabel, ImageLabel, etc.) or "Frame".
+    """
+    for comp in components:
+        ct = getattr(comp, "component_type", "")
+        if ct in _UI_TYPE_MAP:
+            return _UI_TYPE_MAP[ct]
+    return "Frame"
+
+
+def _extract_text_properties(components: list[Any]) -> dict[str, Any]:
+    """Extract text content and style from Unity Text component."""
+    for comp in components:
+        ct = getattr(comp, "component_type", "")
+        if ct in ("Text", "UnityEngine.UI.Text"):
+            props = getattr(comp, "properties", {})
+            result: dict[str, Any] = {}
+            result["text"] = props.get("m_Text", "")
+            # Font size
+            result["text_size"] = int(_safe_float(props.get("m_FontSize", 14)))
+            # Color
+            color = props.get("m_Color", {})
+            if isinstance(color, dict):
+                result["text_color"] = (
+                    _safe_float(color.get("r", 0)),
+                    _safe_float(color.get("g", 0)),
+                    _safe_float(color.get("b", 0)),
+                )
+            # Alignment
+            anchor = int(_safe_float(props.get("m_Alignment", 4)))
+            result["text_x_alignment"] = _TEXT_ANCHOR_X.get(anchor, "Center")
+            result["text_y_alignment"] = _TEXT_ANCHOR_Y.get(anchor, "Center")
+            # Font
+            font_name = str(props.get("m_Font", {}).get("m_Name", "")) if isinstance(props.get("m_Font"), dict) else ""
+            result["font"] = _FONT_MAP.get(font_name, "SourceSans")
+            return result
+    return {}
+
+
+def _extract_image_properties(components: list[Any]) -> dict[str, Any]:
+    """Extract image source and color from Unity Image/RawImage component."""
+    for comp in components:
+        ct = getattr(comp, "component_type", "")
+        if ct in ("Image", "UnityEngine.UI.Image", "RawImage", "UnityEngine.UI.RawImage"):
+            props = getattr(comp, "properties", {})
+            result: dict[str, Any] = {}
+            # Sprite reference (GUID — would need resolution)
+            sprite = props.get("m_Sprite", {})
+            if isinstance(sprite, dict) and sprite.get("guid"):
+                result["image"] = f"rbxassetid://{sprite['guid']}"
+            # Color tint
+            color = props.get("m_Color", {})
+            if isinstance(color, dict):
+                result["image_color"] = (
+                    _safe_float(color.get("r", 1)),
+                    _safe_float(color.get("g", 1)),
+                    _safe_float(color.get("b", 1)),
+                )
+                result["image_transparency"] = 1.0 - _safe_float(color.get("a", 1))
+            return result
+    return {}
+
+
+def _extract_background_color(components: list[Any]) -> dict[str, Any]:
+    """Extract background color from Unity Image component used as background."""
+    for comp in components:
+        ct = getattr(comp, "component_type", "")
+        if ct in ("Image", "UnityEngine.UI.Image"):
+            props = getattr(comp, "properties", {})
+            color = props.get("m_Color", {})
+            if isinstance(color, dict):
+                return {
+                    "background_color": (
+                        _safe_float(color.get("r", 1)),
+                        _safe_float(color.get("g", 1)),
+                        _safe_float(color.get("b", 1)),
+                    ),
+                    "background_transparency": 1.0 - _safe_float(color.get("a", 1)),
+                }
+    return {}
 
 
 def translate_rect_transform(
@@ -176,7 +322,8 @@ def translate_ui_hierarchy(
 
     def _walk(node: Any) -> RobloxUIElement | None:
         rect_comp = None
-        for comp in getattr(node, "components", []):
+        components = getattr(node, "components", [])
+        for comp in components:
             if comp.component_type == "RectTransform":
                 rect_comp = comp
                 break
@@ -191,6 +338,34 @@ def translate_ui_hierarchy(
 
         result.total += 1
         elem = translate_rect_transform(rect_comp.properties, node.name)
+
+        # Detect UI class from component types
+        elem.class_name = _detect_ui_class(components)
+
+        # Extract component-specific properties
+        if elem.class_name in ("TextLabel", "TextButton", "TextBox"):
+            text_props = _extract_text_properties(components)
+            if text_props:
+                elem.text = text_props.get("text", "")
+                elem.text_color = text_props.get("text_color", (0.0, 0.0, 0.0))
+                elem.text_size = text_props.get("text_size", 14)
+                elem.font = text_props.get("font", "SourceSans")
+                elem.text_x_alignment = text_props.get("text_x_alignment", "Center")
+                elem.text_y_alignment = text_props.get("text_y_alignment", "Center")
+
+        if elem.class_name in ("ImageLabel", "ImageButton"):
+            img_props = _extract_image_properties(components)
+            if img_props:
+                elem.image = img_props.get("image", "")
+                elem.image_color = img_props.get("image_color", (1.0, 1.0, 1.0))
+                elem.image_transparency = img_props.get("image_transparency", 0.0)
+
+        if elem.class_name == "Frame":
+            bg_props = _extract_background_color(components)
+            if bg_props:
+                elem.background_color = bg_props.get("background_color", (1.0, 1.0, 1.0))
+                elem.background_transparency = bg_props.get("background_transparency", 0.0)
+
         result.converted += 1
         result.warnings.extend(elem.warnings)
 
@@ -208,3 +383,58 @@ def translate_ui_hierarchy(
             result.elements.append(elem)
 
     return result
+
+
+def to_rbx_ui_element(elem: RobloxUIElement) -> Any:
+    """
+    Convert a RobloxUIElement to an RbxUIElement for rbxl_writer.
+
+    This bridges the ui_translator output to the rbxl_writer input format.
+    Import is deferred to avoid circular dependencies.
+    """
+    from modules.rbxl_writer import RbxUIElement
+
+    rbx = RbxUIElement(
+        name=elem.name,
+        class_name=elem.class_name,
+        position_x_scale=elem.position_x_scale,
+        position_x_offset=elem.position_x_offset,
+        position_y_scale=elem.position_y_scale,
+        position_y_offset=elem.position_y_offset,
+        size_x_scale=elem.size_x_scale,
+        size_x_offset=elem.size_x_offset,
+        size_y_scale=elem.size_y_scale,
+        size_y_offset=elem.size_y_offset,
+        anchor_point_x=elem.anchor_point_x,
+        anchor_point_y=elem.anchor_point_y,
+        background_color=elem.background_color,
+        background_transparency=elem.background_transparency,
+        text=elem.text,
+        text_color=elem.text_color,
+        text_size=elem.text_size,
+        font=elem.font,
+        text_x_alignment=elem.text_x_alignment,
+        text_y_alignment=elem.text_y_alignment,
+        image=elem.image,
+        image_color=elem.image_color,
+        image_transparency=elem.image_transparency,
+        children=[to_rbx_ui_element(c) for c in elem.children],
+    )
+    return rbx
+
+
+def to_rbx_screen_gui(
+    name: str,
+    elements: list[RobloxUIElement],
+) -> Any:
+    """
+    Create an RbxScreenGui from a list of translated UI elements.
+
+    Import is deferred to avoid circular dependencies.
+    """
+    from modules.rbxl_writer import RbxScreenGui
+
+    return RbxScreenGui(
+        name=name,
+        elements=[to_rbx_ui_element(e) for e in elements],
+    )

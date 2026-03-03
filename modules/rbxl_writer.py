@@ -102,11 +102,61 @@ class RbxSkyboxConfig:
 
 
 @dataclass
+class RbxUIElement:
+    """A Roblox UI element for ScreenGui output."""
+    name: str
+    class_name: str = "Frame"  # Frame, TextLabel, TextButton, ImageLabel, ImageButton, ScrollingFrame
+    # Position as UDim2(xScale, xOffset, yScale, yOffset)
+    position_x_scale: float = 0.0
+    position_x_offset: int = 0
+    position_y_scale: float = 0.0
+    position_y_offset: int = 0
+    # Size as UDim2
+    size_x_scale: float = 0.0
+    size_x_offset: int = 100
+    size_y_scale: float = 0.0
+    size_y_offset: int = 100
+    # AnchorPoint
+    anchor_point_x: float = 0.0
+    anchor_point_y: float = 0.0
+    # Appearance
+    background_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    background_transparency: float = 0.0
+    border_size: int = 0
+    # Text (for TextLabel/TextButton)
+    text: str = ""
+    text_color: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    text_size: int = 14
+    font: str = "SourceSans"
+    text_x_alignment: str = "Center"  # Left | Center | Right
+    text_y_alignment: str = "Center"  # Top | Center | Bottom
+    # Image (for ImageLabel/ImageButton)
+    image: str = ""  # texture asset path
+    image_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    image_transparency: float = 0.0
+    # Visibility
+    visible: bool = True
+    z_index: int = 1
+    # Children
+    children: list["RbxUIElement"] = field(default_factory=list)
+
+
+@dataclass
+class RbxScreenGui:
+    """A ScreenGui container to be placed in StarterGui."""
+    name: str = "ConvertedUI"
+    elements: list[RbxUIElement] = field(default_factory=list)
+    display_order: int = 0
+    reset_on_spawn: bool = False
+
+
+@dataclass
 class RbxWriteResult:
     """Outcome of writing a .rbxl file."""
     output_path: Path
     parts_written: int
     scripts_written: int
+    ui_elements_written: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -155,6 +205,82 @@ def _make_color3(parent: ET.Element, name: str, rgb: tuple[float, float, float])
     ET.SubElement(el, "G").text = f"{rgb[1]:.6f}"
     ET.SubElement(el, "B").text = f"{rgb[2]:.6f}"
     return el
+
+
+def _make_udim2(parent: ET.Element, name: str,
+                xs: float, xo: int, ys: float, yo: int) -> ET.Element:
+    """Create a UDim2 property: UDim2.new(xScale, xOffset, yScale, yOffset)."""
+    el = ET.SubElement(parent, "UDim2", name=name)
+    x_el = ET.SubElement(el, "XS")
+    x_el.text = f"{xs:.6f}"
+    ET.SubElement(el, "XO").text = str(xo)
+    y_el = ET.SubElement(el, "YS")
+    y_el.text = f"{ys:.6f}"
+    ET.SubElement(el, "YO").text = str(yo)
+    return el
+
+
+def _make_vector2(parent: ET.Element, name: str, xy: tuple[float, float]) -> ET.Element:
+    el = ET.SubElement(parent, "Vector2", name=name)
+    ET.SubElement(el, "X").text = f"{xy[0]:.6f}"
+    ET.SubElement(el, "Y").text = f"{xy[1]:.6f}"
+    return el
+
+
+def _make_ui_element(parent: ET.Element, elem: "RbxUIElement") -> None:
+    """Serialise a RbxUIElement to XML under the given parent."""
+    item = ET.SubElement(parent, "Item", **{"class": elem.class_name})
+    props = ET.SubElement(item, "Properties")
+    _make_property(props, "string", "Name", elem.name)
+
+    # Position and Size as UDim2
+    _make_udim2(props, "Position",
+                elem.position_x_scale, elem.position_x_offset,
+                elem.position_y_scale, elem.position_y_offset)
+    _make_udim2(props, "Size",
+                elem.size_x_scale, elem.size_x_offset,
+                elem.size_y_scale, elem.size_y_offset)
+
+    # AnchorPoint
+    _make_vector2(props, "AnchorPoint",
+                  (elem.anchor_point_x, elem.anchor_point_y))
+
+    # Appearance
+    _make_color3(props, "BackgroundColor3", elem.background_color)
+    _make_property(props, "float", "BackgroundTransparency",
+                   f"{elem.background_transparency:.4f}")
+    _make_property(props, "int", "BorderSizePixel", str(elem.border_size))
+    _make_property(props, "bool", "Visible", str(elem.visible).lower())
+    _make_property(props, "int", "ZIndex", str(elem.z_index))
+
+    # Text properties (TextLabel / TextButton)
+    if elem.class_name in ("TextLabel", "TextButton"):
+        _make_property(props, "string", "Text", elem.text)
+        _make_color3(props, "TextColor3", elem.text_color)
+        _make_property(props, "int", "TextSize", str(elem.text_size))
+        _make_property(props, "token", "Font", elem.font)
+        _make_property(props, "token", "TextXAlignment", elem.text_x_alignment)
+        _make_property(props, "token", "TextYAlignment", elem.text_y_alignment)
+
+    # Image properties (ImageLabel / ImageButton)
+    if elem.class_name in ("ImageLabel", "ImageButton"):
+        _make_property(props, "Content", "Image", elem.image)
+        _make_color3(props, "ImageColor3", elem.image_color)
+        _make_property(props, "float", "ImageTransparency",
+                       f"{elem.image_transparency:.4f}")
+
+    # Recurse into children
+    for child in elem.children:
+        _make_ui_element(item, child)
+
+
+def _count_ui_elements(elements: list["RbxUIElement"]) -> int:
+    """Count total UI elements including nested children."""
+    count = 0
+    for elem in elements:
+        count += 1
+        count += _count_ui_elements(elem.children)
+    return count
 
 
 def _quat_to_rotation_matrix(
@@ -439,6 +565,7 @@ def write_rbxl(
     camera: RbxCameraConfig | None = None,
     skybox: RbxSkyboxConfig | None = None,
     server_storage_templates: list[tuple[str, RbxPartEntry]] | None = None,
+    screen_guis: list[RbxScreenGui] | None = None,
 ) -> RbxWriteResult:
     """
     Serialise the converted scene into a Roblox place file (.rbxl).
@@ -454,6 +581,8 @@ def write_rbxl(
         server_storage_templates: Optional prefab templates to place in
             ServerStorage for runtime Clone(). Each tuple is
             (model_name, root_part_entry).
+        screen_guis: Optional list of ScreenGui objects to place in StarterGui.
+            Generated from Unity Canvas / RectTransform UI hierarchy.
 
     Returns:
         RbxWriteResult describing what was written.
@@ -596,6 +725,25 @@ def write_rbxl(
             _make_property(sp, "ProtectedString", "Source", script.luau_source)
             scripts_written += 1
 
+    # StarterGui — ScreenGui elements from Unity Canvas / RectTransform UI
+    ui_elements_written = 0
+    if screen_guis:
+        sg_item = ET.SubElement(root, "Item", **{"class": "StarterGui"})
+        sg_props = ET.SubElement(sg_item, "Properties")
+        _make_property(sg_props, "string", "Name", "StarterGui")
+
+        for gui in screen_guis:
+            screen_gui_item = ET.SubElement(sg_item, "Item", **{"class": "ScreenGui"})
+            sgui_props = ET.SubElement(screen_gui_item, "Properties")
+            _make_property(sgui_props, "string", "Name", gui.name)
+            _make_property(sgui_props, "int", "DisplayOrder", str(gui.display_order))
+            _make_property(sgui_props, "bool", "ResetOnSpawn",
+                           str(gui.reset_on_spawn).lower())
+
+            for elem in gui.elements:
+                _make_ui_element(screen_gui_item, elem)
+            ui_elements_written += _count_ui_elements(gui.elements)
+
     xml_str = _prettify(root)
     output_path.write_text(xml_str, encoding="utf-8")
 
@@ -603,6 +751,7 @@ def write_rbxl(
         output_path=output_path,
         parts_written=parts_written,
         scripts_written=scripts_written,
+        ui_elements_written=ui_elements_written,
         warnings=warnings,
     )
 
