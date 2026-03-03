@@ -71,15 +71,31 @@ def _load_mesh_vertex_data(
 
     # Extract vertex colors
     visual = mesh.visual
+    colors = None
     if hasattr(visual, "kind") and visual.kind == "vertex":
         colors = visual.vertex_colors
-        if colors is None or len(colors) == 0:
-            return None
-    elif hasattr(visual, "vertex_colors"):
-        colors = visual.vertex_colors
-        if colors is None or len(colors) == 0:
-            return None
-    else:
+    elif hasattr(visual, "vertex_colors") and visual.vertex_colors is not None:
+        vc = visual.vertex_colors
+        if hasattr(vc, "__len__") and len(vc) > 0:
+            colors = vc
+
+    # Fallback: extract from raw PLY metadata when trimesh stored vertex
+    # colors in metadata but created TextureVisuals (because UVs exist).
+    if colors is None and hasattr(mesh, "metadata"):
+        raw = mesh.metadata.get("_ply_raw", {})
+        vdata = raw.get("vertex", {}).get("data", {})
+        if "red" in vdata and "green" in vdata and "blue" in vdata:
+            r = np.array(vdata["red"], dtype=np.uint8).ravel()
+            g = np.array(vdata["green"], dtype=np.uint8).ravel()
+            b = np.array(vdata["blue"], dtype=np.uint8).ravel()
+            if "alpha" in vdata:
+                a = np.array(vdata["alpha"], dtype=np.uint8).ravel()
+            else:
+                a = np.full(len(r), 255, dtype=np.uint8)
+            if len(r) == len(vertices):
+                colors = np.column_stack([r, g, b, a])
+
+    if colors is None or len(colors) == 0:
         return None
 
     # Ensure RGBA uint8

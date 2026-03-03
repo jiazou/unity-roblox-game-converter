@@ -57,7 +57,7 @@ def _make_colored_ply(path: Path, vertex_colors: list[tuple[int, int, int, int]]
         "property float t\n"
         "element face 1\n"
         "property list uchar int vertex_indices\n"
-        "end_header\n"
+        "end_header"
     )
 
     # Three vertices forming a triangle covering the UV square
@@ -111,8 +111,7 @@ class TestLoadMeshVertexData:
             [(255, 0, 0, 255), (0, 255, 0, 255), (0, 0, 255, 255)],
         )
         result = _load_mesh_vertex_data(ply)
-        if result is None:
-            pytest.skip("trimesh didn't load vertex colors from PLY")
+        assert result is not None, "Expected vertex color data from PLY"
         vertices, faces, uv, colors = result
         assert len(vertices) == 3
         assert len(faces) >= 1
