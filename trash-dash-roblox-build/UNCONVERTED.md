@@ -1,42 +1,28 @@
 # Unconverted Features Report
 
-> Generated: 2026-03-03 03:37 UTC
+> Generated: 2026-03-03 15:00 UTC
 > Unity Project: trash-dash
 
 ## Conversion Statistics
 
 | Metric | Value |
 |--------|-------|
-| Total materials processed | 73 |
-| Fully converted | 18 |
-| Partially converted | 53 |
-| Skipped (unconvertible) | 2 |
+| Total materials processed | 36 |
+| Fully converted | 0 |
+| Partially converted | 35 |
+| Skipped (unconvertible) | 1 |
 
 ## Unconverted Feature Summary
 
 | Feature | Materials Affected | Severity |
 |---------|--------------------|----------|
-| World curve effect | 49 | LOW |
-| Vertex color multiplication | 44 | HIGH |
+| World curve effect | 34 | LOW |
+| Vertex color multiplication | 31 | HIGH |
 | Blinking animation | 4 | LOW |
-| Soft particles | 3 | LOW |
-| Vertex-color-only shader | 2 | HIGH |
-| Premultiplied alpha blending | 2 | LOW |
 | Vertex rotation animation | 2 | LOW |
-| Additive blending | 1 | LOW |
+| Vertex-color-only shader | 1 | HIGH |
 
 ## Materials Requiring Manual Work
-
-### BackgroundCircle (`/home/user/trash-dash/Assets/Materials/BackgroundCircle.mat`)
-
-**Shader**: `Unlit/VertexColor`  
-**Pipeline**: CUSTOM  
-**Status**: Not converted
-
-**Unconverted**:
-- [ ] **Vertex-color-only shader** (HIGH) — Assign flat color manually in Roblox Studio
-
----
 
 ### Bin (`/home/user/trash-dash/Assets/Materials/Bin.mat`)
 
@@ -61,21 +47,6 @@
 
 **Converted**: 
 - [x] Albedo texture → ColorMap (`BinBag_color.png`)
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### BinNight (`/home/user/trash-dash/Assets/Materials/BinNight.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`BinNight_color.png`)
 
 **Unconverted**:
 - [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
@@ -176,36 +147,6 @@
 
 ---
 
-### Clover (`/home/user/trash-dash/Assets/Materials/Clover.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`Clover_color.png`)
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### Construction (`/home/user/trash-dash/Assets/Materials/Construction.mat`)
-
-**Shader**: `Particles/Alpha Blended Premultiply`  
-**Pipeline**: PARTICLE  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`Construction_color.png`)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Premultiplied alpha blending** (LOW) — Use standard alpha blending (close approximation)
-
----
-
 ### ConstructionGear (`/home/user/trash-dash/Assets/Materials/ConstructionGear.mat`)
 
 **Shader**: `Unlit/UnlitBlinking`  
@@ -253,21 +194,6 @@
 
 ---
 
-### DogNight (`/home/user/trash-dash/Assets/Materials/DogNight.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`DogNight_color.png`)
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
 ### Dumpster (`/home/user/trash-dash/Assets/Materials/Dumpster.mat`)
 
 **Shader**: `Unlit/CurvedUnlit`  
@@ -279,37 +205,6 @@
 
 **Unconverted**:
 - [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### ExtraLifeParticle (`/home/user/trash-dash/Assets/Materials/ExtraLifeParticle.mat`)
-
-**Shader**: `Particles/Alpha Blended`  
-**Pipeline**: PARTICLE  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`ExtraLifeParticle_color.png`)
-- [x] Color tint → SurfaceAppearance.Color (0.5, 0.5, 0.5)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Soft particles** (LOW) — No Roblox equivalent — accept hard particle edges
-
----
-
-### FishBoneParticle (`/home/user/trash-dash/Assets/Materials/FishBoneParticle.mat`)
-
-**Shader**: `Sprites/Default`  
-**Pipeline**: PARTICLE  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`FishBoneParticle_color.png`)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
 - [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
 
 ---
@@ -329,38 +224,6 @@
 - [ ] **Vertex rotation animation** (LOW) — Companion Luau rotation script generated
 
 **Companion scripts**: 1 Luau script(s) generated
-
----
-
-### Graffiti (`/home/user/trash-dash/Assets/Materials/Graffiti.mat`)
-
-**Shader**: `Unlit/CurvedUnlitAlpha`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### Grass (`/home/user/trash-dash/Assets/Materials/Grass.mat`)
-
-**Shader**: `Particles/Alpha Blended Premultiply`  
-**Pipeline**: PARTICLE  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`Grass_color.png`)
-- [x] Color tint → SurfaceAppearance.Color (0.39705884, 0.39705884, 0.39705884)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Premultiplied alpha blending** (LOW) — Use standard alpha blending (close approximation)
-- [ ] **Soft particles** (LOW) — No Roblox equivalent — accept hard particle edges
 
 ---
 
@@ -458,35 +321,6 @@
 
 ---
 
-### ManHole (`/home/user/trash-dash/Assets/Materials/ManHole.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`ManHole_color.png`)
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### Obstacle (`/home/user/trash-dash/Assets/Materials/Obstacle.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
 ### PartyHatAndBowtie (`/home/user/trash-dash/Assets/Materials/PartyHatAndBowtie.mat`)
 
 **Shader**: `Unlit/UnlitBlinking`  
@@ -500,22 +334,6 @@
 - [ ] **Blinking animation** (LOW) — Companion Luau tween script generated
 
 **Companion scripts**: 1 Luau script(s) generated
-
----
-
-### PickupParticle (`/home/user/trash-dash/Assets/Materials/PickupParticle.mat`)
-
-**Shader**: `Unlit/CurvedUnlitAlpha`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`PickupParticle_color.png`)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
 
 ---
 
@@ -549,22 +367,6 @@
 
 ---
 
-### PuffParticle (`/home/user/trash-dash/Assets/Materials/PuffParticle.mat`)
-
-**Shader**: `Unlit/CurvedUnlitAlpha`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`PuffParticle_color.png`)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
 ### Racoon (`/home/user/trash-dash/Assets/Materials/Racoon.mat`)
 
 **Shader**: `Unlit/UnlitBlinking`  
@@ -590,21 +392,6 @@
 
 **Converted**: 
 - [x] Albedo texture → ColorMap (`Rat_color.png`)
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### RatNight (`/home/user/trash-dash/Assets/Materials/RatNight.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`RatNight_color.png`)
 
 **Unconverted**:
 - [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
@@ -671,40 +458,6 @@
 
 ---
 
-### SmokePuff (`/home/user/trash-dash/Assets/Materials/SmokePuff.mat`)
-
-**Shader**: `Particles/Additive`  
-**Pipeline**: PARTICLE  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`SmokePuff_color.png`)
-- [x] Color tint → SurfaceAppearance.Color (0.5, 0.5, 0.5)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-- [ ] **Additive blending** (LOW) — Use ParticleEmitter.LightEmission = 1
-- [ ] **Soft particles** (LOW) — No Roblox equivalent — accept hard particle edges
-
----
-
-### Sparkle (`/home/user/trash-dash/Assets/Materials/Sparkle.mat`)
-
-**Shader**: `Unlit/CurvedUnlitAlpha`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`Sparkle_color.png`)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
 ### StarInner (`/home/user/trash-dash/Assets/Materials/StarInner.mat`)
 
 **Shader**: `Unlit/CurvedUnlit`  
@@ -729,52 +482,6 @@
 **Converted**: 
 - [x] Albedo texture → ColorMap (`StarOuter_color.png`)
 - [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### StarParticle (`/home/user/trash-dash/Assets/Materials/StarParticle.mat`)
-
-**Shader**: `Unlit/CurvedUnlitAlpha`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`StarParticle_color.png`)
-- [x] Alpha mode → Transparency
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### Stone (`/home/user/trash-dash/Assets/Materials/Stone.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`Stone_color.png`)
-
-**Unconverted**:
-- [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)
-- [ ] **World curve effect** (LOW) — Ignore — cosmetic world-curve effect
-
----
-
-### StoneWall (`/home/user/trash-dash/Assets/Materials/StoneWall.mat`)
-
-**Shader**: `Unlit/CurvedUnlit`  
-**Pipeline**: CUSTOM  
-**Status**: Partially converted
-
-**Converted**: 
-- [x] Albedo texture → ColorMap (`StoneWall_color.png`)
 
 **Unconverted**:
 - [ ] **Vertex color multiplication** (HIGH) — Bake vertex colors into albedo texture (requires mesh data)

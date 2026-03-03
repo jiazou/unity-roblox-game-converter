@@ -469,9 +469,41 @@ def _make_surface_appearance(parent: ET.Element, sa: RbxSurfaceAppearance) -> ET
 _ALPHA_MODE_MAP = {"Overlay": "0", "Transparency": "1", "Opaque": "2", "TintMask": "3"}
 
 
+def _is_grouping_node(part: RbxPartEntry) -> bool:
+    """Determine if a part should be a Model (grouping container) instead of a Part.
+
+    A node is a grouping container when it has children but no geometry of its
+    own (no mesh, no primitive shape, no lights/sounds/particles).
+    """
+    if part.mesh_id is not None or part.shape is not None:
+        return False
+    if part.light_children or part.sound_children or part.particle_children:
+        return False
+    if not part.children:
+        return False
+    return True
+
+
 def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
+    # Use Model for pure grouping containers (children but no geometry).
     # Use MeshPart when a mesh asset is available (required for SurfaceAppearance),
     # otherwise fall back to a plain Part (box primitive).
+    if _is_grouping_node(part):
+        item = ET.SubElement(workspace, "Item", **{"class": "Model"})
+        props = ET.SubElement(item, "Properties")
+        _make_property(props, "string", "Name", part.name)
+
+        for script in part.scripts:
+            script_item = ET.SubElement(item, "Item", **{"class": script.script_type})
+            sprops = ET.SubElement(script_item, "Properties")
+            _make_property(sprops, "string", "Name", script.name)
+            _make_property(sprops, "ProtectedString", "Source", script.luau_source)
+
+        for child in part.children:
+            _make_part(item, child)
+
+        return item
+
     use_mesh = part.mesh_id is not None
     cls = "MeshPart" if use_mesh else "Part"
     item = ET.SubElement(workspace, "Item", **{"class": cls})

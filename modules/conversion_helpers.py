@@ -610,6 +610,40 @@ def generate_prefab_packages(
     return result
 
 
+_MESH_EXTENSIONS: set[str] = {".fbx", ".obj", ".dae"}
+
+
+def _create_fbx_scene_node(
+    asset_path: Path,
+    guid: str,
+    modifications: list[dict],
+) -> scene_parser.SceneNode:
+    """Create a SceneNode for a directly-placed FBX/OBJ/DAE model.
+
+    Unity allows dragging mesh files (FBX/OBJ/DAE) directly into a scene.
+    The scene stores them as PrefabInstance documents referencing the mesh
+    file's GUID instead of a .prefab GUID.  This function creates a minimal
+    SceneNode with the correct mesh reference so the model appears in the
+    converted output.
+    """
+    name = asset_path.stem
+    node = scene_parser.SceneNode(
+        name=name,
+        file_id="",
+        active=True,
+        layer=0,
+        tag="Untagged",
+        position=(0.0, 0.0, 0.0),
+        rotation=(0.0, 0.0, 0.0, 1.0),
+        scale=(1.0, 1.0, 1.0),
+        mesh_guid=guid,
+        from_prefab_instance=True,
+    )
+    # Apply position/rotation/scale modifications from the PrefabInstance
+    apply_prefab_modifications(node, modifications)
+    return node
+
+
 def resolve_prefab_instances(
     parsed_scenes: list[scene_parser.ParsedScene],
     prefab_lib: prefab_parser.PrefabLibrary,
@@ -617,6 +651,9 @@ def resolve_prefab_instances(
 ) -> int:
     """
     Resolve PrefabInstance documents in parsed scenes.
+
+    Handles both .prefab-based instances and direct FBX/OBJ/DAE model
+    instances (where Unity stores a mesh file reference as a PrefabInstance).
 
     Returns the number of prefab instances resolved.
     """
@@ -630,15 +667,26 @@ def resolve_prefab_instances(
     for scene in parsed_scenes:
         for pi in scene.prefab_instances:
             template = guid_to_prefab.get(pi.source_prefab_guid)
-            if template is None or template.root is None:
-                continue
 
-            root_node = prefab_node_to_scene_node(template.root)
-            root_node.source_prefab_name = template.name
-            apply_prefab_modifications(root_node, pi.modifications)
+            if template is not None and template.root is not None:
+                # Standard .prefab resolution
+                root_node = prefab_node_to_scene_node(template.root)
+                root_node.source_prefab_name = template.name
+                apply_prefab_modifications(root_node, pi.modifications)
 
-            scene.referenced_material_guids |= template.referenced_material_guids
-            scene.referenced_mesh_guids |= template.referenced_mesh_guids
+                scene.referenced_material_guids |= template.referenced_material_guids
+                scene.referenced_mesh_guids |= template.referenced_mesh_guids
+            else:
+                # Fallback: check if source GUID points to a mesh file
+                # (FBX/OBJ/DAE placed directly in scene as PrefabInstance)
+                asset_path = guid_index.resolve(pi.source_prefab_guid)
+                if not asset_path or asset_path.suffix.lower() not in _MESH_EXTENSIONS:
+                    continue
+
+                root_node = _create_fbx_scene_node(
+                    asset_path, pi.source_prefab_guid, pi.modifications,
+                )
+                scene.referenced_mesh_guids.add(pi.source_prefab_guid)
 
             parent_fid = pi.transform_parent_file_id
             parent_node = scene.all_nodes.get(parent_fid) if parent_fid else None
