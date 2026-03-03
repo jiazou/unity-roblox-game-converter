@@ -651,7 +651,7 @@ def transpile_scripts(
     result = TranspilationResult()
 
     for cs_path in sorted(assets_dir.rglob("*.cs")):
-        csharp_source = cs_path.read_text(encoding="utf-8", errors="replace")
+        csharp_source = cs_path.read_text(encoding="utf-8-sig", errors="replace")
         result.total += 1
 
         # AST analysis for classification (needed regardless of transpilation strategy)
