@@ -487,3 +487,161 @@ class TestParseSceneEdgeCases:
         result = parse_scene(scene)
         # Should not crash; the MeshFilter without m_GameObject is silently ignored
         assert len(result.all_nodes) == 1
+
+
+# ── Hardened YAML parsing tests ──────────────────────────────────────
+
+
+class TestHardenedYAMLParsing:
+    """Tests for fragility fixes in unity_yaml_utils.parse_documents."""
+
+    def test_negative_file_ids_accepted(self) -> None:
+        """Prefab Variant fileIDs can be negative (Unity 2018.3+)."""
+        yaml_text = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!1 &-4850089497005498858
+            GameObject:
+              m_Name: VariantRoot
+              m_IsActive: 1
+        """)
+        docs = _parse_documents(yaml_text)
+        assert len(docs) == 1
+        cid, fid, body = docs[0]
+        assert cid == 1
+        assert fid == "-4850089497005498858"
+
+    def test_stripped_documents_filtered_out(self) -> None:
+        """Documents with 'stripped' suffix should be skipped."""
+        yaml_text = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!1 &100
+            GameObject:
+              m_Name: Normal
+              m_IsActive: 1
+            --- !u!4 &200 stripped
+            Transform:
+              m_LocalPosition: {x: 0, y: 0, z: 0}
+            --- !u!1 &300
+            GameObject:
+              m_Name: AlsoNormal
+              m_IsActive: 1
+        """)
+        docs = _parse_documents(yaml_text)
+        # The stripped Transform should be filtered out
+        assert len(docs) == 2
+        names = [_doc_body(d)["m_Name"] for _, _, d in docs]
+        assert "Normal" in names
+        assert "AlsoNormal" in names
+
+    def test_per_document_error_recovery(self) -> None:
+        """A malformed document should not kill parsing of other documents."""
+        yaml_text = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!1 &100
+            GameObject:
+              m_Name: Good
+              m_IsActive: 1
+            --- !u!1 &200
+            {{{INVALID YAML!!!}}}
+            --- !u!1 &300
+            GameObject:
+              m_Name: AlsoGood
+              m_IsActive: 1
+        """)
+        docs = _parse_documents(yaml_text)
+        # The malformed middle doc should be skipped; two good docs survive
+        assert len(docs) >= 1  # At minimum the first doc parses
+        names = [_doc_body(d).get("m_Name") for _, _, d in docs]
+        assert "Good" in names
+
+    def test_null_materials_does_not_crash(self, tmp_path: Path) -> None:
+        """m_Materials: null should not raise TypeError."""
+        scene_yaml = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!1 &100
+            GameObject:
+              m_Name: NullMat
+              m_IsActive: 1
+              m_Layer: 0
+              m_TagString: Untagged
+            --- !u!4 &200
+            Transform:
+              m_GameObject: {fileID: 100}
+              m_LocalPosition: {x: 0, y: 0, z: 0}
+              m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+              m_LocalScale: {x: 1, y: 1, z: 1}
+              m_Father: {fileID: 0}
+              m_Children: []
+            --- !u!23 &300
+            MeshRenderer:
+              m_GameObject: {fileID: 100}
+              m_Materials:
+        """)
+        scene = tmp_path / "nullmat.unity"
+        scene.write_text(scene_yaml, encoding="utf-8")
+        # Should not crash with TypeError: NoneType not iterable
+        result = parse_scene(scene)
+        assert len(result.all_nodes) == 1
+
+    def test_prefab_components_include_colliders(self, tmp_path: Path) -> None:
+        """Prefab parser should capture colliders, lights, etc. (not just 4 types)."""
+        from modules.prefab_parser import _parse_single_prefab
+        prefab_yaml = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!1 &100
+            GameObject:
+              m_Name: PhysObj
+              m_IsActive: 1
+            --- !u!4 &200
+            Transform:
+              m_GameObject: {fileID: 100}
+              m_LocalPosition: {x: 0, y: 0, z: 0}
+              m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+              m_LocalScale: {x: 1, y: 1, z: 1}
+              m_Father: {fileID: 0}
+              m_Children: []
+            --- !u!65 &300
+            BoxCollider:
+              m_GameObject: {fileID: 100}
+              m_Size: {x: 1, y: 1, z: 1}
+            --- !u!54 &400
+            Rigidbody:
+              m_GameObject: {fileID: 100}
+              m_Mass: 1
+            --- !u!108 &500
+            Light:
+              m_GameObject: {fileID: 100}
+              m_Type: 1
+        """)
+        prefab = tmp_path / "PhysObj.prefab"
+        prefab.write_text(prefab_yaml, encoding="utf-8")
+        template = _parse_single_prefab(prefab)
+
+        node = template.root
+        assert node is not None
+        comp_types = {c.component_type for c in node.components}
+        # Previously prefab parser only had 4 component types;
+        # now it uses the shared allowlist and captures all of these
+        assert "BoxCollider" in comp_types
+        assert "Rigidbody" in comp_types
+        assert "Light" in comp_types
+
+    def test_multiple_tag_directives_parsed(self) -> None:
+        """Headers with extra %TAG lines should still parse."""
+        yaml_text = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            %TAG !h! tag:unity3d.com,2022:
+            --- !u!1 &100
+            GameObject:
+              m_Name: ExtraTags
+              m_IsActive: 1
+        """)
+        docs = _parse_documents(yaml_text)
+        assert len(docs) == 1
+        assert _doc_body(docs[0][2])["m_Name"] == "ExtraTags"

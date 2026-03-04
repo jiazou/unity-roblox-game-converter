@@ -293,27 +293,79 @@ def _patch_rbxl_asset_ids(
     Rewrite a .rbxl XML file, replacing local placeholder references with
     rbxassetid:// URLs.
 
-    Scans the XML text for patterns like:
-      - ``rbxassetid://<local-filename>``  (used by sprite/texture references)
-      - ``-- TODO: upload <path>``         (used by audio SoundId placeholders)
+    Only patches ``<Content>`` and ``<url>`` elements (Roblox asset reference
+    property types).  ``<ProtectedString>`` elements (Luau script source) and
+    ``<string>`` elements are left untouched to avoid corrupting embedded code.
 
     Returns True if any replacements were made.
     """
     import re
+    import xml.etree.ElementTree as ET
 
     content = rbxl_path.read_text(encoding="utf-8")
+
+    # Try XML-aware patching first; fall back to text-based for malformed XML
+    try:
+        tree = ET.parse(rbxl_path)  # noqa: S314 — trusted local file
+    except ET.ParseError:
+        # Fallback: text-based replacement (original behavior)
+        return _patch_rbxl_asset_ids_text(content, rbxl_path, asset_ids)
+
+    root = tree.getroot()
+    changed = False
+
+    # Asset reference property tags in Roblox XML
+    ASSET_TAGS = {"Content", "url"}
+
+    for local_name, asset_id in asset_ids.items():
+        rbx_url = f"rbxassetid://{asset_id}"
+        stem = Path(local_name).stem
+        placeholders = [f"rbxassetid://{local_name}", f"rbxassetid://{stem}"]
+
+        # Also build regex for TODO audio placeholders
+        todo_pattern = re.compile(
+            r"-- TODO: upload [^\n]*?" + re.escape(local_name),
+            re.IGNORECASE,
+        )
+
+        for elem in root.iter():
+            if elem.tag not in ASSET_TAGS:
+                continue
+            if elem.text is None:
+                continue
+            text = elem.text
+            for placeholder in placeholders:
+                if placeholder in text:
+                    text = text.replace(placeholder, rbx_url)
+                    changed = True
+            new_text = todo_pattern.sub(rbx_url, text)
+            if new_text != text:
+                changed = True
+                text = new_text
+            elem.text = text
+
+    if changed:
+        tree.write(rbxl_path, encoding="unicode", xml_declaration=True)
+    return changed
+
+
+def _patch_rbxl_asset_ids_text(
+    content: str,
+    rbxl_path: Path,
+    asset_ids: dict[str, int],
+) -> bool:
+    """Text-based fallback for _patch_rbxl_asset_ids when XML parsing fails."""
+    import re
+
     original = content
 
     for local_name, asset_id in asset_ids.items():
         rbx_url = f"rbxassetid://{asset_id}"
         stem = Path(local_name).stem
 
-        # Replace rbxassetid://<filename> placeholders (sprites/textures)
         content = content.replace(f"rbxassetid://{local_name}", rbx_url)
         content = content.replace(f"rbxassetid://{stem}", rbx_url)
 
-        # Replace TODO audio placeholders:
-        #   -- TODO: upload <any-path-ending-with-local_name>
         pattern = re.compile(
             r"-- TODO: upload [^\n]*?" + re.escape(local_name),
             re.IGNORECASE,

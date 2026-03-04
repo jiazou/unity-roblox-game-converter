@@ -23,8 +23,9 @@ from modules.unity_yaml_utils import (
     CID_MESH_RENDERER as _CID_MESH_RENDERER,
     CID_MESH_FILTER as _CID_MESH_FILTER,
     CID_SKINNED_MESH_RENDERER as _CID_SKINNED_MESH_RENDERER,
-    CID_MONO_BEHAVIOUR as _CID_MONO_BEHAVIOUR,
     CID_RECT_TRANSFORM as _CID_RECT_TRANSFORM,
+    KNOWN_COMPONENT_CIDS as _KNOWN_COMPONENT_CIDS,
+    COMPONENT_CID_TO_NAME as _COMPONENT_CID_TO_NAME,
     extract_vec3 as _extract_vec3,
     extract_quat as _extract_quat,
     ref_file_id as _ref_file_id,
@@ -115,8 +116,7 @@ def _parse_single_prefab(prefab_path: Path) -> PrefabTemplate:
             go_docs[fid] = body
         elif cid in (_CID_TRANSFORM, _CID_RECT_TRANSFORM):
             transform_docs[fid] = body
-        elif cid in (_CID_MESH_FILTER, _CID_MESH_RENDERER,
-                     _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR):
+        elif cid in _KNOWN_COMPONENT_CIDS:
             component_docs.append((fid, cid, body))
 
     # Build PrefabNode stubs
@@ -163,13 +163,6 @@ def _parse_single_prefab(prefab_path: Path) -> PrefabTemplate:
         ))
 
     # Attach other components
-    _CLASS_ID_TO_NAME: dict[int, str] = {
-        _CID_MESH_FILTER: "MeshFilter",
-        _CID_MESH_RENDERER: "MeshRenderer",
-        _CID_SKINNED_MESH_RENDERER: "SkinnedMeshRenderer",
-        _CID_MONO_BEHAVIOUR: "MonoBehaviour",
-    }
-
     for comp_fid, cid, body in component_docs:
         go_ref = _ref_file_id(body.get("m_GameObject"))
         if not go_ref:
@@ -178,7 +171,7 @@ def _parse_single_prefab(prefab_path: Path) -> PrefabTemplate:
         if node is None:
             continue
 
-        comp_type = _CLASS_ID_TO_NAME.get(cid, f"Component_{cid}")
+        comp_type = _COMPONENT_CID_TO_NAME.get(cid, f"Component_{cid}")
         node.components.append(PrefabComponent(
             component_type=comp_type,
             file_id=comp_fid,
@@ -202,7 +195,7 @@ def _parse_single_prefab(prefab_path: Path) -> PrefabTemplate:
                 template.referenced_mesh_guids.add(guid)
 
         if cid in (_CID_MESH_RENDERER, _CID_SKINNED_MESH_RENDERER):
-            for mat_ref in body.get("m_Materials", []):
+            for mat_ref in body.get("m_Materials") or []:
                 guid = _ref_guid(mat_ref)
                 if guid:
                     template.referenced_material_guids.add(guid)

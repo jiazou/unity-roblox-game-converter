@@ -107,7 +107,9 @@ def _load_mesh_stats(mesh_path: Path) -> MeshStats:
             vert_count = 0
             for line in mesh_path.read_text(errors="replace").splitlines():
                 if line.startswith("f "):
-                    face_count += 1
+                    # Count triangulated faces: n-gon → (n-2) triangles
+                    num_verts = len(line.split()) - 1  # subtract "f" token
+                    face_count += max(1, num_verts - 2)
                 elif line.startswith("v "):
                     vert_count += 1
             stats.faces = face_count

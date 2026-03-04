@@ -28,14 +28,30 @@ ANTHROPIC_MAX_TOKENS: int = 4096
 # Asset extraction options
 # ---------------------------------------------------------------------------
 
-SUPPORTED_ASSET_EXTENSIONS: list[str] = [
-    ".png", ".jpg", ".jpeg", ".tga", ".bmp",
-    ".fbx", ".obj", ".dae",
-    ".wav", ".mp3", ".ogg",
-    ".mat",
-    ".anim",
-    ".asset",
-]
+# Canonical extension→kind mapping: single source of truth for both
+# asset_extractor and guid_resolver.
+ASSET_EXT_TO_KIND: dict[str, str] = {
+    # Textures
+    ".png": "texture", ".jpg": "texture", ".jpeg": "texture",
+    ".tga": "texture", ".bmp": "texture", ".exr": "texture",
+    ".hdr": "texture", ".psd": "texture",
+    # Meshes
+    ".fbx": "mesh", ".obj": "mesh", ".dae": "mesh", ".blend": "mesh",
+    # Audio
+    ".wav": "audio", ".mp3": "audio", ".ogg": "audio",
+    # Materials / animations / shaders
+    ".mat": "material",
+    ".anim": "animation", ".controller": "animation",
+    ".shader": "shader", ".cginc": "shader", ".hlsl": "shader",
+    # Scene / prefab / script
+    ".prefab": "prefab",
+    ".unity": "scene",
+    ".cs": "script",
+    # Other
+    ".asset": "unknown",
+}
+
+SUPPORTED_ASSET_EXTENSIONS: frozenset[str] = frozenset(ASSET_EXT_TO_KIND.keys())
 COPY_ASSETS: bool = True
 
 # ---------------------------------------------------------------------------

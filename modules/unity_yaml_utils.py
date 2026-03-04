@@ -26,8 +26,14 @@ import yaml
 # Unity YAML regex patterns
 # ---------------------------------------------------------------------------
 
-UNITY_YAML_HEADER = re.compile(r"^%YAML.*\n%TAG.*\n", re.MULTILINE)
-UNITY_DOC_SEPARATOR = re.compile(r"^--- !u!(\d+) &(\d+).*$", re.MULTILINE)
+# Handles multiple %YAML / %TAG directive lines (some files have extras)
+UNITY_YAML_HEADER = re.compile(r"^(%[A-Z][^\n]*\n)+", re.MULTILINE)
+
+# Supports negative fileIDs (Prefab Variants, Unity 2018.3+) and captures
+# the optional ``stripped`` suffix.
+UNITY_DOC_SEPARATOR = re.compile(
+    r"^--- !u!(-?\d+) &(-?\d+)(?: stripped)?.*$", re.MULTILINE
+)
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +60,47 @@ CID_CAMERA = 20
 CID_RECT_TRANSFORM = 224
 CID_RENDER_SETTINGS = 104
 CID_PREFAB_INSTANCE = 1001
+
+
+# ---------------------------------------------------------------------------
+# Shared component constants (used by both scene_parser and prefab_parser)
+# ---------------------------------------------------------------------------
+
+KNOWN_COMPONENT_CIDS: frozenset[int] = frozenset({
+    CID_MESH_FILTER,
+    CID_MESH_RENDERER,
+    CID_SKINNED_MESH_RENDERER,
+    CID_MONO_BEHAVIOUR,
+    CID_BOX_COLLIDER,
+    CID_SPHERE_COLLIDER,
+    CID_CAPSULE_COLLIDER,
+    CID_MESH_COLLIDER,
+    CID_RIGIDBODY,
+    CID_AUDIO_SOURCE,
+    CID_LIGHT,
+    CID_CAMERA,
+    CID_PARTICLE_SYSTEM,
+    CID_ANIMATOR,
+    CID_CHARACTER_CONTROLLER,
+})
+
+COMPONENT_CID_TO_NAME: dict[int, str] = {
+    CID_MESH_FILTER: "MeshFilter",
+    CID_MESH_RENDERER: "MeshRenderer",
+    CID_SKINNED_MESH_RENDERER: "SkinnedMeshRenderer",
+    CID_MONO_BEHAVIOUR: "MonoBehaviour",
+    CID_BOX_COLLIDER: "BoxCollider",
+    CID_SPHERE_COLLIDER: "SphereCollider",
+    CID_CAPSULE_COLLIDER: "CapsuleCollider",
+    CID_MESH_COLLIDER: "MeshCollider",
+    CID_RIGIDBODY: "Rigidbody",
+    CID_AUDIO_SOURCE: "AudioSource",
+    CID_LIGHT: "Light",
+    CID_PARTICLE_SYSTEM: "ParticleSystem",
+    CID_ANIMATOR: "Animator",
+    CID_CHARACTER_CONTROLLER: "CharacterController",
+    CID_CAMERA: "Camera",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -101,38 +148,78 @@ def parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
 
     Pre-scans the document separators to capture classID and fileID before
     handing the cleaned text to PyYAML.
+
+    **Hardened behaviour** (compared to the original implementation):
+
+    * Negative fileIDs (Prefab Variants, Unity 2018.3+) are now captured.
+    * ``stripped`` documents are filtered out — they are partial overrides
+      handled by PrefabInstance modification logic, not full objects.
+    * YAML parse errors are recovered per-document instead of dropping the
+      entire file.
     """
-    # Step 1: collect (classID, fileID) for every document separator
-    doc_headers: list[tuple[int, str]] = []
+    # Step 1: collect (classID, fileID, is_stripped) for every separator
+    doc_headers: list[tuple[int, str, bool]] = []
     for m in UNITY_DOC_SEPARATOR.finditer(raw_text):
-        doc_headers.append((int(m.group(1)), m.group(2)))
+        is_stripped = "stripped" in (m.group(0)[m.end(2) - m.start():])
+        doc_headers.append((int(m.group(1)), m.group(2), is_stripped))
 
     # Step 2: strip the non-standard header and replace separators
     cleaned = UNITY_YAML_HEADER.sub("", raw_text, count=1)
     cleaned = UNITY_DOC_SEPARATOR.sub("---", cleaned)
 
-    # Step 3: parse YAML documents
-    try:
-        docs: list[dict] = list(yaml.safe_load_all(cleaned))
-    except yaml.YAMLError:
-        return []
+    # Step 3: split into individual YAML chunks and parse each one
+    # This gives per-document error recovery: a single malformed document no
+    # longer kills the entire file.
+    chunks = _split_yaml_documents(cleaned)
+    docs: list[dict | None] = []
+    for chunk in chunks:
+        chunk_stripped = chunk.strip()
+        if not chunk_stripped or chunk_stripped == "---":
+            docs.append(None)
+            continue
+        try:
+            parsed = yaml.safe_load(chunk)
+        except yaml.YAMLError:
+            docs.append(None)
+            continue
+        docs.append(parsed)
 
-    # Step 4: pair each document with its header
-    # PyYAML may produce fewer docs than separators (empty docs are skipped),
-    # and it may produce extra None docs.  Filter non-dict results.
+    # Step 4: pair each document with its header, filtering stripped docs
     result: list[tuple[int, str, dict]] = []
     header_idx = 0
     for doc in docs:
         if not isinstance(doc, dict):
             continue
         if header_idx < len(doc_headers):
-            cid, fid = doc_headers[header_idx]
+            cid, fid, stripped = doc_headers[header_idx]
             header_idx += 1
         else:
-            cid, fid = 0, "0"
+            cid, fid, stripped = 0, "0", False
+        if stripped:
+            continue  # Skip partial overrides
         result.append((cid, fid, doc))
 
     return result
+
+
+def _split_yaml_documents(text: str) -> list[str]:
+    """Split cleaned YAML text into individual document strings.
+
+    Documents are delimited by ``---`` on its own line.  The first chunk
+    (before the first ``---``) is included if non-empty.
+    """
+    # Use a simple split on the document separator pattern
+    parts: list[str] = []
+    current: list[str] = []
+    for line in text.split("\n"):
+        if line.strip() == "---":
+            parts.append("\n".join(current))
+            current = []
+        else:
+            current.append(line)
+    if current:
+        parts.append("\n".join(current))
+    return parts
 
 
 def doc_body(doc: dict) -> dict:

@@ -17,16 +17,11 @@ from pathlib import Path
 from typing import Literal
 
 
+import config as _config
+
 AssetKind = Literal["texture", "mesh", "audio", "material", "animation", "unknown"]
 
-_EXT_TO_KIND: dict[str, AssetKind] = {
-    ".png": "texture", ".jpg": "texture", ".jpeg": "texture",
-    ".tga": "texture", ".bmp": "texture",
-    ".fbx": "mesh", ".obj": "mesh", ".dae": "mesh",
-    ".wav": "audio", ".mp3": "audio", ".ogg": "audio",
-    ".mat": "material",
-    ".anim": "animation",
-}
+_EXT_TO_KIND: dict[str, AssetKind] = _config.ASSET_EXT_TO_KIND  # type: ignore[assignment]
 
 
 @dataclass
@@ -49,6 +44,7 @@ class AssetManifest:
     # Convenience look-ups populated after extraction
     by_kind: dict[AssetKind, list[AssetEntry]] = field(default_factory=dict)
     by_sha256: dict[str, AssetEntry] = field(default_factory=dict)  # dedup map
+    warnings: list[str] = field(default_factory=list)  # per-file extraction issues
 
     @property
     def total_size_bytes(self) -> int:
@@ -99,18 +95,23 @@ def extract_assets(
             if ext not in allowed:
                 continue
 
-            kind: AssetKind = _EXT_TO_KIND.get(ext, "unknown")
-            meta = fpath.with_suffix(fpath.suffix + ".meta")
-            entry = AssetEntry(
-                path=fpath,
-                relative_path=fpath.relative_to(root),
-                kind=kind,
-                size_bytes=fpath.stat().st_size,
-                sha256=_sha256_of(fpath),
-                meta_path=meta if meta.exists() else None,
-            )
-            manifest.assets.append(entry)
-            manifest.by_kind.setdefault(kind, []).append(entry)
-            manifest.by_sha256.setdefault(entry.sha256, entry)
+            try:
+                kind: AssetKind = _EXT_TO_KIND.get(ext, "unknown")
+                meta = fpath.with_suffix(fpath.suffix + ".meta")
+                entry = AssetEntry(
+                    path=fpath,
+                    relative_path=fpath.relative_to(root),
+                    kind=kind,
+                    size_bytes=fpath.stat().st_size,
+                    sha256=_sha256_of(fpath),
+                    meta_path=meta if meta.exists() else None,
+                )
+                manifest.assets.append(entry)
+                manifest.by_kind.setdefault(kind, []).append(entry)
+                manifest.by_sha256.setdefault(entry.sha256, entry)
+            except OSError as exc:
+                manifest.warnings.append(
+                    f"Skipped {fpath.relative_to(root)}: {exc}"
+                )
 
     return manifest

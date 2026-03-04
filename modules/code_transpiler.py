@@ -184,6 +184,955 @@ def _parse_csharp_ast(source: str) -> CSharpClassInfo | None:
 
 
 # ---------------------------------------------------------------------------
+# AST-driven Luau emitter (replaces regex pipeline when tree-sitter available)
+# ---------------------------------------------------------------------------
+
+class _LuauEmitter:
+    """Walk a tree-sitter C# AST and emit Luau source code.
+
+    Unlike the regex pipeline, this is context-aware: string literals and
+    comments are never transformed, control-flow blocks produce correct
+    ``end`` placement, and expressions like ``Instantiate(prefab)`` are
+    structurally rewritten rather than naively text-substituted.
+    """
+
+    def __init__(
+        self,
+        source: str,
+        serialized_refs: dict[str, str] | None = None,
+    ) -> None:
+        self.source = source
+        self.source_bytes = source.encode("utf-8")
+        self.refs = serialized_refs or {}
+        self.services: set[str] = set()
+        self.warnings: list[str] = []
+        self.indent = 0
+        self.api_subs = 0
+        # Pre-sort API keys longest-first for correct precedence
+        self._sorted_api_keys = sorted(API_CALL_MAP.keys(), key=len, reverse=True)
+
+    # -- helpers ----------------------------------------------------------
+
+    def _text(self, node: Any) -> str:
+        return self.source_bytes[node.start_byte:node.end_byte].decode(
+            "utf-8", errors="replace"
+        )
+
+    def _ind(self) -> str:
+        return "    " * self.indent
+
+    def _track_service(self, text: str) -> None:
+        for svc in SERVICE_IMPORTS:
+            if svc in text:
+                self.services.add(svc)
+
+    def _is_string_context(self, node: Any) -> bool:
+        """True if *node* (or a parent) is a string literal."""
+        cur = node
+        while cur:
+            if cur.type in ("string_literal", "interpolated_string_expression"):
+                return True
+            cur = cur.parent
+        return False
+
+    def _named_children(self, node: Any) -> list[Any]:
+        return [c for c in node.children if c.is_named]
+
+    # -- main dispatch ----------------------------------------------------
+
+    def emit(self, node: Any) -> str:
+        handler = getattr(self, f"_emit_{node.type}", None)
+        if handler:
+            return handler(node)
+        # Leaf tokens that aren't explicitly handled → raw text
+        if node.child_count == 0:
+            return self._text(node)
+        # Container with no handler → emit named children
+        parts = [self.emit(c) for c in self._named_children(node)]
+        return "\n".join(p for p in parts if p.strip())
+
+    # -- structure --------------------------------------------------------
+
+    def _emit_compilation_unit(self, node: Any) -> str:
+        parts: list[str] = []
+        for child in node.children:
+            if child.type == "using_directive":
+                continue
+            result = self.emit(child)
+            if result and result.strip():
+                parts.append(result)
+        return "\n\n".join(parts)
+
+    def _emit_global_statement(self, node: Any) -> str:
+        parts = [self.emit(c) for c in self._named_children(node)]
+        return "\n".join(p for p in parts if p.strip())
+
+    def _emit_using_directive(self, _node: Any) -> str:
+        return ""
+
+    def _emit_namespace_declaration(self, node: Any) -> str:
+        body = node.child_by_field_name("body")
+        return self._emit_declaration_list_inner(body) if body else ""
+
+    def _emit_class_declaration(self, node: Any) -> str:
+        body = node.child_by_field_name("body")
+        return self._emit_declaration_list_inner(body) if body else ""
+
+    def _emit_declaration_list(self, node: Any) -> str:
+        return self._emit_declaration_list_inner(node)
+
+    def _emit_declaration_list_inner(self, node: Any) -> str:
+        parts: list[str] = []
+        for child in node.children:
+            if child.type in ("{", "}"):
+                continue
+            if not child.is_named:
+                continue
+            result = self.emit(child)
+            if result and result.strip():
+                parts.append(result)
+        return "\n\n".join(parts)
+
+    # -- declarations -----------------------------------------------------
+
+    def _emit_field_declaration(self, node: Any) -> str:
+        # Check for [SerializeField] attribute
+        has_serialize = False
+        for child in node.children:
+            if child.type == "attribute_list":
+                if "SerializeField" in self._text(child):
+                    has_serialize = True
+
+        var_decl = next(
+            (c for c in node.children if c.type == "variable_declaration"), None
+        )
+        if var_decl is None:
+            return ""
+
+        declarator = next(
+            (c for c in var_decl.children if c.type == "variable_declarator"), None
+        )
+        if declarator is None:
+            return ""
+
+        name_node = declarator.child_by_field_name("name")
+        field_name = self._text(name_node) if name_node else ""
+
+        if has_serialize and field_name in self.refs:
+            ref_value = self.refs[field_name]
+            if ref_value.startswith("audio:"):
+                audio_filename = ref_value[len("audio:"):]
+                self.services.add("SoundService")
+                return (
+                    f'{self._ind()}local {field_name} = Instance.new("Sound")\n'
+                    f'{self._ind()}{field_name}.Name = "{field_name}"\n'
+                    f'{self._ind()}{field_name}.SoundId = "-- TODO: upload {audio_filename}"'
+                )
+            self.services.add("ServerStorage")
+            return (
+                f'{self._ind()}local {field_name} = '
+                f'ServerStorage:WaitForChild("{ref_value}")'
+            )
+
+        # Normal field → local declaration
+        value = self._get_declarator_value(declarator)
+        if value is not None:
+            return f"{self._ind()}local {field_name} = {value}"
+        return f"{self._ind()}local {field_name} = nil"
+
+    def _emit_method_declaration(self, node: Any) -> str:
+        name_node = node.child_by_field_name("name")
+        name = self._text(name_node) if name_node else ""
+        params_node = node.child_by_field_name("parameters")
+        body_node = node.child_by_field_name("body")
+
+        # Lifecycle hooks
+        if name in LIFECYCLE_MAP:
+            return self._emit_lifecycle(name, body_node)
+
+        # Regular method
+        params = self._emit_param_names(params_node)
+        body = self._emit_block_body(body_node) if body_node else ""
+        return (
+            f"{self._ind()}local function {name}({params})\n"
+            f"{body}\n"
+            f"{self._ind()}end"
+        )
+
+    def _emit_lifecycle(self, name: str, body_node: Any) -> str:
+        roblox = LIFECYCLE_MAP.get(name, "")
+        self._track_service(roblox)
+        body = self._emit_block_body(body_node) if body_node else ""
+
+        if name in ("Start", "Awake"):
+            # Emit as top-level code
+            comment = f"{self._ind()}-- {name}\n" if body.strip() else ""
+            return f"{comment}{body}" if body.strip() else f"{self._ind()}-- {name}: (empty)"
+
+        if "Connect" in roblox:
+            return (
+                f"{self._ind()}{roblox}\n"
+                f"{body}\n"
+                f"{self._ind()}end)"
+            )
+        return f"{self._ind()}{roblox}\n{body}"
+
+    def _emit_local_function_statement(self, node: Any) -> str:
+        name_node = node.child_by_field_name("name")
+        name = self._text(name_node) if name_node else ""
+        params_node = node.child_by_field_name("parameters")
+        body_node = node.child_by_field_name("body")
+
+        # Check for lifecycle hooks even in top-level function statements
+        if name in LIFECYCLE_MAP:
+            return self._emit_lifecycle(name, body_node)
+
+        params = self._emit_param_names(params_node)
+        body = self._emit_block_body(body_node) if body_node else ""
+        return (
+            f"{self._ind()}local function {name}({params})\n"
+            f"{body}\n"
+            f"{self._ind()}end"
+        )
+
+    def _emit_property_declaration(self, node: Any) -> str:
+        name_node = node.child_by_field_name("name")
+        name = self._text(name_node) if name_node else "UnknownProp"
+        accessors_node = node.child_by_field_name("accessors")
+
+        parts: list[str] = []
+        if accessors_node:
+            for acc in accessors_node.children:
+                if acc.type == "accessor_declaration":
+                    acc_name_node = acc.child_by_field_name("name")
+                    acc_name = self._text(acc_name_node) if acc_name_node else ""
+                    acc_body = next(
+                        (c for c in acc.children if c.type == "block"), None
+                    )
+                    if acc_name == "get" and acc_body:
+                        body = self._emit_block_body(acc_body)
+                        parts.append(
+                            f"{self._ind()}local function get{name}()\n"
+                            f"{body}\n"
+                            f"{self._ind()}end"
+                        )
+                    elif acc_name == "set" and acc_body:
+                        body = self._emit_block_body(acc_body)
+                        parts.append(
+                            f"{self._ind()}local function set{name}(value)\n"
+                            f"{body}\n"
+                            f"{self._ind()}end"
+                        )
+        return "\n\n".join(parts) if parts else f"{self._ind()}-- property {name} (auto-property)"
+
+    def _emit_constructor_declaration(self, _node: Any) -> str:
+        return f"{self._ind()}-- constructor (not applicable in Luau)"
+
+    # -- statements -------------------------------------------------------
+
+    def _emit_block(self, node: Any) -> str:
+        return self._emit_block_body(node)
+
+    def _emit_block_body(self, block_node: Any) -> str:
+        self.indent += 1
+        parts: list[str] = []
+        for child in block_node.children:
+            if child.type in ("{", "}"):
+                continue
+            if not child.is_named:
+                continue
+            result = self.emit(child)
+            if result is not None:
+                parts.append(result)
+        self.indent -= 1
+        return "\n".join(parts)
+
+    def _emit_expression_statement(self, node: Any) -> str:
+        for child in node.children:
+            if child.is_named:
+                expr = self.emit(child)
+                return f"{self._ind()}{expr}"
+        return ""
+
+    def _emit_local_declaration_statement(self, node: Any) -> str:
+        for child in node.children:
+            if child.type == "variable_declaration":
+                return self._emit_variable_decl_stmt(child)
+        return ""
+
+    def _emit_variable_decl_stmt(self, node: Any) -> str:
+        results: list[str] = []
+        for child in node.children:
+            if child.type == "variable_declarator":
+                name_node = child.child_by_field_name("name")
+                name = self._text(name_node) if name_node else ""
+                value = self._get_declarator_value(child)
+                if value is not None:
+                    results.append(f"{self._ind()}local {name} = {value}")
+                else:
+                    results.append(f"{self._ind()}local {name}")
+        return "\n".join(results)
+
+    def _emit_return_statement(self, node: Any) -> str:
+        expr_nodes = [c for c in node.children if c.is_named]
+        if expr_nodes:
+            return f"{self._ind()}return {self.emit(expr_nodes[0])}"
+        return f"{self._ind()}return"
+
+    def _emit_if_statement(self, node: Any, is_elseif: bool = False) -> str:
+        cond_node = node.child_by_field_name("condition")
+        cons_node = node.child_by_field_name("consequence")
+        alt_node = node.child_by_field_name("alternative")
+
+        cond = self.emit(cond_node) if cond_node else "true"
+        keyword = "elseif" if is_elseif else "if"
+        result = f"{self._ind()}{keyword} {cond} then\n"
+
+        if cons_node:
+            result += self._emit_block_body(cons_node)
+
+        if alt_node:
+            if alt_node.type == "if_statement":
+                result += "\n" + self._emit_if_statement(alt_node, is_elseif=True)
+                return result  # The nested if_statement handles its own 'end'
+            else:
+                # else block
+                result += f"\n{self._ind()}else\n"
+                result += self._emit_block_body(alt_node)
+
+        if not is_elseif or alt_node is None or alt_node.type != "if_statement":
+            result += f"\n{self._ind()}end"
+        return result
+
+    def _emit_for_statement(self, node: Any) -> str:
+        init = node.child_by_field_name("initializer")
+        cond = node.child_by_field_name("condition")
+        update = node.child_by_field_name("update")
+        body = node.child_by_field_name("body")
+
+        # Detect simple counting loop: for (int i = start; i < end; i++)
+        if (
+            init
+            and cond
+            and update
+            and init.type == "variable_declaration"
+            and cond.type == "binary_expression"
+            and update.type == "postfix_unary_expression"
+        ):
+            declarator = next(
+                (c for c in init.children if c.type == "variable_declarator"),
+                None,
+            )
+            if declarator:
+                var_name = self._text(declarator.child_by_field_name("name"))
+                start_val = self._get_declarator_value(declarator) or "0"
+                op_node = cond.child_by_field_name("operator")
+                right_node = cond.child_by_field_name("right")
+                op = self._text(op_node) if op_node else ""
+                end_val = self.emit(right_node) if right_node else ""
+
+                if op == "<":
+                    end_expr = f"{end_val} - 1"
+                elif op == "<=":
+                    end_expr = end_val
+                else:
+                    end_expr = end_val
+
+                body_text = self._emit_block_body(body) if body else ""
+                return (
+                    f"{self._ind()}for {var_name} = {start_val}, {end_expr} do\n"
+                    f"{body_text}\n"
+                    f"{self._ind()}end"
+                )
+
+        # Fallback: while loop
+        init_text = self._emit_variable_decl_stmt(init) if init and init.type == "variable_declaration" else ""
+        cond_text = self.emit(cond) if cond else "true"
+        update_text = self.emit(update) if update else ""
+        body_text = self._emit_block_body(body) if body else ""
+        lines = []
+        if init_text:
+            lines.append(init_text)
+        lines.append(f"{self._ind()}while {cond_text} do")
+        if body_text:
+            lines.append(body_text)
+        if update_text:
+            lines.append(f"{self._ind()}    {update_text}")
+        lines.append(f"{self._ind()}end")
+        return "\n".join(lines)
+
+    def _emit_foreach_statement(self, node: Any) -> str:
+        var_node = node.child_by_field_name("left")
+        collection_node = node.child_by_field_name("right")
+        body = node.child_by_field_name("body")
+
+        var_name = self._text(var_node) if var_node else "v"
+        collection = self.emit(collection_node) if collection_node else "items"
+        body_text = self._emit_block_body(body) if body else ""
+        return (
+            f"{self._ind()}for _, {var_name} in {collection} do\n"
+            f"{body_text}\n"
+            f"{self._ind()}end"
+        )
+
+    def _emit_while_statement(self, node: Any) -> str:
+        cond_node = node.child_by_field_name("condition")
+        body = node.child_by_field_name("body")
+        cond = self.emit(cond_node) if cond_node else "true"
+        body_text = self._emit_block_body(body) if body else ""
+        return (
+            f"{self._ind()}while {cond} do\n"
+            f"{body_text}\n"
+            f"{self._ind()}end"
+        )
+
+    # -- expressions ------------------------------------------------------
+
+    def _emit_invocation_expression(self, node: Any) -> str:
+        func_node = node.child_by_field_name("function")
+        args_node = node.child_by_field_name("arguments")
+
+        if func_node is None:
+            return self._text(node)
+
+        func_text = self._text(func_node)
+
+        # -- Special functions ---
+        if func_text == "Instantiate":
+            return self._emit_instantiate(args_node)
+        if func_text in ("Destroy", "DestroyImmediate"):
+            return self._emit_destroy(args_node)
+
+        # GetComponent<T>() and variants
+        if func_node.type == "generic_name":
+            ident = next(
+                (c for c in func_node.children if c.type == "identifier"), None
+            )
+            if ident and self._text(ident) in (
+                "GetComponent", "GetComponentInChildren", "GetComponentInParent",
+                "GetComponents", "GetComponentsInChildren",
+            ):
+                return self._emit_get_component(func_node)
+
+        # member_access_expression: check for special method patterns
+        if func_node.type == "member_access_expression":
+            name_node = func_node.child_by_field_name("name")
+            expr_node = func_node.child_by_field_name("expression")
+            method_name = self._text(name_node) if name_node else ""
+
+            # Handle generic method on member: obj.GetComponent<T>()
+            if name_node and name_node.type == "generic_name":
+                generic_ident = next(
+                    (c for c in name_node.children if c.type == "identifier"), None
+                )
+                if generic_ident and self._text(generic_ident) in (
+                    "GetComponent", "GetComponentInChildren", "GetComponentInParent",
+                ):
+                    obj = self.emit(expr_node) if expr_node else ""
+                    comp = self._emit_get_component(name_node)
+                    return f"{obj}{comp}"
+
+            obj = self.emit(expr_node) if expr_node else ""
+            args = self._emit_args(args_node)
+
+            # .SetActive(val) → .Visible = val
+            if method_name == "SetActive":
+                return f"{obj}.Visible = {args}"
+            # .Add(item) → table.insert(obj, item)
+            if method_name == "Add":
+                return f"table.insert({obj}, {args})"
+            # .Remove(item) → table.remove(obj, item)
+            if method_name == "Remove":
+                return f"table.remove({obj}, {args})"
+            # .Contains(item) → table.find(obj, item)
+            if method_name == "Contains":
+                return f"table.find({obj}, {args})"
+            # .ToString() → tostring(obj)
+            if method_name == "ToString":
+                return f"tostring({obj})"
+
+            # Check full function text against API map
+            mapped = self._check_api_map(func_text)
+            if mapped is not None:
+                return f"{mapped}({args})"
+
+            return f"{obj}.{method_name}({args})"
+
+        # Check bare identifier against API map (e.g. StartCoroutine)
+        mapped = self._check_api_map(func_text)
+        if mapped is not None:
+            args = self._emit_args(args_node)
+            return f"{mapped}({args})"
+
+        func = self.emit(func_node)
+        args = self._emit_args(args_node)
+        return f"{func}({args})"
+
+    def _emit_instantiate(self, args_node: Any) -> str:
+        """Restructure ``Instantiate(prefab[, pos, rot])`` → ``prefab:Clone()``."""
+        arg_nodes = [c for c in args_node.children if c.type == "argument"] if args_node else []
+        if not arg_nodes:
+            return "nil --[[ Instantiate: missing argument ]]"
+        prefab = self.emit(self._named_children(arg_nodes[0])[0]) if self._named_children(arg_nodes[0]) else self._text(arg_nodes[0])
+        if len(arg_nodes) > 1:
+            extras = [self.emit(self._named_children(a)[0]) for a in arg_nodes[1:] if self._named_children(a)]
+            return f"{prefab}:Clone() --[[ TODO: set CFrame from {', '.join(extras)} ]]"
+        return f"{prefab}:Clone()"
+
+    def _emit_destroy(self, args_node: Any) -> str:
+        arg_nodes = [c for c in args_node.children if c.type == "argument"] if args_node else []
+        if not arg_nodes:
+            return ":Destroy()"
+        obj = self.emit(self._named_children(arg_nodes[0])[0]) if self._named_children(arg_nodes[0]) else self._text(arg_nodes[0])
+        return f"{obj}:Destroy()"
+
+    def _emit_get_component(self, func_node: Any) -> str:
+        """Convert ``GetComponent<T>()`` → ``:FindFirstChildOfClass("RobloxT")``."""
+        ident = next(
+            (c for c in func_node.children if c.type == "identifier"), None
+        )
+        method_name = self._text(ident) if ident else "GetComponent"
+        roblox_method = API_CALL_MAP.get(method_name, ":FindFirstChildOfClass")
+
+        type_args = next(
+            (c for c in func_node.children if c.type == "type_argument_list"),
+            None,
+        )
+        if type_args:
+            type_idents = [c for c in type_args.children if c.type in ("identifier", "predefined_type")]
+            if type_idents:
+                csharp_type = self._text(type_idents[0])
+                roblox_type = TYPE_MAP.get(csharp_type, csharp_type)
+                return f'{roblox_method}("{roblox_type}")'
+        return f"{roblox_method}()"
+
+    def _emit_member_access_expression(self, node: Any) -> str:
+        raw = self._text(node)
+        expr_node = node.child_by_field_name("expression")
+        name_node = node.child_by_field_name("name")
+        name = self._text(name_node) if name_node else ""
+
+        # Check full raw text against API map
+        mapped = self._check_api_map(raw)
+        if mapped is not None:
+            return mapped
+
+        obj = self.emit(expr_node) if expr_node else ""
+
+        # .Length / .Count → #obj
+        if name in ("Length", "Count"):
+            return f"#{obj}"
+
+        return f"{obj}.{name}"
+
+    def _emit_object_creation_expression(self, node: Any) -> str:
+        type_node = node.child_by_field_name("type")
+        args_node = node.child_by_field_name("arguments")
+        type_text = self._text(type_node) if type_node else ""
+        args = self._emit_args(args_node) if args_node else ""
+
+        # new Vector3(...) → Vector3.new(...)
+        type_map = {
+            "Vector3": "Vector3.new",
+            "Vector2": "Vector2.new",
+            "Color": "Color3.new",
+            "Color32": "Color3.new",
+        }
+        if type_text in type_map:
+            return f"{type_map[type_text]}({args})"
+        # new List<T>() / new Dictionary<K,V>() → {}
+        if type_node and type_node.type == "generic_name":
+            ident = next((c for c in type_node.children if c.type == "identifier"), None)
+            if ident and self._text(ident) in ("List", "Dictionary", "HashSet"):
+                return "{}"
+        # new SomeType() → nil with comment
+        if not args:
+            return f"nil --[[ new {type_text}() ]]"
+        return f"nil --[[ new {type_text}({args}) ]]"
+
+    def _emit_assignment_expression(self, node: Any) -> str:
+        left = self.emit(node.child_by_field_name("left"))
+        op_node = node.child_by_field_name("operator")
+        right = self.emit(node.child_by_field_name("right"))
+        op = self._text(op_node) if op_node else "="
+        return f"{left} {op} {right}"
+
+    def _emit_binary_expression(self, node: Any) -> str:
+        left_node = node.child_by_field_name("left")
+        op_node = node.child_by_field_name("operator")
+        right_node = node.child_by_field_name("right")
+
+        left = self.emit(left_node)
+        right = self.emit(right_node)
+        op = self._text(op_node) if op_node else "+"
+
+        # Operator conversions
+        if op == "!=":
+            op = "~="
+        elif op == "&&":
+            op = "and"
+        elif op == "||":
+            op = "or"
+        elif op == "+":
+            # String concatenation: if either side is a string literal
+            if self._is_string_typed(left_node) or self._is_string_typed(right_node):
+                op = ".."
+
+        return f"{left} {op} {right}"
+
+    def _emit_prefix_unary_expression(self, node: Any) -> str:
+        op = ""
+        operand = None
+        for child in node.children:
+            if child.is_named:
+                operand = child
+            else:
+                op = self._text(child)
+        expr = self.emit(operand) if operand else ""
+        if op == "!":
+            return f"not {expr}"
+        return f"{op}{expr}"
+
+    def _emit_postfix_unary_expression(self, node: Any) -> str:
+        operand = None
+        op = ""
+        for child in node.children:
+            if child.is_named:
+                operand = child
+            elif child.type in ("++", "--"):
+                op = self._text(child)
+        expr = self.emit(operand) if operand else ""
+        if op == "++":
+            return f"{expr} += 1"
+        if op == "--":
+            return f"{expr} -= 1"
+        return f"{expr}{op}"
+
+    def _emit_conditional_expression(self, node: Any) -> str:
+        cond = self.emit(node.child_by_field_name("condition"))
+        cons = self.emit(node.child_by_field_name("consequence"))
+        alt = self.emit(node.child_by_field_name("alternative"))
+        return f"if {cond} then {cons} else {alt}"
+
+    def _emit_parenthesized_expression(self, node: Any) -> str:
+        inner = next((c for c in node.children if c.is_named), None)
+        return f"({self.emit(inner)})" if inner else "()"
+
+    def _emit_element_access_expression(self, node: Any) -> str:
+        # obj[index] — emit as-is (Luau uses 1-based, but keep for now)
+        expr = node.children[0] if node.children else None
+        bracket_args = node.child_by_field_name("arguments") or next(
+            (c for c in node.children if c.type == "bracketed_argument_list"), None
+        )
+        obj = self.emit(expr) if expr else ""
+        if bracket_args:
+            indices = [self.emit(c) for c in bracket_args.children if c.is_named]
+            return f"{obj}[{', '.join(indices)}]"
+        return self._text(node)
+
+    def _emit_cast_expression(self, node: Any) -> str:
+        # (Type)expr → just expr (strip the cast)
+        # The value is the last named child
+        named = self._named_children(node)
+        if len(named) >= 2:
+            return self.emit(named[-1])
+        return self._text(node)
+
+    # -- literals ---------------------------------------------------------
+
+    def _emit_this_expression(self, _node: Any) -> str:
+        return "self"
+
+    def _emit_this(self, _node: Any) -> str:
+        # tree-sitter-c-sharp uses node type "this" (not "this_expression")
+        return "self"
+
+    def _emit_identifier(self, node: Any) -> str:
+        text = self._text(node)
+        if text == "this":
+            return "self"
+        return text
+
+    def _emit_string_literal(self, node: Any) -> str:
+        # Preserve string literals unchanged — key AST advantage
+        return self._text(node)
+
+    def _emit_verbatim_string_literal(self, node: Any) -> str:
+        return self._text(node)
+
+    def _emit_interpolated_string_expression(self, node: Any) -> str:
+        # $"hello {x}" — convert to string.format or concatenation
+        # For simplicity, fall back to raw text (valid enough for review)
+        return self._text(node)
+
+    def _emit_character_literal(self, node: Any) -> str:
+        return self._text(node)
+
+    def _emit_integer_literal(self, node: Any) -> str:
+        return self._text(node)
+
+    def _emit_real_literal(self, node: Any) -> str:
+        text = self._text(node)
+        # Strip f/d/m suffixes
+        if text.endswith(("f", "F", "d", "D", "m", "M")):
+            text = text[:-1]
+        return text
+
+    def _emit_boolean_literal(self, node: Any) -> str:
+        text = self._text(node)
+        return text.lower()
+
+    def _emit_null_literal(self, _node: Any) -> str:
+        return "nil"
+
+    def _emit_comment(self, node: Any) -> str:
+        text = self._text(node)
+        # Convert // comment → -- comment
+        if text.startswith("//"):
+            return f"{self._ind()}--{text[2:]}"
+        # Convert /* ... */ → --[[ ... ]]
+        if text.startswith("/*"):
+            inner = text[2:-2] if text.endswith("*/") else text[2:]
+            return f"{self._ind()}--[[ {inner.strip()} ]]"
+        return f"{self._ind()}{text}"
+
+    # -- other node types -------------------------------------------------
+
+    def _emit_attribute_list(self, _node: Any) -> str:
+        # Attributes are handled in field_declaration context
+        return ""
+
+    def _emit_modifier(self, _node: Any) -> str:
+        return ""
+
+    def _emit_predefined_type(self, _node: Any) -> str:
+        return ""
+
+    def _emit_implicit_type(self, _node: Any) -> str:
+        return ""
+
+    def _emit_variable_declaration(self, node: Any) -> str:
+        return self._emit_variable_decl_stmt(node)
+
+    def _emit_argument(self, node: Any) -> str:
+        named = self._named_children(node)
+        return self.emit(named[0]) if named else self._text(node)
+
+    def _emit_base_list(self, _node: Any) -> str:
+        return ""
+
+    def _emit_qualified_name(self, node: Any) -> str:
+        return self._text(node)
+
+    def _emit_generic_name(self, node: Any) -> str:
+        return self._text(node)
+
+    def _emit_type_argument_list(self, node: Any) -> str:
+        return self._text(node)
+
+    def _emit_array_type(self, _node: Any) -> str:
+        return ""
+
+    def _emit_nullable_type(self, _node: Any) -> str:
+        return ""
+
+    def _emit_break_statement(self, _node: Any) -> str:
+        return f"{self._ind()}break"
+
+    def _emit_continue_statement(self, _node: Any) -> str:
+        return f"{self._ind()}continue"
+
+    def _emit_throw_statement(self, node: Any) -> str:
+        expr = next((c for c in node.children if c.is_named), None)
+        if expr:
+            return f"{self._ind()}error({self.emit(expr)})"
+        return f"{self._ind()}error()"
+
+    def _emit_try_statement(self, node: Any) -> str:
+        # Approximate: extract try body, wrap in pcall-style comment
+        parts: list[str] = []
+        for child in node.children:
+            if child.type == "block":
+                parts.append(f"{self._ind()}-- try")
+                parts.append(self._emit_block_body(child))
+            elif child.type == "catch_clause":
+                body = next((c for c in child.children if c.type == "block"), None)
+                if body:
+                    parts.append(f"{self._ind()}-- catch")
+                    parts.append(self._emit_block_body(body))
+            elif child.type == "finally_clause":
+                body = next((c for c in child.children if c.type == "block"), None)
+                if body:
+                    parts.append(f"{self._ind()}-- finally")
+                    parts.append(self._emit_block_body(body))
+        return "\n".join(parts)
+
+    def _emit_switch_statement(self, node: Any) -> str:
+        cond_node = node.child_by_field_name("value") or next(
+            (c for c in node.children if c.is_named and c.type not in ("switch_body",)), None
+        )
+        body = node.child_by_field_name("body") or next(
+            (c for c in node.children if c.type == "switch_body"), None
+        )
+        cond = self.emit(cond_node) if cond_node else "value"
+        parts = [f"{self._ind()}-- switch {cond}"]
+        if body:
+            for section in body.children:
+                if section.type == "switch_section":
+                    labels = [c for c in section.children if "label" in c.type]
+                    stmts = [c for c in section.children if c.is_named and "label" not in c.type]
+                    for label in labels:
+                        parts.append(f"{self._ind()}-- {self._text(label).strip()}")
+                    for stmt in stmts:
+                        parts.append(self.emit(stmt))
+        return "\n".join(parts)
+
+    def _emit_do_statement(self, node: Any) -> str:
+        cond_node = node.child_by_field_name("condition")
+        body = node.child_by_field_name("body") or next(
+            (c for c in node.children if c.type == "block"), None
+        )
+        cond = self.emit(cond_node) if cond_node else "true"
+        body_text = self._emit_block_body(body) if body else ""
+        return (
+            f"{self._ind()}repeat\n"
+            f"{body_text}\n"
+            f"{self._ind()}until not ({cond})"
+        )
+
+    # -- helpers ----------------------------------------------------------
+
+    def _emit_args(self, args_node: Any) -> str:
+        if args_node is None:
+            return ""
+        parts = []
+        for child in args_node.children:
+            if child.type == "argument":
+                parts.append(self._emit_argument(child))
+        return ", ".join(parts)
+
+    def _emit_param_names(self, params_node: Any) -> str:
+        if params_node is None:
+            return ""
+        names = []
+        for child in params_node.children:
+            if child.type == "parameter":
+                name_node = child.child_by_field_name("name")
+                if name_node:
+                    names.append(self._text(name_node))
+        return ", ".join(names)
+
+    def _get_declarator_value(self, declarator: Any) -> str | None:
+        """Extract the initializer expression from a variable_declarator."""
+        found_eq = False
+        for child in declarator.children:
+            if child.type == "=" or self._text(child) == "=":
+                found_eq = True
+            elif found_eq:
+                return self.emit(child)
+        # Also check for equals_value_clause wrapper
+        for child in declarator.children:
+            if child.type == "equals_value_clause":
+                for inner in child.children:
+                    if inner.is_named:
+                        return self.emit(inner)
+        return None
+
+    def _check_api_map(self, raw_text: str) -> str | None:
+        """Check if *raw_text* matches an API_CALL_MAP key."""
+        for api_key in self._sorted_api_keys:
+            if raw_text == api_key:
+                replacement = API_CALL_MAP[api_key]
+                self.api_subs += 1
+                self._track_service(replacement)
+                return replacement
+        return None
+
+    def _is_string_typed(self, node: Any) -> bool:
+        """Heuristic: is this expression clearly a string?"""
+        if node is None:
+            return False
+        if node.type == "string_literal":
+            return True
+        if node.type == "invocation_expression":
+            func = node.child_by_field_name("function")
+            if func and func.type == "member_access_expression":
+                name_node = func.child_by_field_name("name")
+                if name_node and self._text(name_node) == "ToString":
+                    return True
+        if node.type == "binary_expression":
+            op = node.child_by_field_name("operator")
+            if op and self._text(op) == "+":
+                return (
+                    self._is_string_typed(node.child_by_field_name("left"))
+                    or self._is_string_typed(node.child_by_field_name("right"))
+                )
+        return False
+
+
+def _has_parse_errors(root: Any) -> bool:
+    """Check if the tree-sitter parse tree contains ERROR nodes."""
+    if root.type == "ERROR":
+        return True
+    for child in root.children:
+        if _has_parse_errors(child):
+            return True
+    return False
+
+
+def _ast_transpile_luau(
+    source: str,
+    serialized_refs: dict[str, str] | None = None,
+) -> tuple[str, float, list[str]] | None:
+    """
+    Attempt AST-driven transpilation.  Returns ``None`` if the source cannot
+    be cleanly parsed (has ERROR nodes), signalling the caller to fall back
+    to the regex pipeline.
+    """
+    if not _TS_AVAILABLE or _ts_parser is None:
+        return None
+
+    tree = _ts_parser.parse(source.encode("utf-8"))
+    if _has_parse_errors(tree.root_node):
+        return None
+
+    emitter = _LuauEmitter(source, serialized_refs)
+    luau = emitter.emit(tree.root_node)
+
+    # Clean up multiple blank lines
+    luau = re.sub(r"\n{3,}", "\n\n", luau)
+
+    # Add service import header
+    if emitter.services:
+        lines = []
+        for svc in sorted(emitter.services):
+            if svc in SERVICE_IMPORTS:
+                lines.append(SERVICE_IMPORTS[svc])
+        if lines:
+            luau = "\n".join(lines) + "\n\n" + luau
+
+    # Confidence scoring — AST-based is inherently more reliable
+    original_lines = source.splitlines()
+    new_lines = luau.splitlines()
+    changed = sum(a != b for a, b in zip(original_lines, new_lines))
+    base_confidence = min(1.0, changed / max(len(original_lines), 1) * 1.5)
+
+    # Trivial / near-empty scripts get low confidence (nothing meaningful
+    # to convert → should be flagged for review)
+    non_blank = [l for l in original_lines if l.strip()]
+    code_lines = [l for l in non_blank if not l.strip().startswith("//")]
+    if len(code_lines) <= 1:
+        base_confidence = min(base_confidence, 0.3)
+    else:
+        # AST bonuses (higher than regex since we have structural understanding)
+        base_confidence = min(1.0, base_confidence + 0.15)
+        if emitter.api_subs > 0:
+            base_confidence = min(1.0, base_confidence + 0.05 * min(emitter.api_subs, 5))
+
+    return luau, base_confidence, emitter.warnings
+
+
+# ---------------------------------------------------------------------------
 # Script type classification (client / server / shared)
 # ---------------------------------------------------------------------------
 
@@ -319,10 +1268,12 @@ def _rule_based_transpile(
     serialized_refs: dict[str, str] | None = None,
 ) -> tuple[str, float, list[str]]:
     """
-    Apply regex substitutions and API mappings to convert C# patterns to Luau.
+    Convert C# source to Luau using AST-driven emission (preferred) with
+    regex fallback.
 
-    When tree-sitter is available, AST info is used to generate service imports
-    and improve confidence scoring.
+    When tree-sitter is available and the source parses without errors, the
+    AST emitter walks the syntax tree to produce structurally correct Luau.
+    Otherwise, the legacy regex pipeline handles the conversion.
 
     Args:
         csharp: Original C# source text.
@@ -334,6 +1285,12 @@ def _rule_based_transpile(
     Returns:
         (luau_source, confidence, warnings)
     """
+    # --- AST path (preferred) ---
+    ast_result = _ast_transpile_luau(csharp, serialized_refs)
+    if ast_result is not None:
+        return ast_result
+
+    # --- Regex fallback (for snippets / missing tree-sitter) ---
     luau = csharp
     warnings: list[str] = []
     need_server_storage = False

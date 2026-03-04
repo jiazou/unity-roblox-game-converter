@@ -1278,6 +1278,10 @@ class TestSceneParserCamera:
 class TestTextureProcessingDetailOps:
     """Integration tests for composite_detail, blend_normal_detail, heightmap_to_normal."""
 
+    @classmethod
+    def setup_class(cls) -> None:
+        pytest.importorskip("PIL")
+
     def _make_rgb_image(self, path: Path, color: tuple[int, int, int], size: int = 8) -> Path:
         from PIL import Image
         img = Image.new("RGB", (size, size), color)
@@ -1298,8 +1302,8 @@ class TestTextureProcessingDetailOps:
             "composite_detail", detail, "result.png",
             params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 1, "detail_tiling_y": 1},
         )]
-        result = _process_textures(ops, out_dir)
-        assert len(result) == 1
+        generated, _warnings = _process_textures(ops, out_dir)
+        assert len(generated) == 1
         assert (out_dir / "result.png").exists()
 
     def test_composite_detail_neutral_grey_preserves_base(self, tmp_path: Path) -> None:
@@ -1328,8 +1332,8 @@ class TestTextureProcessingDetailOps:
             "composite_detail", detail, "result.png",
             params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 2, "detail_tiling_y": 2},
         )]
-        result = _process_textures(ops, out_dir)
-        assert len(result) == 1
+        generated, _warnings = _process_textures(ops, out_dir)
+        assert len(generated) == 1
 
     def test_blend_normal_detail_produces_output(self, tmp_path: Path) -> None:
         # Flat normal map: (128, 128, 255) = pointing straight up
@@ -1341,8 +1345,8 @@ class TestTextureProcessingDetailOps:
             params={"base_path": str(base), "mask_path": "", "detail_tiling_x": 1,
                     "detail_tiling_y": 1, "detail_normal_scale": 1.0},
         )]
-        result = _process_textures(ops, out_dir)
-        assert len(result) == 1
+        generated, _warnings = _process_textures(ops, out_dir)
+        assert len(generated) == 1
 
     def test_blend_normal_flat_detail_preserves_base(self, tmp_path: Path) -> None:
         """Flat detail normal (128,128,255) should preserve the base normal."""
@@ -1370,8 +1374,8 @@ class TestTextureProcessingDetailOps:
             "heightmap_to_normal", height, "normal.png",
             params={"strength": 0.05},
         )]
-        result = _process_textures(ops, out_dir)
-        assert len(result) == 1
+        generated, _warnings = _process_textures(ops, out_dir)
+        assert len(generated) == 1
         assert (out_dir / "normal.png").exists()
 
     def test_heightmap_flat_produces_flat_normal(self, tmp_path: Path) -> None:
@@ -1399,5 +1403,5 @@ class TestTextureProcessingDetailOps:
             "heightmap_to_normal", height, "normal.png",
             params={"strength": 0.05, "base_normal_path": str(base_normal)},
         )]
-        result = _process_textures(ops, out_dir)
-        assert len(result) == 1
+        generated, _warnings = _process_textures(ops, out_dir)
+        assert len(generated) == 1
