@@ -1276,7 +1276,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">CharacterCollider</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWbQ3E6GQUU3QUFDfg'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT5yufUmnJykjMZSKmq'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -1510,7 +1510,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">CoroutineHandler</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWmx3dEHa3kttZvEHo'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6Avwtoo2MtLrHPSZc'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -1553,7 +1553,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">GameManager</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWnhC33zsfxeUmRKkS'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6BoXfVpBXGafP7qAd'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -1703,7 +1703,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">Missions</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWuM3P3XUEc52MhmY5'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6JbpCC4waicBqsa7P'}
 -- Original C# preserved below:
 -- using System;
 -- using System.IO;
@@ -1997,7 +1997,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">Missile</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWwFdt2pAXdDnJcgYQ'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6LLVCedXvqaUuagZJ'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -2113,7 +2113,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">PatrollingObstacle</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWxtN6DMVYAQJRxSym'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6MwUxu2gisXPDsqG3'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -2225,7 +2225,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">AssignOutputChannel</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX2rV2HRFaEr9oYBnJ'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6SET23xVo9HY8yKFM'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using System.Collections.Generic;
@@ -2271,7 +2271,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">CountdownSound</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX3Yf6H3eTkJh41tXQ'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6T5JFQo7KRDT3fpfa'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -2302,7 +2302,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">MusicPlayer</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX4FpjA68sheWPfMSr'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6UCGXnLQmrcUohGhi'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -2414,7 +2414,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">TrackSegment</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX7ZkShFm3dJFxhZU5'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6YeQg85zpLQkYBsk6'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -2586,7 +2586,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">AdsForMission</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX8QrKdX4D2W5kK6Ep'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6ZQYsj8Ffa6ZbmAwu'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -2707,7 +2707,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">LicenceDisplayer</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXAmVJSXGDKfpZh1En'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6bqu63N8oSy9HafEU'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -2746,7 +2746,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">PowerupIcon</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXDk5FnrBWixMXM3sB'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6f9aijF9DaKdEX4Wu'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -2774,7 +2774,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">IAPHandler</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXFw3Kw92LHZDsrpQ2'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6hzEb6eBP5oEv59Vj'}
 -- Original C# preserved below:
 -- using System.Collections.Generic;
 -- using UnityEngine;
@@ -2857,7 +2857,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">ShopUI</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXMb7P62JZvmNsG3Z6'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6p9KcXNHUiPs3kHdv'}
 -- Original C# preserved below:
 -- using System.Collections.Generic;
 -- using UnityEngine;
@@ -3010,7 +3010,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">WorldCurver</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXPC75kwUogVb7E64X'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6qg6MkuMLp69gVByU'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -3046,7 +3046,7 @@
       <Item class="LocalScript">
         <Properties>
           <string name="Name">CharacterInputController</string>
-          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWd5kMSWYwJ6Hizxgv'}
+          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT61omSLqzhKTExoEef'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -3480,7 +3480,7 @@
       <Item class="LocalScript">
         <Properties>
           <string name="Name">GameState</string>
-          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWpbHoFpfTPiaemWTY'}
+          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6Dg9C8xGmcKNNY1jf'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -4089,7 +4089,7 @@
       <Item class="LocalScript">
         <Properties>
           <string name="Name">TrackManager</string>
-          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX6kdovtm5vrbkeLP3'}
+          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6WoXsuxgyaZYwQTqm'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -4779,7 +4779,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">BundleAndBuild</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWZ2fHnvMu2CALnFhn'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT5wFBJPY1pjhK1T3Sw'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEditor;
@@ -4803,7 +4803,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Character</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWZkKjZo4LSoZzkuUk'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT5xBEnCYcspZVi8uQR'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -4843,7 +4843,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">CharacterAccessories</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWabfo2gi9Q6M8EEqj'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT5y2adpg8AxbRY42gj'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4863,7 +4863,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">CharacterDatabase</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWcAgEome3Wf9Q7pdB'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT5zqj7GMNzPEmzFTyF'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -4915,7 +4915,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">RandomAnimation</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWdsNfD8JV8tiEqDeR'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT62dP2C4ez6o5UdCtL'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4934,7 +4934,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">RestartRunning</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWeYoVkVoh6uzNTmFx'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT63QkiF48CHb7KkrMR'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4957,7 +4957,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Coin</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWfR8ojerJkz2uBknb'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT64M4kqxRwyGuduQEz'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4971,7 +4971,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Consumable</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWgKxhFmtJjZMezmZn'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT658SZDyo8CRLjgdoi'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -5093,7 +5093,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ConsumableDatabase</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWh8aPjVvyc1pmKJN8'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT65sb7LvPpsyG2k553'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -5133,7 +5133,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ConsumableIcon</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWhvwmDTjX9Qn6f9Bu'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT66gi7L7T1kCtF2k8n'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -5148,7 +5148,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">CoinMagnet</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWihLNNY9zGzwHBPzt'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT67e12QXo4cvhF2jYp'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5203,7 +5203,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ExtraLife</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWjSyo7cd6Y5KL43qH'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT68NA6fZ7Jz5Rg9rAp'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5256,7 +5256,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Invincibility</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWk8f7DcYt64XytZrT'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT69HEJR4orZTuUE85H'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5308,7 +5308,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Score2Multiplier</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWkpq8v8S8N5LmUX3s'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6A5bVqBkBW3KQNabD'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5362,7 +5362,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">GameOverState</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWodVwivg3fPiLQhZd'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6Ci6jFuub4CodKWRS'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -5533,7 +5533,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">LoadoutState</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWqT8hraHyE3L4csQg'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6EZUW3toqWLNgDeEV'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -5954,7 +5954,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Modifier</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWrGkWd3UXSXUxugv1'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6FNbC5MXqwn7QzLm6'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -6060,7 +6060,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">TutorialState</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWs5cf1tU4mjEaqfZq'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6G8yjt8oygeUMDVpU'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using System.Collections.Generic;
@@ -6075,7 +6075,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Helpers</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWsm3cjf2xihv8RCBU'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6GxLvemP5mXdzxbuN'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -6098,7 +6098,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">LevelLoader</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWtZuchiq9qrQtJU9f'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6HnSxEsxse66cFb7R'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.SceneManagement;
@@ -6115,7 +6115,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">AllLaneObstacle</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWv8Avudje5AbAZigY'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6KQBfmjMJySZxdQcF'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -6151,7 +6151,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Obstacle</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWxADBsRy6PrCKFt6a'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6M7NUhyNHUrU72GLX'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -6193,7 +6193,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">SimpleBarricade</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWyZnwX4uSW4fybqGa'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6No5TEVQuaJyc8Q9w'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -6258,7 +6258,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">OpenURL</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWzNf2BWk5oWC9D7aS'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6PbwohFttbsLF9wes'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -6276,7 +6276,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">PlayerData</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX1SA1Uobjf5qsBVX3'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6QcTrReQEzXSPx8sW'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.IO;
@@ -6782,7 +6782,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Pooler</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX2EH5q3TFuvGxMRE1'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6RTKPSRuuhMjLQnr3'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -6837,7 +6837,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ThemeData</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX4zU9ry815muefoKQ'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6Uy9ofxnLktBV8HLL'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -6881,7 +6881,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ThemeDatabase</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX5hPVP1X1rYhSDJCG'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6VjY4jvbZ8t4xbHxC'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -6933,7 +6933,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">HighscoreUI</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX99W8CrUafVsj1YHB'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6aAh2oPdft7tzUgWk'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -6950,7 +6950,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Leaderboard</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX9xNVWwrxDvLv7AZr'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6b1J2EMcMuut93XyX'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -7042,7 +7042,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">MainMenu</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXBSfTyqcuja71QB7E'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6cbYHiSXMRsx2QSmW'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.SceneManagement;
@@ -7060,7 +7060,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">MissionEntry</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXCEJ9yY2R1NJUPE2g'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6dPucpREznUisdJJr'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -7113,7 +7113,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">MissionUI</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXCzS1GQ5rp3JfxgnF'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6eHzBkEQ5EZKekVKb'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -7188,7 +7188,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">DataDeleteConfirmation</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXETVETv7J8ub3UGoy'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6fxh4c2rzYi4LSvC6'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -7225,7 +7225,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">SettingPopup</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXFBtjqnmC2He6sob6'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6gtFzt9fA1JT3nQmZ'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.Audio;
@@ -7306,7 +7306,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopAccessoriesList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXGifmrJpMkpp8DiXj'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6isKMR8KYUZQRUBbs'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -7527,7 +7527,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopCharacterList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXHYXRa18jVQtCvX7R'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6jfgwz6DoD4goJ5mr'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -7684,7 +7684,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopItemList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXJHRdUcZ5UWh9oU9W'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6kX2ujW5WYPCDXDuD'}
 -- Original C# preserved below:
 -- using System.Collections.Generic;
 -- using UnityEngine;
@@ -7839,7 +7839,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopItemListItem</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXJybVEZkdCEkgji2c'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6mR7QdFg24oEnV3GR'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -7862,7 +7862,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXKoDGhkedSZP2Gh31'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6nGx6BuPnqMkmcgWE'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -7901,7 +7901,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopThemeList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXLmW4D6Usq8tMEnHd'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6o6ovxMBKLfnvn1ke'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -8057,7 +8057,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">StartButton</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXNPEgsGsspcdjxY6V'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhT6psinNYZZNZSzytoa'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using System.Collections.Generic;
@@ -11239,7 +11239,7 @@ return data
           </Color3>
           <float name="BackgroundTransparency">0.3530</float>
           <int name="BorderSizePixel">0</int>
-          <bool name="Visible">true</bool>
+          <bool name="Visible">false</bool>
           <int name="ZIndex">1</int>
         </Properties>
         <Item class="Frame">
@@ -12408,7 +12408,7 @@ return data
             </Color3>
             <float name="BackgroundTransparency">0.4470</float>
             <int name="BorderSizePixel">0</int>
-            <bool name="Visible">true</bool>
+            <bool name="Visible">false</bool>
             <int name="ZIndex">1</int>
           </Properties>
           <Item class="Frame">
@@ -14118,7 +14118,7 @@ return data
             </Color3>
             <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
-            <bool name="Visible">true</bool>
+            <bool name="Visible">false</bool>
             <int name="ZIndex">1</int>
           </Properties>
         </Item>
@@ -14448,7 +14448,7 @@ return data
             </Color3>
             <float name="BackgroundTransparency">0.4980</float>
             <int name="BorderSizePixel">0</int>
-            <bool name="Visible">true</bool>
+            <bool name="Visible">false</bool>
             <int name="ZIndex">1</int>
           </Properties>
           <Item class="Frame">
@@ -15347,7 +15347,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.4980</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -15707,7 +15707,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.4980</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -15948,7 +15948,7 @@ return data
             </Color3>
             <float name="BackgroundTransparency">0.4470</float>
             <int name="BorderSizePixel">0</int>
-            <bool name="Visible">true</bool>
+            <bool name="Visible">false</bool>
             <int name="ZIndex">1</int>
           </Properties>
           <Item class="Frame">
@@ -16309,7 +16309,7 @@ return data
           </Color3>
           <float name="BackgroundTransparency">1.0000</float>
           <int name="BorderSizePixel">0</int>
-          <bool name="Visible">true</bool>
+          <bool name="Visible">false</bool>
           <int name="ZIndex">1</int>
         </Properties>
         <Item class="Frame">
@@ -16997,7 +16997,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.2157</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -17117,7 +17117,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.6941</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -17237,7 +17237,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.6941</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -17327,7 +17327,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.6941</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -17418,7 +17418,7 @@ return data
             </Color3>
             <float name="BackgroundTransparency">0.2910</float>
             <int name="BorderSizePixel">0</int>
-            <bool name="Visible">true</bool>
+            <bool name="Visible">false</bool>
             <int name="ZIndex">1</int>
           </Properties>
           <Item class="Frame">
@@ -17598,7 +17598,7 @@ return data
             </Color3>
             <float name="BackgroundTransparency">0.3530</float>
             <int name="BorderSizePixel">0</int>
-            <bool name="Visible">true</bool>
+            <bool name="Visible">false</bool>
             <int name="ZIndex">1</int>
           </Properties>
           <Item class="Frame">
@@ -18079,7 +18079,7 @@ return data
           </Color3>
           <float name="BackgroundTransparency">0.4980</float>
           <int name="BorderSizePixel">0</int>
-          <bool name="Visible">true</bool>
+          <bool name="Visible">false</bool>
           <int name="ZIndex">1</int>
         </Properties>
         <Item class="Frame">
@@ -18347,7 +18347,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -20087,7 +20087,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -20207,7 +20207,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -20267,7 +20267,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.4706</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -20897,7 +20897,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
@@ -21257,7 +21257,7 @@ return data
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
-              <bool name="Visible">true</bool>
+              <bool name="Visible">false</bool>
               <int name="ZIndex">1</int>
             </Properties>
             <Item class="Frame">
