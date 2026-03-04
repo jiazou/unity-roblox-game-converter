@@ -34,22 +34,12 @@ from modules.unity_yaml_utils import (
     CID_TRANSFORM as _CID_TRANSFORM,
     CID_MESH_RENDERER as _CID_MESH_RENDERER,
     CID_MESH_FILTER as _CID_MESH_FILTER,
-    CID_BOX_COLLIDER as _CID_BOX_COLLIDER,
-    CID_AUDIO_SOURCE as _CID_AUDIO_SOURCE,
-    CID_ANIMATOR as _CID_ANIMATOR,
-    CID_LIGHT as _CID_LIGHT,
-    CID_SPHERE_COLLIDER as _CID_SPHERE_COLLIDER,
-    CID_CAPSULE_COLLIDER as _CID_CAPSULE_COLLIDER,
-    CID_MESH_COLLIDER as _CID_MESH_COLLIDER,
-    CID_RIGIDBODY as _CID_RIGIDBODY,
-    CID_CHARACTER_CONTROLLER as _CID_CHARACTER_CONTROLLER,
     CID_SKINNED_MESH_RENDERER as _CID_SKINNED_MESH_RENDERER,
-    CID_MONO_BEHAVIOUR as _CID_MONO_BEHAVIOUR,
-    CID_PARTICLE_SYSTEM as _CID_PARTICLE_SYSTEM,
-    CID_CAMERA as _CID_CAMERA,
     CID_RECT_TRANSFORM as _CID_RECT_TRANSFORM,
     CID_RENDER_SETTINGS as _CID_RENDER_SETTINGS,
     CID_PREFAB_INSTANCE as _CID_PREFAB_INSTANCE,
+    KNOWN_COMPONENT_CIDS as _KNOWN_COMPONENT_CIDS,
+    COMPONENT_CID_TO_NAME as _COMPONENT_CID_TO_NAME,
     extract_vec3 as _extract_vec3,
     extract_quat as _extract_quat,
     ref_file_id as _ref_file_id,
@@ -182,14 +172,7 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         elif cid == _CID_RENDER_SETTINGS:
             # Store RenderSettings for skybox extraction (no m_GameObject)
             render_settings_docs.append((fid, body))
-        elif cid in (_CID_MESH_FILTER, _CID_MESH_RENDERER,
-                     _CID_SKINNED_MESH_RENDERER, _CID_MONO_BEHAVIOUR,
-                     _CID_BOX_COLLIDER, _CID_SPHERE_COLLIDER,
-                     _CID_CAPSULE_COLLIDER, _CID_MESH_COLLIDER,
-                     _CID_RIGIDBODY,
-                     _CID_AUDIO_SOURCE, _CID_LIGHT, _CID_CAMERA,
-                     _CID_PARTICLE_SYSTEM, _CID_ANIMATOR,
-                     _CID_CHARACTER_CONTROLLER):
+        elif cid in _KNOWN_COMPONENT_CIDS:
             component_docs.append((fid, cid, body))
 
     # ------------------------------------------------------------------
@@ -254,24 +237,6 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
     # Pass 4: Attach other components to their GameObjects
     # ------------------------------------------------------------------
 
-    _CLASS_ID_TO_NAME: dict[int, str] = {
-        _CID_MESH_FILTER: "MeshFilter",
-        _CID_MESH_RENDERER: "MeshRenderer",
-        _CID_SKINNED_MESH_RENDERER: "SkinnedMeshRenderer",
-        _CID_MONO_BEHAVIOUR: "MonoBehaviour",
-        _CID_BOX_COLLIDER: "BoxCollider",
-        _CID_SPHERE_COLLIDER: "SphereCollider",
-        _CID_CAPSULE_COLLIDER: "CapsuleCollider",
-        _CID_MESH_COLLIDER: "MeshCollider",
-        _CID_RIGIDBODY: "Rigidbody",
-        _CID_AUDIO_SOURCE: "AudioSource",
-        _CID_LIGHT: "Light",
-        _CID_PARTICLE_SYSTEM: "ParticleSystem",
-        _CID_ANIMATOR: "Animator",
-        _CID_CHARACTER_CONTROLLER: "CharacterController",
-        _CID_CAMERA: "Camera",
-    }
-
     for comp_fid, cid, body in component_docs:
         go_ref = _ref_file_id(body.get("m_GameObject"))
         if not go_ref:
@@ -280,7 +245,7 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         if node is None:
             continue
 
-        comp_type = _CLASS_ID_TO_NAME.get(cid, f"Component_{cid}")
+        comp_type = _COMPONENT_CID_TO_NAME.get(cid, f"Component_{cid}")
         node.components.append(ComponentData(
             component_type=comp_type,
             file_id=comp_fid,
@@ -307,7 +272,7 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
 
         # Extract material GUIDs from renderers
         if cid in (_CID_MESH_RENDERER, _CID_SKINNED_MESH_RENDERER):
-            for mat_ref in body.get("m_Materials", []):
+            for mat_ref in body.get("m_Materials") or []:
                 guid = _ref_guid(mat_ref)
                 if guid:
                     result.referenced_material_guids.add(guid)
