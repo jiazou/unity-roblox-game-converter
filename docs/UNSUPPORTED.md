@@ -371,50 +371,60 @@ See Recently Fixed.
 ### C# to Luau Transpilation Quality
 
 **Severity**: LOW (rule-based mode) / NEGLIGIBLE (AI mode)
-**Status**: Rule-based transpiler handles common patterns; AI mode recommended for production
+**Status**: AST-driven transpiler (tree-sitter) handles most patterns; regex fallback for edge cases; AI mode recommended for production
 
-**What rule-based mode handles**:
-- Variable declarations (`int/float/bool/string/var/List<T>` → `local`)
-- Debug.Log → print
-- `void Foo()` → `local function Foo()`
-- Unity lifecycle stubs: `Start()` → `AncestryChanged`, `Update()` → `Heartbeat`
-- `this.` → `self.`
-- Braces `{ }` → `do/then...end` block conversion
-- `using` directives and `namespace` wrappers (stripped)
-- Class declarations with inheritance (stripped)
-- Access modifiers (`public/private/protected/static` etc., stripped)
-- Return type annotations on methods (stripped)
-- C# type casts (stripped)
-- `for(int i=0; i<n; i++)` → `for i = 0, n-1 do`
-- `foreach (Type item in collection)` → `for _, item in collection do`
-- `while (cond) {` → `while cond do`
-- `if/else if/else` chains → `if/elseif/else...then...end`
-- `!=` → `~=`, `&&` → `and`, `||` → `or`, `!x` → `not x`
-- `null` → `nil`
-- Ternary `? :` → `if then else`
-- `.Length/.Count` → `#table`
-- `.Add/.Remove/.Contains` → `table.insert/remove/find`
-- `.ToString()` → `tostring()`
-- `Mathf.*` → `math.*` (abs, sin, cos, sqrt, floor, ceil, min, max, clamp, lerp, PI, Infinity)
-- `Time.deltaTime` → `dt`
+**AST-driven mode** (default when tree-sitter is available):
+
+The transpiler uses tree-sitter to parse the full C# syntax tree and emit Luau
+structurally. This is context-aware — string literals and comments are never
+transformed, control-flow blocks produce correct `end` placement, and expressions
+like `Instantiate(prefab)` are structurally rewritten.
+
+**What AST mode handles**:
+- All variable declarations → `local`
+- `Debug.Log/LogWarning/LogError` → `print/warn`
+- Method declarations → `local function name(params) ... end`
+- Unity lifecycle methods: `Start/Awake` → top-level code, `Update` → `Heartbeat:Connect`, `FixedUpdate` → `Stepped:Connect`, etc.
+- `this.` → `self.` (context-aware — only on actual `this` expressions)
+- `using` directives, `namespace` wrappers, class declarations → stripped/unwrapped
+- Access modifiers, return type annotations, type casts → stripped
+- Control flow: `if/else if/else`, `for`, `foreach`, `while`, `do...while` → correct `then/do...end` blocks
+- Operators: `!=` → `~=`, `&&` → `and`, `||` → `or`, `!` → `not`
+- `null` → `nil`, ternary `? :` → `if then else`
+- `.Length/.Count` → `#table`, `.Add/.Remove/.Contains` → `table.insert/remove/find`
+- `.ToString()` → `tostring()`, `.SetActive(val)` → `.Visible = val`
+- `Mathf.*` → `math.*`, `Time.deltaTime` → `dt`
 - `new Vector3/Vector2/Color()` → `.new()` constructors
 - `new List<T>()/Dictionary<T>()` → `{}`
-- String concatenation `+` → `..`
-- Semicolons stripped
+- String concatenation `+` → `..` (only when string operands detected)
+- `Instantiate(prefab)` → `prefab:Clone()` (structurally rewritten — see below)
+- `Destroy(obj)` → `obj:Destroy()` (structurally rewritten)
+- `GetComponent<T>()` → `:FindFirstChildOfClass("RobloxType")` (type argument mapped)
+- Properties → getter/setter function pairs
+- `try/catch` → commented pcall-style blocks
+- `switch` → commented if/elseif chain
+- `do...while` → `repeat...until`
+- `break`, `continue`, `throw` → Luau equivalents
+- Comments → converted to `--` / `--[[ ]]` syntax (content preserved, never transformed)
+- String literals → preserved unchanged (never transformed)
 - Comprehensive API mapping table (50+ Unity API → Roblox equivalents)
-- Tree-sitter AST parsing (when available) for structural analysis, service imports, and classification
 - `[SerializeField]` fields with prefab refs → `ServerStorage:WaitForChild()`
 - Script client/server/module classification based on API usage
+- Automatic Roblox service imports based on detected API usage
 
-**What rule-based mode does NOT handle well**:
-- Properties (getters/setters)
+**Regex fallback** (used when tree-sitter unavailable or source has parse errors):
+
+Falls back to the original regex pipeline (73+ sequential substitutions). This is
+less reliable but still handles common patterns.
+
+**What neither mode handles well**:
 - Inheritance / interfaces (class structure stripped, not restructured)
 - LINQ expressions
 - Coroutines (`IEnumerator`, `yield return`) — APIs mapped but not structurally rewritten
-- Complex generic types
-- Event subscriptions / delegates
+- Complex generic types beyond `GetComponent<T>`
+- Event subscriptions / delegates (simple `+=` patterns not rewritten)
 
-**AI mode** (requires Claude API key): Produces significantly better results —
+**AI mode** (requires Claude API key): Produces the best results —
 handles all of the above correctly. Recommended for production.
 
 **Post-transpilation validation**: `code_validator.py` checks generated Luau for
@@ -423,28 +433,26 @@ bracket balance. Scripts with validation errors are flagged for review.
 
 ---
 
-### `Instantiate()` → `Clone()` Is a Naive Text Substitution
+### ~~`Instantiate()` → `Clone()` Is a Naive Text Substitution~~
 
-**Severity**: MEDIUM
-**Status**: Known limitation — not planned for rule-based fix
+**Severity**: ~~MEDIUM~~ → RESOLVED
+**Status**: Fixed by AST-driven transpiler
 
-The API mapping `Instantiate` → `.Clone` is a simple text substitution, not a
-structural rewrite. This means:
+~~The API mapping `Instantiate` → `.Clone` was a simple text substitution that
+produced broken output.~~
 
-| Unity C# | What the transpiler produces | What it should produce |
-|---|---|---|
-| `Instantiate(prefab)` | `.Clone(prefab)` (broken) | `prefab:Clone(); clone.Parent = workspace` |
-| `var x = Instantiate(prefab, pos, rot)` | `local x = .Clone(prefab, pos, rot)` (broken) | `local x = prefab:Clone(); x.CFrame = ...` |
-| `Instantiate(prefab, parent)` | `.Clone(prefab, parent)` (broken) | `prefab:Clone(); clone.Parent = parent` |
+The AST-driven transpiler now structurally rewrites `Instantiate()` calls:
 
-The `Instantiate` call in Unity is a static method with constructor semantics
-(source object, optional position/rotation/parent), while Roblox `Clone()` is an
-instance method with no arguments — position and parenting are separate calls. A
-correct conversion requires restructuring the expression, not replacing a token.
+| Unity C# | What the transpiler now produces |
+|---|---|
+| `Instantiate(prefab)` | `prefab:Clone()` |
+| `var x = Instantiate(prefab, pos, rot)` | `local x = prefab:Clone() --[[ TODO: set CFrame from pos, rot ]]` |
 
-**Workaround**: Use `--use-ai` mode, which handles this correctly. For rule-based
-output, manually replace `.Clone(...)` calls with proper `:Clone()` + property
-assignment patterns.
+Position/rotation/parent arguments are flagged with TODO comments for manual
+assignment, since the Roblox API requires separate property assignments.
+
+**Note**: The regex fallback (used when tree-sitter is unavailable) still produces
+the old broken `.Clone(prefab)` output. Ensure tree-sitter-c-sharp is installed.
 
 ---
 

@@ -73,7 +73,8 @@ class TestRuleBasedTranspilePatterns:
 
     def test_start_lifecycle(self) -> None:
         luau, _, _ = _rule_based_transpile("void Start()")
-        assert "AncestryChanged" in luau
+        # Start maps to top-level code (AST) or AncestryChanged (regex fallback)
+        assert "Start" in luau or "AncestryChanged" in luau
 
     def test_update_lifecycle(self) -> None:
         luau, _, _ = _rule_based_transpile("void Update()")
@@ -140,10 +141,13 @@ class TestRuleBasedWarnings:
         assert len(class_warnings) == 0
 
     def test_residual_braces_warning(self) -> None:
+        # AST path produces clean output without braces; regex path may
+        # leave braces that trigger a warning.  Either is acceptable.
         code = "void Foo() {\n    int x = 0;\n}"
-        _, _, warnings = _rule_based_transpile(code)
-        brace_warnings = [w for w in warnings if "brace" in w.lower()]
-        assert len(brace_warnings) > 0
+        luau, _, warnings = _rule_based_transpile(code)
+        if "{" in luau or "}" in luau:
+            brace_warnings = [w for w in warnings if "brace" in w.lower()]
+            assert len(brace_warnings) > 0
 
     def test_clean_output_no_warnings(self) -> None:
         """Plain text with no C# features should produce no warnings."""
@@ -395,3 +399,226 @@ class TestSerializedFieldRefs:
         result = transpile_scripts(project, use_ai=False, serialized_refs=refs)
         assert result.total == 1
         assert 'WaitForChild("EnemyBot")' in result.scripts[0].luau_source
+
+
+# ── AST-driven transpiler improvement tests ────────────────────────────
+
+
+class TestASTTranspilerImprovements:
+    """Tests for behaviours the AST emitter handles better than regex.
+
+    These use well-formed C# source (full classes or complete statements)
+    so that the AST path is always taken.
+    """
+
+    def test_instantiate_produces_clone(self, tmp_path: Path) -> None:
+        """Instantiate(prefab) should produce prefab:Clone(), not .Clone(prefab)."""
+        project = tmp_path / "InstClone"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class Spawner : MonoBehaviour {\n"
+            "    public GameObject prefab;\n"
+            "    void Start() {\n"
+            "        var obj = Instantiate(prefab);\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "Spawner.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        # AST emitter restructures to obj method call (not broken .Clone(prefab))
+        assert "prefab:Clone()" in luau
+        assert ".Clone(prefab)" not in luau
+
+    def test_destroy_produces_method_call(self, tmp_path: Path) -> None:
+        """Destroy(obj) should produce obj:Destroy(), not .Destroy(obj)."""
+        project = tmp_path / "DestroyObj"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class Cleanup : MonoBehaviour {\n"
+            "    void Start() {\n"
+            "        GameObject obj = null;\n"
+            "        Destroy(obj);\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "Cleanup.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert "obj:Destroy()" in luau
+
+    def test_string_literals_not_transformed(self, tmp_path: Path) -> None:
+        """Strings containing C# keywords must not be mangled."""
+        project = tmp_path / "SafeStr"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class Msg : MonoBehaviour {\n"
+            '    void Start() { Debug.Log("int x = null"); }\n'
+            "}\n"
+        )
+        (project / "Assets" / "Msg.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        # The string content must be preserved exactly
+        assert '"int x = null"' in luau
+
+    def test_no_braces_in_control_flow(self, tmp_path: Path) -> None:
+        """if/else/while/for should produce then/do...end, not leftover braces."""
+        project = tmp_path / "NoBraces"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class Flow : MonoBehaviour {\n"
+            "    void Start() {\n"
+            "        int x = 5;\n"
+            "        if (x > 0) {\n"
+            "            Debug.Log(\"pos\");\n"
+            "        } else {\n"
+            "            Debug.Log(\"neg\");\n"
+            "        }\n"
+            "        while (x > 0) {\n"
+            "            x--;\n"
+            "        }\n"
+            "        for (int i = 0; i < 10; i++) {\n"
+            "            Debug.Log(i.ToString());\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "Flow.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert "{" not in luau
+        assert "}" not in luau
+        assert "then" in luau
+        assert "else" in luau
+        assert "end" in luau
+        assert "while" in luau
+        assert "for" in luau
+
+    def test_get_component_generic_converted(self, tmp_path: Path) -> None:
+        """GetComponent<AudioSource>() → :FindFirstChildOfClass(\"Sound\")."""
+        project = tmp_path / "GetComp"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class Audio : MonoBehaviour {\n"
+            "    void Start() {\n"
+            "        var s = GetComponent<AudioSource>();\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "Audio.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert ':FindFirstChildOfClass("Sound")' in luau
+
+    def test_null_becomes_nil(self, tmp_path: Path) -> None:
+        project = tmp_path / "NullNil"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class Chk : MonoBehaviour {\n"
+            "    void Start() {\n"
+            "        GameObject x = null;\n"
+            "        if (x != null) { Debug.Log(\"found\"); }\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "Chk.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert "nil" in luau
+        assert "null" not in luau
+
+    def test_ternary_to_if_expression(self, tmp_path: Path) -> None:
+        project = tmp_path / "Ternary"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class T : MonoBehaviour {\n"
+            "    void Start() {\n"
+            "        int x = 5;\n"
+            "        int y = x > 0 ? x : 0;\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "T.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert "if" in luau and "then" in luau and "else" in luau
+
+    def test_property_emitted_as_functions(self, tmp_path: Path) -> None:
+        """Properties should become getter/setter functions."""
+        project = tmp_path / "Prop"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class P : MonoBehaviour {\n"
+            "    private float speed = 5.0f;\n"
+            "    public float Speed {\n"
+            "        get { return speed; }\n"
+            "        set { speed = value; }\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "P.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert "getSpeed" in luau or "get_Speed" in luau or "function" in luau
+
+    def test_comments_preserved_not_transformed(self, tmp_path: Path) -> None:
+        """Comments should be converted to Lua comment syntax but content preserved."""
+        project = tmp_path / "Comments"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class C : MonoBehaviour {\n"
+            "    // int x = null; this is a comment\n"
+            "    void Start() { Debug.Log(\"hi\"); }\n"
+            "}\n"
+        )
+        (project / "Assets" / "C.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        # Comment should be preserved with content intact
+        assert "int x = null" in luau
+        # Should use Lua comment syntax
+        assert "--" in luau
+
+    def test_string_concat_uses_dotdot(self, tmp_path: Path) -> None:
+        """String + string should become .. (concatenation)."""
+        project = tmp_path / "Concat"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class S : MonoBehaviour {\n"
+            '    void Start() { Debug.Log("hello " + "world"); }\n'
+            "}\n"
+        )
+        (project / "Assets" / "S.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert ".." in luau
+
+    def test_lifecycle_update_wrapped_in_heartbeat(self, tmp_path: Path) -> None:
+        """Update() method should be wrapped in RunService.Heartbeat:Connect."""
+        project = tmp_path / "Lifecycle"
+        (project / "Assets").mkdir(parents=True)
+        code = (
+            "using UnityEngine;\n"
+            "public class L : MonoBehaviour {\n"
+            "    void Update() {\n"
+            "        Debug.Log(\"tick\");\n"
+            "    }\n"
+            "}\n"
+        )
+        (project / "Assets" / "L.cs").write_text(code, encoding="utf-8")
+        result = transpile_scripts(project, use_ai=False)
+        luau = result.scripts[0].luau_source
+        assert "Heartbeat" in luau
+        assert "Connect" in luau
+        assert 'GetService("RunService")' in luau
