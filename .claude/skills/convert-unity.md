@@ -122,15 +122,35 @@ Present results:
 #### Step 6: Upload (Optional)
 
 Ask the user if they want to upload to Roblox Cloud. If yes, they need:
-- Roblox Open Cloud API key
+- Roblox Open Cloud API key (with `asset:read`, `asset:write`, and `place:write` scopes)
 - Universe ID
 - Place ID
+- Creator ID (their Roblox user ID or group ID)
+
+The upload step handles three asset categories:
+
+1. **Sprites/Images** — Sliced sprite PNGs from `<output_dir>/sprites/` are uploaded as Decal assets
+2. **Audio** — Audio files from `<output_dir>/audio/` are uploaded as Audio assets
+3. **Place file** — The .rbxl is uploaded to the specified place
+
+**Important:** Sprites and audio must be uploaded *before* the place file, because the .rbxl needs to be patched with the resulting `rbxassetid://` URLs.
 
 ```bash
-python convert_interactive.py upload <rbxl_path> [--roblox-api-key <key>] [--universe-id <id>] [--place-id <id>]
+python convert_interactive.py upload <output_dir> [--roblox-api-key <key>] [--universe-id <id>] [--place-id <id>] [--creator-id <id>] [--creator-type User|Group]
 ```
 
-Report success/failure and the place URL if successful.
+Present results:
+- Number of sprites uploaded and their asset IDs
+- Number of audio files uploaded and their asset IDs
+- Whether the .rbxl was patched with the new asset IDs
+- Place upload success/failure and version number
+
+**Decision point:** If some asset uploads fail (rate limits, size limits, format issues), ask the user:
+- Retry failed uploads?
+- Continue without those assets (they'll show as placeholder in-game)?
+- Abort and fix the issues first?
+
+After a successful upload, the .rbxl in the output directory will have been rewritten with real `rbxassetid://` URLs, so the user can also open it in Roblox Studio with working references.
 
 #### Step 7: Final Report
 

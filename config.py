@@ -86,6 +86,8 @@ PACKAGES_SUBDIR: str = "packages"           # subdirectory under output_dir
 ROBLOX_API_KEY: str = os.environ.get("ROBLOX_API_KEY", "")
 ROBLOX_UNIVERSE_ID: int | None = None
 ROBLOX_PLACE_ID: int | None = None
+ROBLOX_CREATOR_ID: int | None = None       # user or group ID for asset ownership
+ROBLOX_CREATOR_TYPE: str = "User"          # "User" or "Group"
 
 # ---------------------------------------------------------------------------
 # Mesh decimation (conservative defaults)
