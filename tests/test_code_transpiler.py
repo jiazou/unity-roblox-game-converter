@@ -146,3 +146,85 @@ class TestTranspileScripts:
         # Without API key, should use rule-based fallback
         for ts in result.scripts:
             assert ts.strategy == "rule_based"
+
+    def test_coroutine_yield_return_null(self, tmp_path: Path) -> None:
+        """yield return null should become task.wait()."""
+        project = tmp_path / "Coroutine"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        (assets / "Spawner.cs").write_text(
+            "using UnityEngine;\n"
+            "using System.Collections;\n"
+            "public class Spawner : MonoBehaviour {\n"
+            "    IEnumerator SpawnLoop() {\n"
+            "        while (true) {\n"
+            "            Debug.Log(\"spawn\");\n"
+            "            yield return null;\n"
+            "        }\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        result = transpile_scripts(project, use_ai=False)
+        ts = result.scripts[0]
+        assert "task.wait()" in ts.luau_source
+
+    def test_coroutine_wait_for_seconds(self, tmp_path: Path) -> None:
+        """yield return new WaitForSeconds(n) should become task.wait(n)."""
+        project = tmp_path / "WaitSecs"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        (assets / "Timer.cs").write_text(
+            "using UnityEngine;\n"
+            "using System.Collections;\n"
+            "public class Timer : MonoBehaviour {\n"
+            "    IEnumerator Countdown() {\n"
+            "        yield return new WaitForSeconds(2.0f);\n"
+            "        Debug.Log(\"done\");\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        result = transpile_scripts(project, use_ai=False)
+        ts = result.scripts[0]
+        assert "task.wait(" in ts.luau_source
+
+    def test_event_subscription_connect(self, tmp_path: Path) -> None:
+        """obj.OnClick += handler should become obj.OnClick:Connect(handler)."""
+        project = tmp_path / "EventSub"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        (assets / "UI.cs").write_text(
+            "using UnityEngine;\n"
+            "public class UI : MonoBehaviour {\n"
+            "    void Start() {\n"
+            "        button.OnClick += HandleClick;\n"
+            "    }\n"
+            "    void HandleClick() {\n"
+            "        Debug.Log(\"clicked\");\n"
+            "    }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        result = transpile_scripts(project, use_ai=False)
+        ts = result.scripts[0]
+        assert "Connect" in ts.luau_source
+
+    def test_string_interpolation(self, tmp_path: Path) -> None:
+        """C# $\"text {expr}\" should become string.format."""
+        project = tmp_path / "Interp"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        (assets / "Logger.cs").write_text(
+            'using UnityEngine;\n'
+            'public class Logger : MonoBehaviour {\n'
+            '    void Start() {\n'
+            '        string name = "World";\n'
+            '        Debug.Log($"Hello {name}!");\n'
+            '    }\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        result = transpile_scripts(project, use_ai=False)
+        ts = result.scripts[0]
+        assert "string.format" in ts.luau_source

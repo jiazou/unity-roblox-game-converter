@@ -28,8 +28,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
-
 import config as _config
 
 
@@ -190,17 +188,33 @@ def _extract_parent_guid(asset_path: Path) -> str | None:
 
     Looks for ``m_ParentPrefab``, ``m_CorrespondingSourceObject``, or
     ``m_SourcePrefab`` reference dicts containing a ``guid`` key.
+
+    Handles both flow-style (``{fileID: 0, guid: abc, type: 2}``) and
+    block-style (multi-line) YAML serialisation, as well as ``.asset``
+    files (ScriptableObject prefab references).
     """
-    if not asset_path.exists() or asset_path.suffix not in (".prefab", ".unity"):
+    if not asset_path.exists() or asset_path.suffix not in (".prefab", ".unity", ".asset"):
         return None
     try:
         text = asset_path.read_text(encoding="utf-8", errors="replace")
-        # Quick regex scan — avoids full YAML parse for speed
+        # Quick regex scan — avoids full YAML parse for speed.
+        # Match both flow-style ({...guid: HEX...}) and block-style where
+        # guid: appears on its own indented line after the key.
         for key in ("m_ParentPrefab", "m_CorrespondingSourceObject", "m_SourcePrefab"):
-            pattern = re.compile(
+            # Flow style: key: {fileID: 0, guid: abc123def456..., type: 2}
+            flow = re.compile(
                 rf"{key}:\s*\{{[^}}]*guid:\s*([0-9a-fA-F]{{32}})", re.DOTALL
             )
-            m = pattern.search(text)
+            m = flow.search(text)
+            if m:
+                guid = m.group(1)
+                if guid != "0" * 32:
+                    return guid
+            # Block style: key:\n    fileID: 0\n    guid: abc123...\n    type: 2
+            block = re.compile(
+                rf"{key}:\s*\n(?:\s+\w+:.*\n)*?\s+guid:\s*([0-9a-fA-F]{{32}})"
+            )
+            m = block.search(text)
             if m:
                 guid = m.group(1)
                 if guid != "0" * 32:
@@ -238,11 +252,14 @@ def build_guid_index(unity_project_path: str | Path) -> GuidIndex:
 
     index = GuidIndex(project_root=root)
 
-    # Scan both Assets/ and Packages/ (local packages may contain .meta files)
+    # Scan Assets/, Packages/ (local), and Library/PackageCache/ (UPM cache)
     scan_dirs = [assets_dir]
     packages_dir = root / "Packages"
     if packages_dir.is_dir():
         scan_dirs.append(packages_dir)
+    package_cache_dir = root / "Library" / "PackageCache"
+    if package_cache_dir.is_dir():
+        scan_dirs.append(package_cache_dir)
 
     for scan_dir in scan_dirs:
         for meta_path in scan_dir.rglob("*.meta"):

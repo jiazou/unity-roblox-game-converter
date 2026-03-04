@@ -51,6 +51,38 @@ def _validate_api_key(api_key: str) -> bool:
     return api_key.strip() not in placeholders
 
 
+def _describe_upload_error(exc: Exception) -> str:
+    """Return a human-readable message that preserves HTTP status details."""
+    import urllib.error
+
+    if isinstance(exc, urllib.error.HTTPError):
+        code = exc.code
+        hint = {
+            401: "Invalid or expired API key",
+            403: "API key lacks required permissions for this resource",
+            429: "Rate limited — wait and retry",
+            400: "Bad request (check asset format/size)",
+            404: "Resource not found (check universe/place IDs)",
+            500: "Roblox server error",
+        }.get(code, "")
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            pass
+        parts = [f"HTTP {code}"]
+        if hint:
+            parts.append(hint)
+        if body:
+            parts.append(body)
+        return " — ".join(parts)
+
+    if isinstance(exc, urllib.error.URLError):
+        return f"Network error: {exc.reason}"
+
+    return str(exc)
+
+
 def _check_rate_limit_headers(resp: Any) -> None:
     """
     Inspect Roblox rate-limit response headers and sleep proactively
@@ -439,7 +471,10 @@ def upload_to_roblox(
                 if asset_id:
                     result.asset_ids[img_path.name] = int(asset_id)
             except Exception as exc:  # noqa: BLE001
-                result.warnings.append(f"Texture upload failed ({img_path.name}): {exc}")
+                result.warnings.append(
+                    f"Texture upload failed ({img_path.name}): "
+                    f"{_describe_upload_error(exc)}"
+                )
 
     # ── Upload sprites ─────────────────────────────────────────────────
     if sprites_dir and sprites_dir.is_dir():
@@ -459,7 +494,10 @@ def upload_to_roblox(
                     result.asset_ids[img_path.name] = int(asset_id)
                     result.sprites_uploaded += 1
             except Exception as exc:  # noqa: BLE001
-                result.warnings.append(f"Sprite upload failed ({img_path.name}): {exc}")
+                result.warnings.append(
+                    f"Sprite upload failed ({img_path.name}): "
+                    f"{_describe_upload_error(exc)}"
+                )
 
     # ── Upload audio ───────────────────────────────────────────────────
     if audio_dir and audio_dir.is_dir():
@@ -479,7 +517,10 @@ def upload_to_roblox(
                     result.asset_ids[audio_path.name] = int(asset_id)
                     result.audio_uploaded += 1
             except Exception as exc:  # noqa: BLE001
-                result.warnings.append(f"Audio upload failed ({audio_path.name}): {exc}")
+                result.warnings.append(
+                    f"Audio upload failed ({audio_path.name}): "
+                    f"{_describe_upload_error(exc)}"
+                )
 
     # ── Patch .rbxl with uploaded asset IDs ────────────────────────────
     if result.asset_ids:
@@ -499,7 +540,7 @@ def upload_to_roblox(
             result.version_number = resp.get("versionNumber")
             result.success = True
         except Exception as exc:  # noqa: BLE001
-            result.errors.append(f"Place upload failed: {exc}")
+            result.errors.append(f"Place upload failed: {_describe_upload_error(exc)}")
     else:
         result.warnings.append(
             "Place upload skipped: --universe-id and --place-id are required "
