@@ -151,3 +151,20 @@ Three different `_EXT_TO_KIND` / `SUPPORTED_ASSET_EXTENSIONS` maps with differen
 **Commit**: `8494bdd` — Replaced 73+ sequential regex substitutions with AST-driven
 tree-sitter emitter (`_LuauEmitter` class). Regex preserved as fallback.
 **Skill**: `review-csharp-lua-conversion`
+
+---
+
+### ~~C# → Luau Transpiler Coverage Gaps~~
+
+**Status**: RESOLVED (2026-03-04)
+**Commit**: `2fcfe3a` — Added AST emitter handlers + regex fallback for three
+previously-unsupported C# patterns.
+
+| # | Gap | Resolution |
+|---|-----|------------|
+| 1 | ~~Coroutines (`IEnumerator`, `yield return`, `WaitForSeconds`)~~ | RESOLVED — `_emit_yield_statement` converts yields to `task.wait()`; `IEnumerator` methods wrapped in `task.spawn(function() ... end)` |
+| 2 | ~~Event subscriptions (`+=`/`-=` on delegates)~~ | RESOLVED — `_emit_assignment_expression` detects event-like targets (`On*`, `*Event`, `*Changed`, `onClick`, etc.) and emits `:Connect(handler)` |
+| 3 | ~~String interpolation (`$"text {expr}"`)~~ | RESOLVED — `_emit_interpolated_string_expression` walks AST interpolation nodes and emits `string.format("text %s", tostring(expr))` |
+| 4 | ~~Lambda / anonymous delegates~~ | RESOLVED — `_emit_lambda_expression` and `_emit_anonymous_method_expression` convert to `function(...) ... end` |
+
+**Skill**: `review-csharp-lua-conversion`
