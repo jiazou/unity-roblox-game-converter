@@ -354,6 +354,7 @@ def convert(
     import shutil
     audio_out = out_dir / "audio"
     audio_copied = 0
+    # From AudioSource components (sound_children on parts)
     for part in parts:
         for sc in part.sound_children:
             clip_path = sc[1]
@@ -363,6 +364,19 @@ def convert(
                 if not dest.exists():
                     shutil.copy2(clip_path, dest)
                     audio_copied += 1
+    # From serialized AudioClip fields on MonoBehaviours
+    if serialized_refs:
+        for _script_path, refs in serialized_refs.items():
+            for _field, ref_value in refs.items():
+                if ref_value.startswith("audio:"):
+                    audio_filename = ref_value[len("audio:"):]
+                    matches = list(unity_path.rglob(audio_filename))
+                    if matches:
+                        audio_out.mkdir(parents=True, exist_ok=True)
+                        dest = audio_out / audio_filename
+                        if not dest.exists():
+                            shutil.copy2(matches[0], dest)
+                            audio_copied += 1
     if audio_copied:
         click.echo(f"    → Staged {audio_copied} audio file(s) in {audio_out}")
 

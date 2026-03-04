@@ -467,12 +467,15 @@ def _is_object_ref(value: Any) -> bool:
     return bool(guid) and guid != "0" * 32
 
 
+_AUDIO_EXTENSIONS: set[str] = {".ogg", ".wav", ".mp3"}
+
+
 def _process_mono_properties(
     props: dict[str, Any],
     guid_index: guid_resolver.GuidIndex,
     result: dict[Path, dict[str, str]],
 ) -> None:
-    """Extract prefab references from a single MonoBehaviour's properties."""
+    """Extract prefab and audio asset references from a MonoBehaviour's properties."""
     script_ref = props.get("m_Script", {})
     if not isinstance(script_ref, dict):
         return
@@ -494,14 +497,17 @@ def _process_mono_properties(
         if not ref_path:
             continue
 
-        # Only wire prefab references (stored in ServerStorage)
-        if ref_path.suffix != ".prefab":
-            continue
-
-        asset_name = ref_path.stem
-        refs = result.setdefault(script_path, {})
-        if key not in refs:
-            refs[key] = asset_name
+        if ref_path.suffix == ".prefab":
+            # Prefab reference → ServerStorage:WaitForChild()
+            asset_name = ref_path.stem
+            refs = result.setdefault(script_path, {})
+            if key not in refs:
+                refs[key] = asset_name
+        elif ref_path.suffix in _AUDIO_EXTENSIONS:
+            # AudioClip reference → audio:<filename> (prefixed to distinguish)
+            refs = result.setdefault(script_path, {})
+            if key not in refs:
+                refs[key] = f"audio:{ref_path.name}"
 
 
 def extract_serialized_field_refs(

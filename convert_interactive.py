@@ -707,6 +707,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
     import shutil
     audio_out = out_dir / "audio"
     audio_copied = 0
+    # From AudioSource components (sound_children on parts)
     for part in parts:
         for sc in part.sound_children:
             clip_path = sc[1]  # resolved file path from convert_audio_components
@@ -716,6 +717,20 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
                 if not dest.exists():
                     shutil.copy2(clip_path, dest)
                     audio_copied += 1
+    # From serialized AudioClip fields on MonoBehaviours
+    if asm_serialized_refs:
+        for _script_path, refs in asm_serialized_refs.items():
+            for _field, ref_value in refs.items():
+                if ref_value.startswith("audio:"):
+                    audio_filename = ref_value[len("audio:"):]
+                    # Find the source file in the Unity project
+                    matches = list(unity_path.rglob(audio_filename))
+                    if matches:
+                        audio_out.mkdir(parents=True, exist_ok=True)
+                        dest = audio_out / audio_filename
+                        if not dest.exists():
+                            shutil.copy2(matches[0], dest)
+                            audio_copied += 1
 
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
