@@ -372,9 +372,9 @@
             <R22>1.00000000</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>2.8936646</X>
-            <Y>1.3964546</Y>
-            <Z>2.8936641</Z>
+            <X>234.27064801012793</X>
+            <Y>103.44172331621922</Y>
+            <Z>117.1353673465884</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Sky.fbx</Content>
@@ -490,9 +490,9 @@
           <R22>1.00000000</R22>
         </CoordinateFrame>
         <Vector3 name="Size">
-          <X>37.7</X>
-          <Y>12.288951</Y>
-          <Z>1.0</Z>
+          <X>82.94000000000001</X>
+          <Y>13.517870701478033</Y>
+          <Z>1.174792578240158e-07</Z>
         </Vector3>
         <BrickColor name="BrickColor">Medium stone grey</BrickColor>
         <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/BackgroundCircle.FBX</Content>
@@ -552,9 +552,9 @@
             <R22>-0.97566478</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>3.1109731</X>
-            <Y>3.1892955</Y>
-            <Z>1.0</Z>
+            <X>251.86391127675142</X>
+            <Y>236.24557696660034</Y>
+            <Z>40.479946289062504</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Sky.fbx</Content>
@@ -579,9 +579,9 @@
             <R22>0.99974604</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705699</Z>
+            <X>24.6094677734375</X>
+            <Y>0.1457763671875</Y>
+            <Z>14.135129579299896</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road04.fbx</Content>
@@ -606,9 +606,9 @@
             <R22>0.90673874</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705702</Z>
+            <X>20.624151611328127</X>
+            <Y>0.1457763671875</Y>
+            <Z>14.135136113699891</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road01.fbx</Content>
@@ -624,9 +624,9 @@
             <Z>-0.03</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>24.6094677734375</X>
+            <Y>0.1457763671875</Y>
+            <Z>9.000000305175782</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road04.fbx</Content>
@@ -642,9 +642,9 @@
             <Z>-17.97</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>22.619952392578124</X>
+            <Y>0.1457764434814453</Y>
+            <Z>9.000003356933593</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road03.fbx</Content>
@@ -660,9 +660,9 @@
             <Z>-21.62</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>2.2856641387939454</X>
+            <Y>6.795284423828125</Y>
+            <Z>0.7174462127685547</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/TelegraphPole01.fbx</Content>
@@ -678,9 +678,9 @@
             <Z>-12.75</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>2.2856641387939454</X>
+            <Y>6.795284423828125</Y>
+            <Z>0.5117071533203125</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/TelegraphPole02.fbx</Content>
@@ -696,9 +696,9 @@
             <Z>8.96</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>20.624151611328127</X>
+            <Y>0.1457763671875</Y>
+            <Z>9.000002746582032</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road01.fbx</Content>
@@ -723,9 +723,9 @@
             <R22>0.90271538</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>22.150174560546876</X>
+            <Y>13.13480224609375</Y>
+            <Z>17.898922729492188</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/House02.fbx</Content>
@@ -750,9 +750,9 @@
             <R22>0.20157112</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>3.0781618881225588</X>
+            <Y>6.7660121154785156</Y>
+            <Z>0.4135760498046875</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/StreetLight.fbx</Content>
@@ -777,9 +777,9 @@
             <R22>0.84913169</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>7.844510498046875</X>
+            <Y>4.603260803222656</Y>
+            <Z>7.69111083984375</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Garage03.fbx</Content>
@@ -804,9 +804,9 @@
             <R22>0.90673874</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705702</Z>
+            <X>22.619952392578124</X>
+            <Y>0.1457764434814453</Y>
+            <Z>14.135137072299864</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road03.fbx</Content>
@@ -831,9 +831,9 @@
             <R22>0.99974604</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705699</Z>
+            <X>20.624151611328127</X>
+            <Y>0.1457763671875</Y>
+            <Z>14.135133413699068</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road01.fbx</Content>
@@ -849,9 +849,9 @@
             <Z>-8.98</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>20.624151611328127</X>
+            <Y>0.1457763671875</Y>
+            <Z>9.000002746582032</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road01.fbx</Content>
@@ -867,9 +867,9 @@
             <Z>-13.14</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>2.2856641387939454</X>
+            <Y>6.795284423828125</Y>
+            <Z>0.7174462127685547</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/TelegraphPole01.fbx</Content>
@@ -894,9 +894,9 @@
             <R22>0.90673874</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705702</Z>
+            <X>20.624151611328127</X>
+            <Y>0.1457763671875</Y>
+            <Z>14.135136113699891</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road01.fbx</Content>
@@ -921,9 +921,9 @@
             <R22>-0.94356669</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>10.596064453125</X>
+            <Y>17.158160705566406</Y>
+            <Z>17.789989013671875</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Apartments03.fbx</Content>
@@ -948,9 +948,9 @@
             <R22>0.62421647</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>20.156503906250002</X>
+            <Y>31.393110351562502</Y>
+            <Z>28.6253662109375</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Warehouse02.fbx</Content>
@@ -975,9 +975,9 @@
             <R22>0.99840195</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>19.8671826171875</X>
+            <Y>16.29972595214844</Y>
+            <Z>18.116435546875</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Warehouse01.fbx</Content>
@@ -1002,9 +1002,9 @@
             <R22>0.87438234</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>7.6483740234375</X>
+            <Y>5.9445605468750005</Y>
+            <Z>7.69111083984375</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Garage01.fbx</Content>
@@ -1029,9 +1029,9 @@
             <R22>0.56525063</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>76.3434326171875</X>
+            <Y>26.2764697265625</Y>
+            <Z>18.687244873046875</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/FarBackBuilding02.fbx</Content>
@@ -1056,9 +1056,9 @@
             <R22>0.99974604</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705699</Z>
+            <X>20.624151611328127</X>
+            <Y>0.1457763671875</Y>
+            <Z>14.135133413699068</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road01.fbx</Content>
@@ -1074,9 +1074,9 @@
             <Z>-20.77</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>2.2856641387939454</X>
+            <Y>6.795284423828125</Y>
+            <Z>0.5117071533203125</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/TelegraphPole02.fbx</Content>
@@ -1101,9 +1101,9 @@
             <R22>-0.74417866</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>3.0781618881225588</X>
+            <Y>6.7660121154785156</Y>
+            <Z>0.4135760498046875</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/StreetLight.fbx</Content>
@@ -1128,9 +1128,9 @@
             <R22>0.90673874</R22>
           </CoordinateFrame>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.5705702</Z>
+            <X>24.6094677734375</X>
+            <Y>0.1457763671875</Y>
+            <Z>14.135132279299988</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Models/Daytime/Road04.fbx</Content>
@@ -1169,9 +1169,9 @@
             <Z>0.0</Z>
           </Vector3>
           <Vector3 name="Size">
-            <X>1.0</X>
-            <Y>1.0</Y>
-            <Z>1.0</Z>
+            <X>25.15578353881836</X>
+            <Y>11.65186939239502</Y>
+            <Z>35.81358154296875</Z>
           </Vector3>
           <BrickColor name="BrickColor">Medium stone grey</BrickColor>
           <Content name="MeshId">/home/user/trash-dash/Assets/Animation/MenuEnvironmentProps.fbx</Content>
@@ -1276,7 +1276,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">CharacterCollider</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPu95AkNfoivBiXL186'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWbQ3E6GQUU3QUFDfg'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -1510,7 +1510,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">CoroutineHandler</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuKsZ8srYBUNKALy9q'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWmx3dEHa3kttZvEHo'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -1553,7 +1553,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">GameManager</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuLewAMVYb32gvXeA3'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWnhC33zsfxeUmRKkS'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -1703,7 +1703,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">Missions</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuTHJ33kxwbJAKZWUF'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWuM3P3XUEc52MhmY5'}
 -- Original C# preserved below:
 -- using System;
 -- using System.IO;
@@ -1997,7 +1997,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">Missile</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuUzEeRXh2n24HeQx8'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWwFdt2pAXdDnJcgYQ'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -2113,7 +2113,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">PatrollingObstacle</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuWaEeCVWu2NB4ahDC'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWxtN6DMVYAQJRxSym'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -2225,7 +2225,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">AssignOutputChannel</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuapy8w7hhnQo988mR'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX2rV2HRFaEr9oYBnJ'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using System.Collections.Generic;
@@ -2271,7 +2271,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">CountdownSound</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPubkHiD41DE3nFWk1G'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX3Yf6H3eTkJh41tXQ'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -2302,7 +2302,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">MusicPlayer</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPucYuWbu6XD8LxarGY'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX4FpjA68sheWPfMSr'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -2414,7 +2414,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">TrackSegment</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPug1GSDWP2MViz2frj'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX7ZkShFm3dJFxhZU5'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -2586,7 +2586,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">AdsForMission</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPugmQUCXZKhkTaz4d5'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX8QrKdX4D2W5kK6Ep'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -2707,7 +2707,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">LicenceDisplayer</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuj4KbAkybvExVLMiu'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXAmVJSXGDKfpZh1En'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -2746,7 +2746,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">PowerupIcon</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPunSy5PJjbCsbyNDXA'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXDk5FnrBWixMXM3sB'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -2774,7 +2774,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">IAPHandler</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuptZGjSsnjkAnSRqE'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXFw3Kw92LHZDsrpQ2'}
 -- Original C# preserved below:
 -- using System.Collections.Generic;
 -- using UnityEngine;
@@ -2857,7 +2857,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">ShopUI</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuva7yjRcruCyfYkxB'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXMb7P62JZvmNsG3Z6'}
 -- Original C# preserved below:
 -- using System.Collections.Generic;
 -- using UnityEngine;
@@ -3010,7 +3010,7 @@
     <Item class="Script">
       <Properties>
         <string name="Name">WorldCurver</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPux8svBZLTgu4goEqu'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXPC75kwUogVb7E64X'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -3046,7 +3046,7 @@
       <Item class="LocalScript">
         <Properties>
           <string name="Name">CharacterInputController</string>
-          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuAhtoUu8gUqwn7Go5'}
+          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWd5kMSWYwJ6Hizxgv'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -3480,7 +3480,7 @@
       <Item class="LocalScript">
         <Properties>
           <string name="Name">GameState</string>
-          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuNJQZhD7mSuQK8YrW'}
+          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWpbHoFpfTPiaemWTY'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -4089,7 +4089,7 @@
       <Item class="LocalScript">
         <Properties>
           <string name="Name">TrackManager</string>
-          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuevnLMaZxjGMJRzdQ'}
+          <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX6kdovtm5vrbkeLP3'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -4779,7 +4779,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">BundleAndBuild</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPu6ZcG5xZSTT2PkbBN'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWZ2fHnvMu2CALnFhn'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEditor;
@@ -4803,7 +4803,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Character</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPu7VffCZfezeYibYhU'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWZkKjZo4LSoZzkuUk'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -4843,7 +4843,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">CharacterAccessories</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPu8K2v6M8J6isUeU5b'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWabfo2gi9Q6M8EEqj'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4863,7 +4863,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">CharacterDatabase</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPu9rYx9eKJ81SCYf2w'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWcAgEome3Wf9Q7pdB'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -4915,7 +4915,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">RandomAnimation</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuBx48DKxttWwUHpGx'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWdsNfD8JV8tiEqDeR'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4934,7 +4934,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">RestartRunning</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuCiCZQvduHozQB9mm'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWeYoVkVoh6uzNTmFx'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4957,7 +4957,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Coin</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuDSbfm5WkUG4hhV4n'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWfR8ojerJkz2uBknb'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -4971,7 +4971,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Consumable</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuEEEKr7w9BGn19Pqw'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWgKxhFmtJjZMezmZn'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -5093,7 +5093,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ConsumableDatabase</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuF2quWppaJSFVBR5X'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWh8aPjVvyc1pmKJN8'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -5133,7 +5133,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ConsumableIcon</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuFpj4y3r6ifKycBY8'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWhvwmDTjX9Qn6f9Bu'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -5148,7 +5148,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">CoinMagnet</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuGeL8PhTQf7M7edGB'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWihLNNY9zGzwHBPzt'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5203,7 +5203,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ExtraLife</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuHRiQLsk8qjjmYpnJ'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWjSyo7cd6Y5KL43qH'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5256,7 +5256,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Invincibility</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuJFKfdc7jCoMFS2yA'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWk8f7DcYt64XytZrT'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5308,7 +5308,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Score2Multiplier</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuK2wvERwMHq3wZoYF'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWkpq8v8S8N5LmUX3s'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System;
@@ -5362,7 +5362,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">GameOverState</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuMPar7d5hsDouDDKX'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWodVwivg3fPiLQhZd'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -5533,7 +5533,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">LoadoutState</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuP8WckwG8eeRZnhMy'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWqT8hraHyE3L4csQg'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -5954,7 +5954,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Modifier</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuPsQd3UHSmSSt1wWA'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWrGkWd3UXSXUxugv1'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -6060,7 +6060,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">TutorialState</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuQy8u2dcXRSFDk6ae'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWs5cf1tU4mjEaqfZq'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using System.Collections.Generic;
@@ -6075,7 +6075,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Helpers</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuRjXdrrQrHh8A9seK'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWsm3cjf2xihv8RCBU'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -6098,7 +6098,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">LevelLoader</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuSWucSBHujaK37GAx'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWtZuchiq9qrQtJU9f'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.SceneManagement;
@@ -6115,7 +6115,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">AllLaneObstacle</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuU4BKpGuEtDTfQKjs'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWv8Avudje5AbAZigY'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -6151,7 +6151,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Obstacle</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuVorF3iUM2gHQtTwQ'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWxADBsRy6PrCKFt6a'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -6193,7 +6193,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">SimpleBarricade</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuXRadSNHkr4dTH3zh'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWyZnwX4uSW4fybqGa'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -6258,7 +6258,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">OpenURL</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuYCxy1fpxJxaKTULE'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRWzNf2BWk5oWC9D7aS'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -6276,7 +6276,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">PlayerData</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuZ6YSweYguSr2tQag'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX1SA1Uobjf5qsBVX3'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.IO;
@@ -6782,7 +6782,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Pooler</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPua1MgnYdUw95RWuhW'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX2EH5q3TFuvGxMRE1'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -6837,7 +6837,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ThemeData</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPudK3dBLekCefYmssX'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX4zU9ry815muefoKQ'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -6881,7 +6881,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ThemeDatabase</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPue3weuPXFADkGzezX'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX5hPVP1X1rYhSDJCG'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections;
@@ -6933,7 +6933,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">HighscoreUI</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuhWZG9FEXBqqY3DnX'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX99W8CrUafVsj1YHB'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -6950,7 +6950,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">Leaderboard</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuiETgFiCya5ew7PyT'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRX9xNVWwrxDvLv7AZr'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -7042,7 +7042,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">MainMenu</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPujoxsKgdAQNvhAufV'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXBSfTyqcuja71QB7E'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.SceneManagement;
@@ -7060,7 +7060,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">MissionEntry</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPukhnsnrZ4ntXxp3Nv'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXCEJ9yY2R1NJUPE2g'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -7113,7 +7113,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">MissionUI</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPumc7sBiT93RQPjgEE'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXCzS1GQ5rp3JfxgnF'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using UnityEngine;
@@ -7188,7 +7188,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">DataDeleteConfirmation</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuoKoJvTx4T6WKzT8g'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXETVETv7J8ub3UGoy'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- 
@@ -7225,7 +7225,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">SettingPopup</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPup9upRT63LdxXZ2Mo'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXFBtjqnmC2He6sob6'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.Audio;
@@ -7306,7 +7306,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopAccessoriesList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuqjf59ZYa6kJV1mxg'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXGifmrJpMkpp8DiXj'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -7527,7 +7527,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopCharacterList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPurVoDRrt2baTY14gb'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXHYXRa18jVQtCvX7R'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -7684,7 +7684,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopItemList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPusKQdFPkuz4EWPzoc'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXJHRdUcZ5UWh9oU9W'}
 -- Original C# preserved below:
 -- using System.Collections.Generic;
 -- using UnityEngine;
@@ -7839,7 +7839,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopItemListItem</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPutB1TrxuprnCtN112'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXJybVEZkdCEkgji2c'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.UI;
@@ -7862,7 +7862,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPutwtTmM13zQhVNBZ8'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXKoDGhkedSZP2Gh31'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using UnityEngine.AddressableAssets;
@@ -7901,7 +7901,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">ShopThemeList</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuusTAgxmSDtVo7nEE'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXLmW4D6Usq8tMEnHd'}
 -- Original C# preserved below:
 -- using UnityEngine;
 -- using System.Collections.Generic;
@@ -8057,7 +8057,7 @@
     <Item class="ModuleScript">
       <Properties>
         <string name="Name">StartButton</string>
-        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhPuwNjbJGQQAyoy3YJn'}
+        <ProtectedString name="Source">-- AI transpilation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CYhRXNPEgsGsspcdjxY6V'}
 -- Original C# preserved below:
 -- using System.Collections;
 -- using System.Collections.Generic;
@@ -11233,11 +11233,11 @@ return data
             <Y>1.000000</Y>
           </Vector2>
           <Color3 name="BackgroundColor3">
-            <R>1.000000</R>
-            <G>1.000000</G>
-            <B>1.000000</B>
+            <R>0.220588</R>
+            <G>0.220588</G>
+            <B>0.220588</B>
           </Color3>
-          <float name="BackgroundTransparency">0.0000</float>
+          <float name="BackgroundTransparency">0.3530</float>
           <int name="BorderSizePixel">0</int>
           <bool name="Visible">true</bool>
           <int name="ZIndex">1</int>
@@ -11295,7 +11295,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -11351,9 +11351,9 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.602941</R>
+                <G>0.602941</G>
+                <B>0.602941</B>
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
@@ -11413,7 +11413,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -11443,7 +11443,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -11474,7 +11474,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11504,7 +11504,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11535,7 +11535,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -11564,7 +11564,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11594,7 +11594,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11624,7 +11624,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11655,7 +11655,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -11684,7 +11684,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11714,7 +11714,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11744,7 +11744,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11775,7 +11775,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -11804,7 +11804,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11834,7 +11834,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11864,7 +11864,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11895,7 +11895,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -11924,7 +11924,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11954,7 +11954,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -11984,7 +11984,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -12015,7 +12015,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12044,7 +12044,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -12074,7 +12074,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -12104,7 +12104,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -12165,7 +12165,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12196,7 +12196,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -12255,7 +12255,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12315,7 +12315,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12375,7 +12375,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12402,11 +12402,11 @@ return data
               <Y>0.500000</Y>
             </Vector2>
             <Color3 name="BackgroundColor3">
-              <R>1.000000</R>
-              <G>1.000000</G>
-              <B>1.000000</B>
+              <R>0.000000</R>
+              <G>0.000000</G>
+              <B>0.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.4470</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -12464,7 +12464,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -12494,7 +12494,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -12523,7 +12523,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -12581,7 +12581,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -12671,7 +12671,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -12730,9 +12730,9 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.364706</R>
+                  <G>0.349020</G>
+                  <B>0.403922</B>
                 </Color3>
                 <float name="BackgroundTransparency">0.0000</float>
                 <int name="BorderSizePixel">0</int>
@@ -12767,7 +12767,7 @@ return data
             <G>1.000000</G>
             <B>1.000000</B>
           </Color3>
-          <float name="BackgroundTransparency">0.0000</float>
+          <float name="BackgroundTransparency">1.0000</float>
           <int name="BorderSizePixel">0</int>
           <bool name="Visible">true</bool>
           <int name="ZIndex">1</int>
@@ -12825,7 +12825,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12885,7 +12885,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -12945,7 +12945,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13005,7 +13005,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13065,7 +13065,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13096,7 +13096,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -13184,7 +13184,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -13215,7 +13215,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13305,7 +13305,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13396,7 +13396,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -13425,7 +13425,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13454,7 +13454,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -13511,11 +13511,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.3725</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13541,11 +13541,11 @@ return data
                 <Y>1.000000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.1255</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13576,7 +13576,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -13605,7 +13605,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -13634,7 +13634,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -13663,7 +13663,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -13753,7 +13753,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -13904,7 +13904,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -13935,7 +13935,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -14025,7 +14025,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -14116,7 +14116,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -14146,7 +14146,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -14175,7 +14175,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -14204,7 +14204,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -14294,7 +14294,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -14414,7 +14414,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -14442,11 +14442,11 @@ return data
               <Y>0.500000</Y>
             </Vector2>
             <Color3 name="BackgroundColor3">
-              <R>1.000000</R>
-              <G>1.000000</G>
-              <B>1.000000</B>
+              <R>0.078071</R>
+              <G>0.112785</G>
+              <B>0.279412</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.4980</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -14533,7 +14533,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -14564,7 +14564,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -14594,7 +14594,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -14623,7 +14623,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -14683,7 +14683,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -14743,7 +14743,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -14833,7 +14833,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -14894,7 +14894,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -14923,7 +14923,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -14953,7 +14953,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15013,7 +15013,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15104,7 +15104,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -15133,7 +15133,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15193,7 +15193,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15253,7 +15253,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15310,9 +15310,9 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.364706</R>
+                  <G>0.349020</G>
+                  <B>0.403922</B>
                 </Color3>
                 <float name="BackgroundTransparency">0.0000</float>
                 <int name="BorderSizePixel">0</int>
@@ -15341,11 +15341,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.078431</R>
+                <G>0.113725</G>
+                <B>0.278431</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.4980</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -15403,7 +15403,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15461,7 +15461,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -15493,7 +15493,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15551,7 +15551,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -15613,7 +15613,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15672,7 +15672,7 @@ return data
                       <G>1.000000</G>
                       <B>1.000000</B>
                     </Color3>
-                    <float name="BackgroundTransparency">0.0000</float>
+                    <float name="BackgroundTransparency">1.0000</float>
                     <int name="BorderSizePixel">0</int>
                     <bool name="Visible">true</bool>
                     <int name="ZIndex">1</int>
@@ -15701,11 +15701,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.078431</R>
+                <G>0.113725</G>
+                <B>0.278431</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.4980</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -15763,7 +15763,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15822,7 +15822,7 @@ return data
                       <G>1.000000</G>
                       <B>1.000000</B>
                     </Color3>
-                    <float name="BackgroundTransparency">0.0000</float>
+                    <float name="BackgroundTransparency">1.0000</float>
                     <int name="BorderSizePixel">0</int>
                     <bool name="Visible">true</bool>
                     <int name="ZIndex">1</int>
@@ -15882,7 +15882,7 @@ return data
                       <G>1.000000</G>
                       <B>1.000000</B>
                     </Color3>
-                    <float name="BackgroundTransparency">0.0000</float>
+                    <float name="BackgroundTransparency">1.0000</float>
                     <int name="BorderSizePixel">0</int>
                     <bool name="Visible">true</bool>
                     <int name="ZIndex">1</int>
@@ -15913,7 +15913,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -15942,11 +15942,11 @@ return data
               <Y>0.500000</Y>
             </Vector2>
             <Color3 name="BackgroundColor3">
-              <R>1.000000</R>
-              <G>1.000000</G>
-              <B>1.000000</B>
+              <R>0.000000</R>
+              <G>0.000000</G>
+              <B>0.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.4470</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -16004,7 +16004,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -16034,7 +16034,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -16063,7 +16063,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -16121,7 +16121,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -16211,7 +16211,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -16270,9 +16270,9 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.364706</R>
+                  <G>0.349020</G>
+                  <B>0.403922</B>
                 </Color3>
                 <float name="BackgroundTransparency">0.0000</float>
                 <int name="BorderSizePixel">0</int>
@@ -16307,7 +16307,7 @@ return data
             <G>1.000000</G>
             <B>1.000000</B>
           </Color3>
-          <float name="BackgroundTransparency">0.0000</float>
+          <float name="BackgroundTransparency">1.0000</float>
           <int name="BorderSizePixel">0</int>
           <bool name="Visible">true</bool>
           <int name="ZIndex">1</int>
@@ -16336,7 +16336,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -16365,7 +16365,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -16454,7 +16454,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -16481,11 +16481,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.717647</R>
+                <G>0.690196</G>
+                <B>0.854902</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.6275</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -16514,7 +16514,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -16604,7 +16604,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -16633,7 +16633,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -16662,7 +16662,7 @@ return data
                       <G>1.000000</G>
                       <B>1.000000</B>
                     </Color3>
-                    <float name="BackgroundTransparency">0.0000</float>
+                    <float name="BackgroundTransparency">1.0000</float>
                     <int name="BorderSizePixel">0</int>
                     <bool name="Visible">true</bool>
                     <int name="ZIndex">1</int>
@@ -16691,11 +16691,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.717647</R>
+                <G>0.690196</G>
+                <B>0.854902</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.6275</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -16724,7 +16724,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -16785,7 +16785,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.2280</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -16841,11 +16841,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.717647</R>
+                <G>0.690196</G>
+                <B>0.854902</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.6275</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -16966,7 +16966,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -16991,11 +16991,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.2157</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17024,7 +17024,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17083,7 +17083,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -17111,11 +17111,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.6941</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17144,7 +17144,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17205,7 +17205,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17231,11 +17231,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.6941</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17264,7 +17264,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17321,11 +17321,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.6941</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17354,7 +17354,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17412,11 +17412,11 @@ return data
               <Y>0.500000</Y>
             </Vector2>
             <Color3 name="BackgroundColor3">
-              <R>1.000000</R>
-              <G>1.000000</G>
-              <B>1.000000</B>
+              <R>0.602941</R>
+              <G>0.602941</G>
+              <B>0.602941</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.2910</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -17445,7 +17445,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17504,7 +17504,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17564,7 +17564,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17592,11 +17592,11 @@ return data
               <Y>0.500000</Y>
             </Vector2>
             <Color3 name="BackgroundColor3">
-              <R>1.000000</R>
-              <G>1.000000</G>
-              <B>1.000000</B>
+              <R>0.220588</R>
+              <G>0.220588</G>
+              <B>0.220588</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.3530</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -17625,7 +17625,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17655,7 +17655,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17684,7 +17684,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">0.5220</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17714,7 +17714,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17774,7 +17774,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -17805,7 +17805,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -17830,9 +17830,9 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.361213</R>
+                  <G>0.614478</G>
+                  <B>0.963235</B>
                 </Color3>
                 <float name="BackgroundTransparency">0.0000</float>
                 <int name="BorderSizePixel">0</int>
@@ -17863,7 +17863,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -17923,7 +17923,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18014,7 +18014,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18046,7 +18046,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">1.0000</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -18073,11 +18073,11 @@ return data
             <Y>1.000000</Y>
           </Vector2>
           <Color3 name="BackgroundColor3">
-            <R>1.000000</R>
-            <G>1.000000</G>
-            <B>1.000000</B>
+            <R>0.078071</R>
+            <G>0.112785</G>
+            <B>0.279412</B>
           </Color3>
-          <float name="BackgroundTransparency">0.0000</float>
+          <float name="BackgroundTransparency">0.4980</float>
           <int name="BorderSizePixel">0</int>
           <bool name="Visible">true</bool>
           <int name="ZIndex">1</int>
@@ -18135,7 +18135,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -18160,11 +18160,11 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.000000</R>
+                  <G>0.000000</G>
+                  <B>0.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">0.9030</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18190,11 +18190,11 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.000000</R>
+                  <G>0.000000</G>
+                  <B>0.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">0.9030</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18220,11 +18220,11 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.000000</R>
+                  <G>0.000000</G>
+                  <B>0.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">0.9030</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18250,11 +18250,11 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.000000</R>
+                  <G>0.000000</G>
+                  <B>0.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">0.9030</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18280,11 +18280,11 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.000000</R>
+                  <G>0.000000</G>
+                  <B>0.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">0.9030</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18345,7 +18345,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -18403,7 +18403,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18433,7 +18433,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18493,7 +18493,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18553,7 +18553,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18584,7 +18584,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18615,7 +18615,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -18644,7 +18644,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18673,7 +18673,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18703,7 +18703,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18733,7 +18733,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18764,7 +18764,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18793,7 +18793,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18823,7 +18823,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18853,7 +18853,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18884,7 +18884,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -18913,7 +18913,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18943,7 +18943,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -18973,7 +18973,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19004,7 +19004,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19033,7 +19033,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19063,7 +19063,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19093,7 +19093,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19124,7 +19124,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19153,7 +19153,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19183,7 +19183,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19213,7 +19213,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19244,7 +19244,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19273,7 +19273,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19303,7 +19303,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19333,7 +19333,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19364,7 +19364,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19393,7 +19393,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19423,7 +19423,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19453,7 +19453,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19484,7 +19484,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19513,7 +19513,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19543,7 +19543,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19573,7 +19573,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19604,7 +19604,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19633,7 +19633,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19663,7 +19663,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19693,7 +19693,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19724,7 +19724,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19753,7 +19753,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19783,7 +19783,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19813,7 +19813,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19844,7 +19844,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -19873,7 +19873,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19903,7 +19903,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19933,7 +19933,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -19965,7 +19965,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -19990,9 +19990,9 @@ return data
                   <Y>0.500000</Y>
                 </Vector2>
                 <Color3 name="BackgroundColor3">
-                  <R>1.000000</R>
-                  <G>1.000000</G>
-                  <B>1.000000</B>
+                  <R>0.364706</R>
+                  <G>0.349020</G>
+                  <B>0.403922</B>
                 </Color3>
                 <float name="BackgroundTransparency">0.0000</float>
                 <int name="BorderSizePixel">0</int>
@@ -20027,7 +20027,7 @@ return data
             <G>1.000000</G>
             <B>1.000000</B>
           </Color3>
-          <float name="BackgroundTransparency">0.0000</float>
+          <float name="BackgroundTransparency">1.0000</float>
           <int name="BorderSizePixel">0</int>
           <bool name="Visible">true</bool>
           <int name="ZIndex">1</int>
@@ -20081,9 +20081,9 @@ return data
                 <Y>0.000000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.816514</R>
+                <G>0.805363</G>
+                <B>0.823529</B>
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
@@ -20114,7 +20114,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -20141,9 +20141,9 @@ return data
                 <Y>0.000000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.816514</R>
+                <G>0.805363</G>
+                <B>0.823529</B>
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
@@ -20174,7 +20174,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -20201,9 +20201,9 @@ return data
                 <Y>0.000000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.816514</R>
+                <G>0.805363</G>
+                <B>0.823529</B>
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
@@ -20234,7 +20234,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -20261,11 +20261,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.000000</R>
+                <G>0.000000</G>
+                <B>0.103000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.4706</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -20323,7 +20323,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -20410,7 +20410,7 @@ return data
                           <G>1.000000</G>
                           <B>1.000000</B>
                         </Color3>
-                        <float name="BackgroundTransparency">0.0000</float>
+                        <float name="BackgroundTransparency">1.0000</float>
                         <int name="BorderSizePixel">0</int>
                         <bool name="Visible">true</bool>
                         <int name="ZIndex">1</int>
@@ -20441,7 +20441,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -20471,7 +20471,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -20531,7 +20531,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -20561,7 +20561,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -20620,7 +20620,7 @@ return data
                           <G>1.000000</G>
                           <B>1.000000</B>
                         </Color3>
-                        <float name="BackgroundTransparency">0.0000</float>
+                        <float name="BackgroundTransparency">1.0000</float>
                         <int name="BorderSizePixel">0</int>
                         <bool name="Visible">true</bool>
                         <int name="ZIndex">1</int>
@@ -20681,7 +20681,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -20740,7 +20740,7 @@ return data
                           <G>1.000000</G>
                           <B>1.000000</B>
                         </Color3>
-                        <float name="BackgroundTransparency">0.0000</float>
+                        <float name="BackgroundTransparency">1.0000</float>
                         <int name="BorderSizePixel">0</int>
                         <bool name="Visible">true</bool>
                         <int name="ZIndex">1</int>
@@ -20771,7 +20771,7 @@ return data
                         <G>1.000000</G>
                         <B>1.000000</B>
                       </Color3>
-                      <float name="BackgroundTransparency">0.0000</float>
+                      <float name="BackgroundTransparency">1.0000</float>
                       <int name="BorderSizePixel">0</int>
                       <bool name="Visible">true</bool>
                       <int name="ZIndex">1</int>
@@ -20803,7 +20803,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -20865,7 +20865,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -20924,7 +20924,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -20951,11 +20951,11 @@ return data
                 <Y>0.500000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.749020</R>
+                <G>0.749020</G>
+                <B>0.784314</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">0.8220</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -21013,7 +21013,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -21073,7 +21073,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -21133,7 +21133,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -21193,7 +21193,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -21251,9 +21251,9 @@ return data
                 <Y>0.000000</Y>
               </Vector2>
               <Color3 name="BackgroundColor3">
-                <R>1.000000</R>
-                <G>1.000000</G>
-                <B>1.000000</B>
+                <R>0.816514</R>
+                <G>0.805363</G>
+                <B>0.823529</B>
               </Color3>
               <float name="BackgroundTransparency">0.0000</float>
               <int name="BorderSizePixel">0</int>
@@ -21284,7 +21284,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -21344,7 +21344,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -21434,7 +21434,7 @@ return data
                   <G>1.000000</G>
                   <B>1.000000</B>
                 </Color3>
-                <float name="BackgroundTransparency">0.0000</float>
+                <float name="BackgroundTransparency">1.0000</float>
                 <int name="BorderSizePixel">0</int>
                 <bool name="Visible">true</bool>
                 <int name="ZIndex">1</int>
@@ -21523,7 +21523,7 @@ return data
                     <G>1.000000</G>
                     <B>1.000000</B>
                   </Color3>
-                  <float name="BackgroundTransparency">0.0000</float>
+                  <float name="BackgroundTransparency">1.0000</float>
                   <int name="BorderSizePixel">0</int>
                   <bool name="Visible">true</bool>
                   <int name="ZIndex">1</int>
@@ -21557,7 +21557,7 @@ return data
             <G>1.000000</G>
             <B>1.000000</B>
           </Color3>
-          <float name="BackgroundTransparency">0.0000</float>
+          <float name="BackgroundTransparency">1.0000</float>
           <int name="BorderSizePixel">0</int>
           <bool name="Visible">true</bool>
           <int name="ZIndex">1</int>
@@ -21586,7 +21586,7 @@ return data
               <G>1.000000</G>
               <B>1.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.2941</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
@@ -21675,7 +21675,7 @@ return data
                 <G>1.000000</G>
                 <B>1.000000</B>
               </Color3>
-              <float name="BackgroundTransparency">0.0000</float>
+              <float name="BackgroundTransparency">1.0000</float>
               <int name="BorderSizePixel">0</int>
               <bool name="Visible">true</bool>
               <int name="ZIndex">1</int>
@@ -21702,11 +21702,11 @@ return data
               <Y>0.500000</Y>
             </Vector2>
             <Color3 name="BackgroundColor3">
-              <R>1.000000</R>
-              <G>1.000000</G>
-              <B>1.000000</B>
+              <R>0.000000</R>
+              <G>0.000000</G>
+              <B>0.000000</B>
             </Color3>
-            <float name="BackgroundTransparency">0.0000</float>
+            <float name="BackgroundTransparency">0.9333</float>
             <int name="BorderSizePixel">0</int>
             <bool name="Visible">true</bool>
             <int name="ZIndex">1</int>
