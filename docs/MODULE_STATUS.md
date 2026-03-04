@@ -253,6 +253,68 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 | Networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`) | MEDIUM | Detected for classification but not converted to RemoteEvent/RemoteFunction patterns |
 | Object pooling patterns | LOW | Individual API calls transpile but structural pool management needs manual refactoring |
 
+### Fragile Areas (Skill Candidates)
+
+The AST emitter (`_LuauEmitter`) resolved structural fragility, but the following areas remain fragile. These are **semantic** problems that rule-based code handles poorly and would be better delegated to an AI skill.
+
+#### 4a. Regex Fallback Pipeline (lines 1374–1767)
+
+**Risk**: HIGH — Active path when tree-sitter is unavailable or source has parse errors.
+
+| # | Issue | Impact |
+|---|-------|--------|
+| 1 | Context-blind: regexes transform inside string literals and comments | `"x != y"` becomes `"x ~= y"` |
+| 2 | Order-dependent: 50+ sequential substitutions with hidden coupling | Reordering or adding patterns can silently break others |
+| 3 | Duplicate rules: `Debug.Log` in both `_RULE_PATTERNS` and `API_CALL_MAP` | Double-application risk |
+| 4 | Hardcoded type lists (lines 1521–1540) diverge from `TYPE_MAP` | New types added to one place forgotten in other |
+| 5 | Brace-to-`end` heuristic (line 1607): any `}` on own line → `end` | Wrong for inline objects, string templates, etc. |
+| 6 | Ternary regex (line 1613) fails on nested ternaries and multi-line | Produces broken Luau |
+| 7 | String concat `+` → `..` only detects adjacent string literals | `a + b` where both are string variables stays as `+` |
+
+**Recommendation**: Replace with AI skill for the regex fallback case — send C# to LLM rather than applying broken regex transforms.
+
+#### 4b. Script Type Classification (lines 1310–1358)
+
+**Risk**: MEDIUM — Heuristic scoring, no ground truth.
+
+| # | Issue | Impact |
+|---|-------|--------|
+| 1 | Client/server score ties default to `Script` (server) | Client scripts misclassified |
+| 2 | Scripts with both client+server patterns (networking code) scored by count | Often wrong |
+| 3 | `ModuleScript` detection requires "no MonoBehaviour AND no lifecycle hooks" | Utility classes inheriting MonoBehaviour misclassified |
+| 4 | Hardcoded indicator sets (`_CLIENT_INDICATORS`, `_SERVER_INDICATORS`) | Incomplete, not maintained |
+
+**Recommendation**: AI skill can reason about intent: "this handles player input → LocalScript".
+
+#### 4c. Confidence Scoring (lines 1253–1271, 1732–1767)
+
+**Risk**: MEDIUM — Arbitrary formula determines what gets flagged for human review.
+
+| # | Issue | Impact |
+|---|-------|--------|
+| 1 | Formula `changed_lines / total_lines * 1.5 + bonuses` has no validation | No correlation between score and actual output quality |
+| 2 | Trivial scripts (≤1 code line) get 0.3 ceiling | May flag empty `Start()` stubs unnecessarily |
+| 3 | AST bonus (+0.15) and API sub bonus (+0.05 each) are arbitrary | Could auto-accept bad output or flag good output |
+
+**Recommendation**: AI skill can self-assess confidence rather than using a heuristic formula.
+
+#### 4d. API Mapping Placeholders (`api_mappings.py`)
+
+**Risk**: MEDIUM — ~30 entries produce `-- comment` placeholders that compile but don't work.
+
+Examples: `Animator.SetBool`, `PlayerPrefs.*`, `SceneManager.LoadScene`, `AddComponent`, `DontDestroyOnLoad`, `Mathf.SmoothDamp`, `RectTransform`, networking attributes.
+
+**Recommendation**: AI skill can implement actual Roblox equivalents (e.g., DataStoreService for PlayerPrefs).
+
+#### 4e. Event Detection Heuristic (lines 787–810)
+
+**Risk**: LOW-MEDIUM — Hardcoded suffix list, no semantic understanding.
+
+| # | Issue | Impact |
+|---|-------|--------|
+| 1 | `_looks_like_event_target` checks 8 hardcoded suffixes | Misses custom events |
+| 2 | `On*` prefix heuristic false-positives on non-event members | `OnGround` property treated as event |
+
 ### Resolved Issues
 
 <details>
@@ -260,11 +322,11 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 
 | Issue | Resolution |
 |-------|------------|
-| 73+ sequential regex substitutions (brittle) | AST-driven tree-sitter `_LuauEmitter` class; regex preserved as fallback |
-| Coroutines not handled | `_emit_yield_statement` + `task.spawn` wrapping for IEnumerator methods |
-| Event subscriptions not handled | `_emit_assignment_expression` detects event-like targets, emits `:Connect()` |
-| String interpolation not handled | `_emit_interpolated_string_expression` → `string.format()` |
-| Lambda/anonymous delegates not handled | `_emit_lambda_expression` / `_emit_anonymous_method_expression` → `function() end` |
+| 73+ sequential regex substitutions (brittle) — commit `8494bdd` | AST-driven tree-sitter `_LuauEmitter` class; regex preserved as fallback |
+| Coroutines not handled — commit `2fcfe3a` | `_emit_yield_statement` + `task.spawn` wrapping for IEnumerator methods |
+| Event subscriptions not handled — commit `2fcfe3a` | `_emit_assignment_expression` detects event-like targets, emits `:Connect()` |
+| String interpolation not handled — commit `2fcfe3a` | `_emit_interpolated_string_expression` → `string.format()` |
+| Lambda/anonymous delegates not handled — commit `2fcfe3a` | `_emit_lambda_expression` / `_emit_anonymous_method_expression` → `function() end` |
 | Code validator false positives (long strings, comment order) | Level-N long string support; block comments stripped first |
 
 </details>

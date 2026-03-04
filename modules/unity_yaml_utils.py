@@ -61,6 +61,34 @@ CID_RECT_TRANSFORM = 224
 CID_RENDER_SETTINGS = 104
 CID_PREFAB_INSTANCE = 1001
 
+# Additional well-known Unity classIDs for broader game support
+CID_CANVAS = 223
+CID_CANVAS_RENDERER = 222
+CID_CANVAS_GROUP = 225
+CID_LOD_GROUP = 205
+CID_NAV_MESH_AGENT = 195
+CID_NAV_MESH_OBSTACLE = 208
+CID_TERRAIN = 218
+CID_TERRAIN_COLLIDER = 154
+CID_LINE_RENDERER = 120
+CID_TRAIL_RENDERER = 96
+CID_SPRITE_RENDERER = 212
+CID_RIGIDBODY_2D = 50
+CID_BOX_COLLIDER_2D = 61
+CID_CIRCLE_COLLIDER_2D = 58
+CID_POLYGON_COLLIDER_2D = 60
+CID_HINGE_JOINT = 59
+CID_FIXED_JOINT = 138
+CID_SPRING_JOINT = 145
+CID_CONFIGURABLE_JOINT = 153
+CID_CLOTH = 183
+CID_WIND_ZONE = 182
+CID_REFLECTION_PROBE = 215
+CID_LIGHT_PROBE_GROUP = 220
+CID_AUDIO_LISTENER = 81
+CID_VIDEO_PLAYER = 328
+CID_PLAYABLE_DIRECTOR = 320   # Timeline
+
 
 # ---------------------------------------------------------------------------
 # Shared component constants (used by both scene_parser and prefab_parser)
@@ -82,6 +110,33 @@ KNOWN_COMPONENT_CIDS: frozenset[int] = frozenset({
     CID_PARTICLE_SYSTEM,
     CID_ANIMATOR,
     CID_CHARACTER_CONTROLLER,
+    # Additional components for broader game support
+    CID_CANVAS,
+    CID_CANVAS_RENDERER,
+    CID_CANVAS_GROUP,
+    CID_LOD_GROUP,
+    CID_NAV_MESH_AGENT,
+    CID_NAV_MESH_OBSTACLE,
+    CID_TERRAIN,
+    CID_TERRAIN_COLLIDER,
+    CID_LINE_RENDERER,
+    CID_TRAIL_RENDERER,
+    CID_SPRITE_RENDERER,
+    CID_RIGIDBODY_2D,
+    CID_BOX_COLLIDER_2D,
+    CID_CIRCLE_COLLIDER_2D,
+    CID_POLYGON_COLLIDER_2D,
+    CID_HINGE_JOINT,
+    CID_FIXED_JOINT,
+    CID_SPRING_JOINT,
+    CID_CONFIGURABLE_JOINT,
+    CID_CLOTH,
+    CID_WIND_ZONE,
+    CID_REFLECTION_PROBE,
+    CID_LIGHT_PROBE_GROUP,
+    CID_AUDIO_LISTENER,
+    CID_VIDEO_PLAYER,
+    CID_PLAYABLE_DIRECTOR,
 })
 
 COMPONENT_CID_TO_NAME: dict[int, str] = {
@@ -100,6 +155,33 @@ COMPONENT_CID_TO_NAME: dict[int, str] = {
     CID_ANIMATOR: "Animator",
     CID_CHARACTER_CONTROLLER: "CharacterController",
     CID_CAMERA: "Camera",
+    # Additional components for broader game support
+    CID_CANVAS: "Canvas",
+    CID_CANVAS_RENDERER: "CanvasRenderer",
+    CID_CANVAS_GROUP: "CanvasGroup",
+    CID_LOD_GROUP: "LODGroup",
+    CID_NAV_MESH_AGENT: "NavMeshAgent",
+    CID_NAV_MESH_OBSTACLE: "NavMeshObstacle",
+    CID_TERRAIN: "Terrain",
+    CID_TERRAIN_COLLIDER: "TerrainCollider",
+    CID_LINE_RENDERER: "LineRenderer",
+    CID_TRAIL_RENDERER: "TrailRenderer",
+    CID_SPRITE_RENDERER: "SpriteRenderer",
+    CID_RIGIDBODY_2D: "Rigidbody2D",
+    CID_BOX_COLLIDER_2D: "BoxCollider2D",
+    CID_CIRCLE_COLLIDER_2D: "CircleCollider2D",
+    CID_POLYGON_COLLIDER_2D: "PolygonCollider2D",
+    CID_HINGE_JOINT: "HingeJoint",
+    CID_FIXED_JOINT: "FixedJoint",
+    CID_SPRING_JOINT: "SpringJoint",
+    CID_CONFIGURABLE_JOINT: "ConfigurableJoint",
+    CID_CLOTH: "Cloth",
+    CID_WIND_ZONE: "WindZone",
+    CID_REFLECTION_PROBE: "ReflectionProbe",
+    CID_LIGHT_PROBE_GROUP: "LightProbeGroup",
+    CID_AUDIO_LISTENER: "AudioListener",
+    CID_VIDEO_PLAYER: "VideoPlayer",
+    CID_PLAYABLE_DIRECTOR: "PlayableDirector",
 }
 
 

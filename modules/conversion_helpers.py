@@ -207,33 +207,55 @@ def apply_materials(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
     guid_to_companion_scripts: dict[str, list[str]] | None,
+    multi_material_warnings: list[str] | None = None,
 ) -> None:
-    """Attach material data and companion scripts to a part from a scene node."""
+    """Attach material data and companion scripts to a part from a scene node.
+
+    Roblox supports only one material per MeshPart. When a Unity renderer has
+    multiple materials (common in complex games), the first resolved material
+    is applied and a warning is logged for the additional materials. This
+    allows downstream tools / reports to flag meshes that need manual splitting.
+    """
     if not guid_to_roblox_def:
         return
     for comp in node.components:
         if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
             continue
-        for mat_ref in comp.properties.get("m_Materials", []):
-            if not isinstance(mat_ref, dict):
-                continue
-            guid = mat_ref.get("guid", "")
-            rdef = guid_to_roblox_def.get(guid)
-            if rdef:
-                part.surface_appearance = roblox_def_to_surface_appearance(rdef)
-                if rdef.base_part_color:
-                    part.color3 = rdef.base_part_color
-                if rdef.base_part_transparency > 0:
-                    part.transparency = rdef.base_part_transparency
-                if guid_to_companion_scripts:
-                    for i, src in enumerate(guid_to_companion_scripts.get(guid, ())):
-                        suffix = f"_{i+1}" if i > 0 else ""
-                        part.scripts.append(rbxl_writer.RbxScriptEntry(
-                            name=f"{node.name}_MaterialEffect{suffix}",
-                            luau_source=src,
-                            script_type="Script",
-                        ))
-                break  # use first material for the part
+        mat_refs = comp.properties.get("m_Materials", []) or []
+        resolved_guids: list[str] = []
+        for mat_ref in mat_refs:
+            if isinstance(mat_ref, dict):
+                guid = mat_ref.get("guid", "")
+                if guid and guid in guid_to_roblox_def:
+                    resolved_guids.append(guid)
+
+        if not resolved_guids:
+            continue
+
+        # Apply the first material (Roblox limitation: one material per MeshPart)
+        rdef = guid_to_roblox_def[resolved_guids[0]]
+        part.surface_appearance = roblox_def_to_surface_appearance(rdef)
+        if rdef.base_part_color:
+            part.color3 = rdef.base_part_color
+        if rdef.base_part_transparency > 0:
+            part.transparency = rdef.base_part_transparency
+        if guid_to_companion_scripts:
+            for i, src in enumerate(guid_to_companion_scripts.get(resolved_guids[0], ())):
+                suffix = f"_{i+1}" if i > 0 else ""
+                part.scripts.append(rbxl_writer.RbxScriptEntry(
+                    name=f"{node.name}_MaterialEffect{suffix}",
+                    luau_source=src,
+                    script_type="Script",
+                ))
+
+        # Warn about additional materials that cannot be applied
+        if len(resolved_guids) > 1 and multi_material_warnings is not None:
+            multi_material_warnings.append(
+                f"'{node.name}' has {len(resolved_guids)} materials but Roblox "
+                f"supports only 1 per MeshPart. The mesh needs to be split in a "
+                f"3D tool (e.g. Blender) for full material fidelity."
+            )
+        break  # only process first renderer component
 
 
 # ---------------------------------------------------------------------------
