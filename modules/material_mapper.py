@@ -102,6 +102,7 @@ class MaterialMapResult:
     partially_converted: int = 0
     unconvertible: int = 0
     texture_ops_performed: int = 0
+    warnings: list[str] = field(default_factory=list)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -144,6 +145,17 @@ _BUILTIN_SHADERS: dict[int, ShaderInfo] = {
     10753: ShaderInfo("Particles/Additive", "particle_additive", True, False, False, True),
     10755: ShaderInfo("Particles/Multiply", "particle_multiply", True, False, False, True),
     200: ShaderInfo("Sprites/Default", "sprite", True, False, True, True),
+    # Additional common built-in shaders
+    10750: ShaderInfo("UI/Default", "ui_default", True, False, True, True),
+    10703: ShaderInfo("Legacy Shaders/Transparent/Diffuse", "legacy_transparent_diffuse", True, False, True, True),
+    10704: ShaderInfo("Legacy Shaders/Transparent/Specular", "legacy_transparent_specular", True, False, True, True),
+    10707: ShaderInfo("Legacy Shaders/Self-Illumin/Diffuse", "legacy_self_illumin", False, False, True, True),
+    10701: ShaderInfo("Unlit/Texture", "unlit_texture", False, False, False, True),
+    10700: ShaderInfo("Unlit/Color", "unlit_color", False, False, True, False),
+    10702: ShaderInfo("Unlit/Transparent", "unlit_transparent", True, False, False, True),
+    10710: ShaderInfo("Mobile/Diffuse", "mobile_diffuse", False, False, True, True),
+    10760: ShaderInfo("Skybox/6 Sided", "skybox_6sided", False, False, False, True),
+    10770: ShaderInfo("Skybox/Procedural", "skybox_procedural", False, False, False, False),
 }
 
 _RE_SHADER_NAME = re.compile(r'Shader\s+"([^"]+)"')
@@ -814,14 +826,11 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
         if cat in ("standard_specular", "legacy_specular") and parsed.specular_color:
             sc = parsed.specular_color
             spec_lum = _color_luminance(*sc)
-            if spec_lum > 0.5:
-                # Likely a metal — high specular luminance
-                estimated_metallic = 1.0
+            # Continuous mapping: preserves gradients instead of binary threshold
+            estimated_metallic = max(0.0, min(1.0, spec_lum * 2.0 - 0.5))
+            if estimated_metallic > 0.5 and not rdef.color_map:
                 # For metals, specular color IS the albedo
-                if not rdef.color_map:
-                    rdef.base_part_color = sc
-            else:
-                estimated_metallic = 0.0
+                rdef.base_part_color = sc
             # Generate uniform metalness from the heuristic
             met_out = _safe_filename(mat_name, "_metalness.png")
             result.texture_ops.append(TextureOperation(
@@ -1144,13 +1153,17 @@ _COMPANION_SCRIPTS["custom_rotation"] = _ROTATION_SCRIPT
 def _process_textures(
     ops: list[TextureOperation],
     output_dir: Path,
-) -> list[Path]:
-    """Execute texture operations, return list of generated file paths."""
+) -> tuple[list[Path], list[str]]:
+    """Execute texture operations, return (generated file paths, warnings)."""
+    warnings: list[str] = []
     try:
         from PIL import Image
     except ImportError:
-        # Pillow not installed — skip texture processing, return empty
-        return []
+        warnings.append(
+            "Pillow (PIL) not installed — texture processing skipped. "
+            "Install with: pip install Pillow"
+        )
+        return [], warnings
 
     output_dir.mkdir(parents=True, exist_ok=True)
     generated: list[Path] = []
@@ -1501,11 +1514,13 @@ def _process_textures(
                 Image.fromarray(out_arr).save(out_path, "PNG")
                 generated.append(out_path)
 
-        except Exception:
-            # Skip individual texture failures — don't crash the pipeline
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(
+                f"Texture processing failed for {op.output_filename}: {exc}"
+            )
             continue
 
-    return generated
+    return generated, warnings
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1669,7 +1684,7 @@ def map_materials(
             all_tex_ops.extend(converted.texture_ops)
 
     # 5. Process textures
-    generated = _process_textures(all_tex_ops, textures_dir)
+    generated, tex_warnings = _process_textures(all_tex_ops, textures_dir)
 
     # 6. Generate UNCONVERTED.md
     unconverted_path = out_dir / config.UNCONVERTED_FILENAME
@@ -1697,6 +1712,7 @@ def map_materials(
         unconverted_md_path=unconverted_path,
         total=total,
         fully_converted=fully,
+        warnings=tex_warnings,
         partially_converted=partial,
         unconvertible=unconvertible,
         texture_ops_performed=len(generated),

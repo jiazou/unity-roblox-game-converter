@@ -144,3 +144,56 @@ class TestValidateLuau:
         source = "public static void Main()\nprint('hi')\n"
         result = validate_luau(source)
         assert any("E013" in i.code for i in result.issues)
+
+
+class TestLuauLongStringAndBlockComment:
+    """Tests for level-N long string and block comment handling."""
+
+    def test_long_string_level1_no_false_balance_error(self) -> None:
+        """[=[ function end ]=] long string should not trigger block balance error."""
+        source = (
+            "local s = [=[function end]=]\n"
+            "print(s)\n"
+        )
+        result = validate_luau(source)
+        assert result.valid is True
+        assert result.error_count == 0
+
+    def test_long_string_level2_no_false_balance_error(self) -> None:
+        """[==[ if then end ]==] long string should not trigger block balance error."""
+        source = (
+            "local s = [==[if true then end]==]\n"
+            "print(s)\n"
+        )
+        result = validate_luau(source)
+        assert result.valid is True
+
+    def test_block_comment_level0_no_false_balance_error(self) -> None:
+        """--[[ if then ]] block comment should not trigger balance error."""
+        source = (
+            "--[[ if true then ]]\n"
+            "print('hello')\n"
+        )
+        result = validate_luau(source)
+        assert result.valid is True
+        block_issues = [i for i in result.issues if i.code == "E001"]
+        assert len(block_issues) == 0
+
+    def test_block_comment_level1_no_false_balance_error(self) -> None:
+        """--[=[ function foo() ]=] block comment should not trigger balance error."""
+        source = (
+            "--[=[ function foo() ]=]\n"
+            "print('hello')\n"
+        )
+        result = validate_luau(source)
+        assert result.valid is True
+
+    def test_curly_braces_in_long_string_not_flagged(self) -> None:
+        """Curly braces inside long strings should not be flagged."""
+        source = (
+            "local json = [=[{\"key\": \"value\"}]=]\n"
+            "print(json)\n"
+        )
+        result = validate_luau(source)
+        brace_issues = [i for i in result.issues if i.code == "E030"]
+        assert len(brace_issues) == 0

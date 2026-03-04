@@ -1,5 +1,6 @@
 """Black-box tests for modules/asset_extractor.py."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -91,3 +92,60 @@ class TestExtractAssets:
         for sha, entry in manifest.by_sha256.items():
             assert len(sha) == 64
             assert entry.path.exists()
+
+
+class TestAssetExtractionErrorRecovery:
+    """Tests that broken files don't crash the entire extraction."""
+
+    def test_broken_symlink_skipped_with_warning(self, tmp_path: Path) -> None:
+        """A broken symlink should be skipped with a warning, not crash."""
+        project = tmp_path / "Project"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+
+        # Create a valid file
+        good = assets / "good.png"
+        good.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+        # Create a broken symlink
+        broken_link = assets / "broken.png"
+        broken_link.symlink_to(assets / "nonexistent_target.png")
+
+        manifest = extract_assets(project)
+        assert len(manifest.assets) == 1
+        assert manifest.assets[0].path.name == "good.png"
+        assert len(manifest.warnings) == 1
+        assert "broken.png" in manifest.warnings[0]
+
+    @pytest.mark.skipif(
+        os.getuid() == 0, reason="Root can read all files; chmod has no effect"
+    )
+    def test_unreadable_file_skipped_with_warning(self, tmp_path: Path) -> None:
+        """A file that cannot be read should be skipped with a warning."""
+        project = tmp_path / "Project"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+
+        # Create a valid file
+        good = assets / "good.png"
+        good.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+        # Create a file then remove read permission
+        bad = assets / "noperm.png"
+        bad.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
+        bad.chmod(0o000)
+
+        try:
+            manifest = extract_assets(project)
+            assert len(manifest.assets) == 1
+            assert manifest.assets[0].path.name == "good.png"
+            assert len(manifest.warnings) == 1
+            assert "noperm.png" in manifest.warnings[0]
+        finally:
+            bad.chmod(0o644)  # restore for cleanup
+
+    def test_warnings_field_exists_on_clean_extraction(self, unity_project: Path) -> None:
+        """Warnings field should exist even when there are no issues."""
+        manifest = extract_assets(unity_project)
+        assert hasattr(manifest, "warnings")
+        assert isinstance(manifest.warnings, list)

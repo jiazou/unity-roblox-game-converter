@@ -15,6 +15,7 @@ import pytest
 from modules.roblox_uploader import (
     UploadResult,
     _validate_api_key,
+    _patch_rbxl_asset_ids,
     upload_to_roblox,
     ASSET_MAX_BYTES,
     PLACE_MAX_BYTES,
@@ -157,6 +158,101 @@ class TestUploadWithMockedHTTP:
 # ---------------------------------------------------------------------------
 # File size limits
 # ---------------------------------------------------------------------------
+
+class TestPatchRbxlAssetIds:
+    """Tests for XML-aware _patch_rbxl_asset_ids."""
+
+    def test_patches_content_element(self, tmp_path: Path) -> None:
+        """Asset references in <Content> elements should be patched."""
+        rbxl = tmp_path / "test.rbxl"
+        rbxl.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<roblox>\n"
+            '  <Item class="Decal">\n'
+            "    <Properties>\n"
+            '      <Content name="Texture">rbxassetid://hero.png</Content>\n'
+            "    </Properties>\n"
+            "  </Item>\n"
+            "</roblox>\n"
+        )
+        result = _patch_rbxl_asset_ids(rbxl, {"hero.png": 12345})
+        assert result is True
+        content = rbxl.read_text()
+        assert "rbxassetid://12345" in content
+        assert "rbxassetid://hero.png" not in content
+
+    def test_does_not_patch_protected_string(self, tmp_path: Path) -> None:
+        """Luau source in <ProtectedString> must NOT be patched."""
+        rbxl = tmp_path / "test.rbxl"
+        rbxl.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<roblox>\n"
+            '  <Item class="Script">\n'
+            "    <Properties>\n"
+            '      <ProtectedString name="Source">\n'
+            'local url = "rbxassetid://hero.png"\n'
+            "      </ProtectedString>\n"
+            "    </Properties>\n"
+            "  </Item>\n"
+            '  <Item class="Decal">\n'
+            "    <Properties>\n"
+            '      <Content name="Texture">rbxassetid://hero.png</Content>\n'
+            "    </Properties>\n"
+            "  </Item>\n"
+            "</roblox>\n"
+        )
+        _patch_rbxl_asset_ids(rbxl, {"hero.png": 12345})
+        content = rbxl.read_text()
+        # The Content element should be patched
+        assert "rbxassetid://12345" in content
+        # The ProtectedString should still have the original placeholder
+        assert "hero.png" in content
+
+    def test_patches_url_element(self, tmp_path: Path) -> None:
+        """Asset references in <url> elements should be patched."""
+        rbxl = tmp_path / "test.rbxl"
+        rbxl.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<roblox>\n"
+            '  <Item class="Sound">\n'
+            "    <Properties>\n"
+            '      <url name="SoundId">rbxassetid://bgm</url>\n'
+            "    </Properties>\n"
+            "  </Item>\n"
+            "</roblox>\n"
+        )
+        result = _patch_rbxl_asset_ids(rbxl, {"bgm.ogg": 99999})
+        assert result is True
+        content = rbxl.read_text()
+        assert "rbxassetid://99999" in content
+
+    def test_no_changes_returns_false(self, tmp_path: Path) -> None:
+        """When no placeholders match, should return False."""
+        rbxl = tmp_path / "test.rbxl"
+        rbxl.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<roblox>\n"
+            '  <Item class="Decal">\n'
+            "    <Properties>\n"
+            '      <Content name="Texture">rbxassetid://other.png</Content>\n'
+            "    </Properties>\n"
+            "  </Item>\n"
+            "</roblox>\n"
+        )
+        result = _patch_rbxl_asset_ids(rbxl, {"hero.png": 12345})
+        assert result is False
+
+    def test_malformed_xml_falls_back_to_text(self, tmp_path: Path) -> None:
+        """Malformed XML should fall back to text-based replacement."""
+        rbxl = tmp_path / "test.rbxl"
+        rbxl.write_text(
+            "NOT VALID XML\nrbxassetid://hero.png\n<unclosed"
+        )
+        result = _patch_rbxl_asset_ids(rbxl, {"hero.png": 12345})
+        assert result is True
+        content = rbxl.read_text()
+        assert "rbxassetid://12345" in content
+
 
 class TestFileSizeLimits:
     def test_place_max_bytes_value(self) -> None:

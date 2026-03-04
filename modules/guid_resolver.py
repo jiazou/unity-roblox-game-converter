@@ -30,9 +30,11 @@ from typing import Any, Literal
 
 import yaml
 
+import config as _config
+
 
 # ---------------------------------------------------------------------------
-# Asset kind classification (mirrors asset_extractor but kept independent)
+# Asset kind classification — shared canonical map from config.py
 # ---------------------------------------------------------------------------
 
 AssetKind = Literal[
@@ -40,19 +42,7 @@ AssetKind = Literal[
     "shader", "prefab", "scene", "script", "directory", "unknown",
 ]
 
-_EXT_TO_KIND: dict[str, AssetKind] = {
-    ".png": "texture", ".jpg": "texture", ".jpeg": "texture",
-    ".tga": "texture", ".bmp": "texture", ".exr": "texture",
-    ".hdr": "texture", ".psd": "texture",
-    ".fbx": "mesh", ".obj": "mesh", ".dae": "mesh", ".blend": "mesh",
-    ".wav": "audio", ".mp3": "audio", ".ogg": "audio",
-    ".mat": "material",
-    ".anim": "animation", ".controller": "animation",
-    ".shader": "shader", ".cginc": "shader", ".hlsl": "shader",
-    ".prefab": "prefab",
-    ".unity": "scene",
-    ".cs": "script",
-}
+_EXT_TO_KIND: dict[str, AssetKind] = _config.ASSET_EXT_TO_KIND  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------

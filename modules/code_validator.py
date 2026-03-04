@@ -65,12 +65,12 @@ _UNTIL_KW = re.compile(r"^\s*until\b", re.MULTILINE)
 
 def _strip_comments_and_strings(source: str) -> str:
     """Remove Luau comments and string literals to avoid false positives."""
-    # Remove multi-line block comments --[[ ... ]]
-    result = re.sub(r"--\[\[.*?\]\]", "", source, flags=re.DOTALL)
-    # Remove single-line comments
+    # Remove block comments first: --[[ ... ]] and --[=[ ... ]=] (any level)
+    result = re.sub(r"--\[(=*)\[.*?\]\1\]", "", source, flags=re.DOTALL)
+    # Remove single-line comments (after block comments to avoid partial stripping)
     result = re.sub(r"--[^\n]*", "", result)
-    # Remove multi-line strings [[ ... ]]
-    result = re.sub(r"\[\[.*?\]\]", '""', result, flags=re.DOTALL)
+    # Remove multi-line long strings [[ ... ]], [=[ ... ]=], etc. (any level)
+    result = re.sub(r"\[(=*)\[.*?\]\1\]", '""', result, flags=re.DOTALL)
     # Remove double-quoted strings (handle escaped quotes)
     result = re.sub(r'"(?:[^"\\]|\\.)*"', '""', result)
     # Remove single-quoted strings
