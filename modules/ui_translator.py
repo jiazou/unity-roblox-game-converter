@@ -226,11 +226,30 @@ def _is_image_component(comp: Any) -> bool:
     return False
 
 
+def _has_sprite_reference(props: dict[str, Any]) -> bool:
+    """Check if an Image component references a sprite asset."""
+    sprite = props.get("m_Sprite", {})
+    if isinstance(sprite, dict):
+        guid = sprite.get("guid", "")
+        file_id = sprite.get("fileID", 0)
+        return bool(guid) or (int(file_id) != 0)
+    return False
+
+
 def _extract_background_color(components: list[Any]) -> dict[str, Any]:
-    """Extract background color from Unity Image component used as background."""
+    """Extract background color from Unity Image component used as background.
+
+    If the Image references a sprite, its m_Color is a tint multiplier for the
+    sprite texture — not a solid background fill.  Without the actual sprite
+    loaded we must treat the element as transparent rather than showing the tint
+    as an opaque rectangle.
+    """
     for comp in components:
         if _is_image_component(comp):
             props = getattr(comp, "properties", {})
+            # Sprite-based Image: visual comes from the sprite, not the color
+            if _has_sprite_reference(props):
+                return {}
             color = props.get("m_Color", {})
             if isinstance(color, dict):
                 return {

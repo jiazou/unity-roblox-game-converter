@@ -342,14 +342,27 @@ def _rule_based_transpile(
     # Handle [SerializeField] declarations before general transforms.
     # When we have serialized_refs (from MonoBehaviour YAML), replace field
     # declarations that reference prefabs with ServerStorage:WaitForChild().
+    need_sound_service = False
+
     if serialized_refs:
         def _replace_serialize_field(m: re.Match) -> str:
-            nonlocal need_server_storage
+            nonlocal need_server_storage, need_sound_service
             field_name = m.group("fname")
             if field_name in serialized_refs:
-                need_server_storage = True
-                prefab_name = serialized_refs[field_name]
-                return f'local {field_name} = ServerStorage:WaitForChild("{prefab_name}")'
+                ref_value = serialized_refs[field_name]
+                if ref_value.startswith("audio:"):
+                    # AudioClip reference → preloaded Sound object
+                    audio_filename = ref_value[len("audio:"):]
+                    need_sound_service = True
+                    return (
+                        f'local {field_name} = Instance.new("Sound")\n'
+                        f'{field_name}.Name = "{field_name}"\n'
+                        f'{field_name}.SoundId = "-- TODO: upload {audio_filename}"'
+                    )
+                else:
+                    # Prefab reference → ServerStorage:WaitForChild()
+                    need_server_storage = True
+                    return f'local {field_name} = ServerStorage:WaitForChild("{ref_value}")'
             # Field not in our ref map — strip the attribute, keep the declaration
             return m.group("decl")
 
@@ -376,6 +389,20 @@ def _rule_based_transpile(
     # Apply comprehensive API mappings
     luau, api_subs = _apply_api_mappings(luau)
 
+    # Convert C# generic method calls to Luau string-argument form
+    # e.g. :FindFirstChildOfClass<AudioSource>() → :FindFirstChildOfClass("Sound")
+    def _replace_generic_type(m: re.Match) -> str:
+        method = m.group(1)
+        csharp_type = m.group(2)
+        roblox_type = TYPE_MAP.get(csharp_type, csharp_type)
+        return f'{method}("{roblox_type}")'
+
+    luau = re.sub(
+        r"(:\w+)<(\w+)>\(\)",
+        _replace_generic_type,
+        luau,
+    )
+
     # Strip using directives (no equivalent in Luau)
     luau = re.sub(r"^using\s+[\w.]+;\s*\n", "", luau, flags=re.MULTILINE)
 
@@ -394,15 +421,23 @@ def _rule_based_transpile(
 
     # Strip return type annotations from methods (e.g., "int Foo(" → "local function Foo(")
     luau = re.sub(
-        r"\b(?:int|float|double|bool|string|void|var|Vector[23]|Color|GameObject|Transform|Quaternion|List<[^>]*>|IEnumerator)\s+(\w+)\s*\(",
+        r"\b(?:int|float|double|bool|string|void|var|Vector[23]|Color|GameObject|Transform|Quaternion|List<[^>]*>|IEnumerator|AudioClip|AudioSource)\s+(\w+)\s*\(",
         r"local function \1(",
         luau,
     )
 
     # Strip type annotations from variable declarations (e.g., "List<int> items = " → "local items = ")
     luau = re.sub(
-        r"\b(?:var|List<[^>]*>|Dictionary<[^>]*>|int\[\]|float\[\]|string\[\]|bool\[\]|GameObject\[\]|Transform\[\]|Vector[23]\[\])\s+(\w+)\s*=",
+        r"\b(?:var|List<[^>]*>|Dictionary<[^>]*>|int\[\]|float\[\]|string\[\]|bool\[\]|GameObject\[\]|Transform\[\]|Vector[23]\[\]|AudioClip\[\]|AudioClip|AudioSource)\s+(\w+)\s*=",
         r"local \1 =",
+        luau,
+    )
+
+    # Strip standalone AudioClip/AudioSource field declarations without initializer
+    # e.g. "public AudioClip coinSound;" → "local coinSound = nil"
+    luau = re.sub(
+        r"\b(?:AudioClip|AudioSource)\s+(\w+)\s*;",
+        r"local \1 = nil",
         luau,
     )
 
@@ -526,6 +561,8 @@ def _rule_based_transpile(
         services_needed |= ast_info.services_needed
     if need_server_storage:
         services_needed.add("ServerStorage")
+    if need_sound_service:
+        services_needed.add("SoundService")
     if services_needed:
         lines = []
         for svc in sorted(services_needed):

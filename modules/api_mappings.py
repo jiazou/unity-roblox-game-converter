@@ -206,8 +206,10 @@ API_CALL_MAP: dict[str, str] = {
     "AudioSource.Play": ":Play()",
     "AudioSource.Stop": ":Stop()",
     "AudioSource.Pause": ":Pause()",
+    "AudioSource.PlayOneShot": ":Play()",
     "AudioSource.clip": ".SoundId",
     "AudioSource.volume": ".Volume",
+    "AudioSource.pitch": ".PlaybackSpeed",
     "AudioSource.loop": ".Looped",
     "AudioSource.isPlaying": ".IsPlaying",
 
@@ -294,6 +296,7 @@ TYPE_MAP: dict[str, str] = {
     "Rigidbody": "BasePart",
     "Collider": "BasePart",
     "AudioSource": "Sound",
+    "AudioClip": "Sound",
     "Camera": "Camera",
     "Animator": "AnimationController",
     "MonoBehaviour": "-- (script module)",

@@ -138,10 +138,12 @@ def convert_audio_components(
 
         volume = float(props.get("m_Volume", 1.0))
         pitch = float(props.get("m_Pitch", 1.0))
-        loop = bool(props.get("m_Loop", 0))
+        # Unity YAML uses "Loop" (no m_ prefix) for AudioSource
+        loop = bool(props.get("Loop", props.get("m_Loop", 0)))
         play_on_awake = bool(props.get("m_PlayOnAwake", 1))
-        min_dist = float(props.get("m_MinDistance", 1.0))
-        max_dist = float(props.get("m_MaxDistance", 500.0))
+        # Unity YAML uses "MinDistance"/"MaxDistance" (no m_ prefix)
+        min_dist = float(props.get("MinDistance", props.get("m_MinDistance", 1.0)))
+        max_dist = float(props.get("MaxDistance", props.get("m_MaxDistance", 500.0)))
 
         part.sound_children.append((
             node_name + "_Sound",
@@ -465,12 +467,15 @@ def _is_object_ref(value: Any) -> bool:
     return bool(guid) and guid != "0" * 32
 
 
+_AUDIO_EXTENSIONS: set[str] = {".ogg", ".wav", ".mp3"}
+
+
 def _process_mono_properties(
     props: dict[str, Any],
     guid_index: guid_resolver.GuidIndex,
     result: dict[Path, dict[str, str]],
 ) -> None:
-    """Extract prefab references from a single MonoBehaviour's properties."""
+    """Extract prefab and audio asset references from a MonoBehaviour's properties."""
     script_ref = props.get("m_Script", {})
     if not isinstance(script_ref, dict):
         return
@@ -492,14 +497,17 @@ def _process_mono_properties(
         if not ref_path:
             continue
 
-        # Only wire prefab references (stored in ServerStorage)
-        if ref_path.suffix != ".prefab":
-            continue
-
-        asset_name = ref_path.stem
-        refs = result.setdefault(script_path, {})
-        if key not in refs:
-            refs[key] = asset_name
+        if ref_path.suffix == ".prefab":
+            # Prefab reference → ServerStorage:WaitForChild()
+            asset_name = ref_path.stem
+            refs = result.setdefault(script_path, {})
+            if key not in refs:
+                refs[key] = asset_name
+        elif ref_path.suffix in _AUDIO_EXTENSIONS:
+            # AudioClip reference → audio:<filename> (prefixed to distinguish)
+            refs = result.setdefault(script_path, {})
+            if key not in refs:
+                refs[key] = f"audio:{ref_path.name}"
 
 
 def extract_serialized_field_refs(

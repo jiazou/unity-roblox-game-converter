@@ -694,7 +694,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
             ui_translator.to_rbx_screen_gui("ConvertedUI", ui_result.elements)
         ]
 
-    # Write .rbxl
+    # Build parts from scene nodes
     parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
@@ -702,6 +702,36 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
     )
+
+    # Copy referenced audio files to <output_dir>/audio/ for the upload step
+    import shutil
+    audio_out = out_dir / "audio"
+    audio_copied = 0
+    # From AudioSource components (sound_children on parts)
+    for part in parts:
+        for sc in part.sound_children:
+            clip_path = sc[1]  # resolved file path from convert_audio_components
+            if clip_path and Path(clip_path).is_file():
+                audio_out.mkdir(parents=True, exist_ok=True)
+                dest = audio_out / Path(clip_path).name
+                if not dest.exists():
+                    shutil.copy2(clip_path, dest)
+                    audio_copied += 1
+    # From serialized AudioClip fields on MonoBehaviours
+    if asm_serialized_refs:
+        for _script_path, refs in asm_serialized_refs.items():
+            for _field, ref_value in refs.items():
+                if ref_value.startswith("audio:"):
+                    audio_filename = ref_value[len("audio:"):]
+                    # Find the source file in the Unity project
+                    matches = list(unity_path.rglob(audio_filename))
+                    if matches:
+                        audio_out.mkdir(parents=True, exist_ok=True)
+                        dest = audio_out / audio_filename
+                        if not dest.exists():
+                            shutil.copy2(matches[0], dest)
+                            audio_copied += 1
+
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
@@ -745,6 +775,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         "rbxl_size_mb": rbxl_size_mb,
         "parts_written": write_result.parts_written,
         "scripts_written": write_result.scripts_written,
+        "audio_files_staged": audio_copied,
         "warnings": write_result.warnings,
         "decimation": decimation_info,
         "ui_translation": ui_info,
@@ -762,8 +793,14 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
 @click.option("--roblox-api-key", default=config.ROBLOX_API_KEY, envvar="ROBLOX_API_KEY")
 @click.option("--universe-id", default=config.ROBLOX_UNIVERSE_ID, type=int)
 @click.option("--place-id", default=config.ROBLOX_PLACE_ID, type=int)
-def upload(output_dir: str, roblox_api_key: str, universe_id: int | None, place_id: int | None) -> None:
-    """Phase 5: Upload .rbxl to Roblox Cloud."""
+@click.option("--creator-id", default=config.ROBLOX_CREATOR_ID, type=int,
+              help="Roblox user or group ID that will own uploaded assets.")
+@click.option("--creator-type", default=config.ROBLOX_CREATOR_TYPE,
+              type=click.Choice(["User", "Group"]),
+              help="Whether creator-id is a User or Group.")
+def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
+           place_id: int | None, creator_id: int | None, creator_type: str) -> None:
+    """Phase 5: Upload assets and .rbxl to Roblox Cloud."""
     out_dir = Path(output_dir).resolve()
     state = _load_state(out_dir)
 
@@ -777,14 +814,20 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None, place_
         return
 
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
+    sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
+    audio_dir = out_dir / "audio" if (out_dir / "audio").is_dir() else None
 
     upload_result = call_with_retry(
         roblox_uploader.upload_to_roblox,
         rbxl_path=rbxl_path,
         textures_dir=textures_dir,
+        sprites_dir=sprites_dir,
+        audio_dir=audio_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
+        creator_id=creator_id,
+        creator_type=creator_type,
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,
@@ -794,6 +837,10 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None, place_
     state.setdefault("completed_phases", [])
     if "upload" not in state["completed_phases"]:
         state["completed_phases"].append("upload")
+    state["upload"] = {
+        "asset_ids": upload_result.asset_ids,
+        "rbxl_patched": upload_result.rbxl_patched,
+    }
     _save_state(out_dir, state)
 
     _emit({
@@ -803,6 +850,9 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None, place_
         "place_id": upload_result.place_id,
         "version_number": upload_result.version_number,
         "asset_ids": upload_result.asset_ids,
+        "sprites_uploaded": upload_result.sprites_uploaded,
+        "audio_uploaded": upload_result.audio_uploaded,
+        "rbxl_patched": upload_result.rbxl_patched,
         "errors": upload_result.errors,
         "warnings": upload_result.warnings,
     })
