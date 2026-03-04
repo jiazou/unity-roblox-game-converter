@@ -320,13 +320,14 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
     # ------------------------------------------------------------------
 
     for _rs_fid, rs_body in render_settings_docs:
-        result.render_settings = rs_body
+        # Merge all RenderSettings docs (some scenes may have multiple).
+        # Later entries override earlier ones for overlapping keys.
+        result.render_settings.update(rs_body)
         skybox_ref = rs_body.get("m_SkyboxMaterial", {})
         if isinstance(skybox_ref, dict):
             guid = _ref_guid(skybox_ref)
             if guid:
                 result.skybox_material_guid = guid
                 result.referenced_material_guids.add(guid)
-        break  # Only one RenderSettings per scene
 
     return result
