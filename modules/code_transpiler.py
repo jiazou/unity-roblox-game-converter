@@ -1519,22 +1519,34 @@ def _rule_based_transpile(
 
     # Strip return type annotations from methods (e.g., "int Foo(" → "local function Foo(")
     luau = re.sub(
-        r"\b(?:int|float|double|bool|string|void|var|Vector[23]|Color|GameObject|Transform|Quaternion|List<[^>]*>|IEnumerator|AudioClip|AudioSource)\s+(\w+)\s*\(",
+        r"\b(?:int|float|double|bool|string|void|var|Vector[23]|Color|Color32|GameObject|Transform|Quaternion|CFrame|"
+        r"List<[^>]*>|IEnumerator|IEnumerable<[^>]*>|Task|UniTask|AudioClip|AudioSource|"
+        r"Rigidbody|Collider|Animator|NavMeshAgent|CharacterController|"
+        r"Sprite|Texture2D|Material|Mesh|Camera|Canvas|Image|Button|Text|TextMeshProUGUI|TMP_Text|"
+        r"RaycastHit|Ray|Bounds|Rect|Action|Func<[^>]*>|UnityAction)\s+(\w+)\s*\(",
         r"local function \1(",
         luau,
     )
 
     # Strip type annotations from variable declarations (e.g., "List<int> items = " → "local items = ")
     luau = re.sub(
-        r"\b(?:var|List<[^>]*>|Dictionary<[^>]*>|int\[\]|float\[\]|string\[\]|bool\[\]|GameObject\[\]|Transform\[\]|Vector[23]\[\]|AudioClip\[\]|AudioClip|AudioSource)\s+(\w+)\s*=",
+        r"\b(?:var|List<[^>]*>|Dictionary<[^>]*>|HashSet<[^>]*>|Queue<[^>]*>|Stack<[^>]*>|"
+        r"int\[\]|float\[\]|string\[\]|bool\[\]|GameObject\[\]|Transform\[\]|Vector[23]\[\]|"
+        r"AudioClip\[\]|AudioClip|AudioSource|Sprite|Texture2D|Material|Mesh|"
+        r"Action<[^>]*>|Action|Func<[^>]*>|UnityAction|UnityEvent|"
+        r"NavMeshAgent|CharacterController|Rigidbody|Collider|Animator|"
+        r"Camera|Canvas|Image|Button|Text|TextMeshProUGUI|TMP_Text|TMP_InputField)\s+(\w+)\s*=",
         r"local \1 =",
         luau,
     )
 
-    # Strip standalone AudioClip/AudioSource field declarations without initializer
+    # Strip standalone field declarations without initializer
     # e.g. "public AudioClip coinSound;" → "local coinSound = nil"
     luau = re.sub(
-        r"\b(?:AudioClip|AudioSource)\s+(\w+)\s*;",
+        r"\b(?:AudioClip|AudioSource|Sprite|Texture2D|Material|Mesh|"
+        r"NavMeshAgent|CharacterController|Rigidbody|Collider|Animator|"
+        r"Camera|Canvas|Image|Button|Text|TextMeshProUGUI|TMP_Text|"
+        r"UnityEvent|Action|Func<[^>]*>)\s+(\w+)\s*;",
         r"local \1 = nil",
         luau,
     )
@@ -1602,6 +1614,72 @@ def _rule_based_transpile(
 
     # Convert if (condition) { to if condition then
     luau = re.sub(r"\bif\s*\(([^)]+)\)\s*\{", r"if \1 then", luau)
+
+    # Convert switch/case to if/elseif chains
+    luau = re.sub(r"\bswitch\s*\(([^)]+)\)\s*\{", r"-- switch on \1", luau)
+    luau = re.sub(r"\bcase\s+([^:]+):", r"if _switchVal == \1 then -- case", luau)
+    luau = re.sub(r"\bdefault\s*:", "else -- default", luau)
+    luau = re.sub(r"\bbreak\s*;?\s*$", "-- break", luau, flags=re.MULTILINE)
+
+    # Convert try/catch/finally to pcall pattern
+    luau = re.sub(r"\btry\s*\{", "local ok, err = pcall(function()", luau)
+    luau = re.sub(
+        r"\}\s*catch\s*\(\s*(?:\w+\s+)?(\w+)\s*\)\s*\{",
+        r"end)\nif not ok then\n\tlocal \1 = err",
+        luau,
+    )
+    luau = re.sub(r"\}\s*catch\s*\{", "end)\nif not ok then", luau)
+    luau = re.sub(r"\}\s*finally\s*\{", "end\n-- finally:", luau)
+
+    # Strip enum declarations → convert to Luau table
+    def _convert_enum(m: re.Match) -> str:
+        name = m.group(1)
+        body = m.group(2)
+        entries = []
+        for i, entry in enumerate(re.findall(r"(\w+)(?:\s*=\s*(\w+))?", body)):
+            val = entry[1] if entry[1] else str(i)
+            entries.append(f"\t{entry[0]} = {val},")
+        return f"local {name} = {{\n" + "\n".join(entries) + "\n}"
+
+    luau = re.sub(
+        r"\b(?:public\s+|private\s+|internal\s+)?enum\s+(\w+)\s*\{([^}]*)\}",
+        _convert_enum,
+        luau,
+    )
+
+    # Strip interface and struct declarations (no Luau equivalent)
+    luau = re.sub(
+        r"\b(?:public\s+|private\s+|internal\s+)?interface\s+\w+\s*(?::\s*[\w.,\s<>]+)?\s*\{[^}]*\}",
+        "-- interface stripped (no Luau equivalent)",
+        luau,
+    )
+    luau = re.sub(
+        r"\b(?:public\s+|private\s+|internal\s+)?struct\s+(\w+)\s*\{",
+        r"-- struct \1 (converted to table)",
+        luau,
+    )
+
+    # Convert C# properties (get/set) to simple fields
+    # Auto-property: int Foo { get; set; } → local Foo = nil
+    # (access modifiers already stripped by this point)
+    luau = re.sub(
+        r"\b\w+(?:<[^>]*>)?\s+(\w+)\s*\{\s*get\s*;\s*(?:private\s+)?set\s*;\s*\}",
+        r"local \1 = nil",
+        luau,
+    )
+
+    # Lambda expressions: (x) => expr → function(x) return expr end
+    luau = re.sub(
+        r"\(([^)]*)\)\s*=>\s*([^{;\n]+)",
+        r"function(\1) return \2 end",
+        luau,
+    )
+    # Lambda with single param: x => expr → function(x) return expr end
+    luau = re.sub(
+        r"\b(\w+)\s*=>\s*([^{;\n]+)",
+        r"function(\1) return \2 end",
+        luau,
+    )
 
     # Convert remaining closing braces to end (heuristic: standalone } on a line)
     luau = re.sub(r"^\s*\}\s*$", "end", luau, flags=re.MULTILINE)
@@ -1808,6 +1886,17 @@ def _ai_transpile(
         )
 
 
+def _is_editor_or_test_path(path_parts: tuple[str, ...]) -> bool:
+    """Check if a script path is in an Editor or Test directory.
+
+    Unity convention: any directory named "Editor" (at any level) contains
+    editor-only scripts that are not included in runtime builds. Similarly,
+    directories named "Tests" or "Test" contain test scripts.
+    """
+    _SKIP_DIRS = {"Editor", "Tests", "Test", "EditorTests", "TestFramework"}
+    return bool(_SKIP_DIRS.intersection(path_parts))
+
+
 def transpile_scripts(
     unity_project_path: str | Path,
     use_ai: bool = False,
@@ -1843,6 +1932,14 @@ def transpile_scripts(
     result = TranspilationResult()
 
     for cs_path in sorted(assets_dir.rglob("*.cs")):
+        # Skip editor-only and test scripts — they have no runtime equivalent
+        # in Roblox and would only produce noise. Unity convention: any script
+        # under an "Editor" folder (at any depth) is editor-only. Scripts in
+        # test assemblies are also skipped.
+        relative_parts = cs_path.relative_to(assets_dir).parts
+        if _is_editor_or_test_path(relative_parts):
+            continue
+
         csharp_source = cs_path.read_text(encoding="utf-8-sig", errors="replace")
         result.total += 1
 

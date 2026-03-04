@@ -73,6 +73,7 @@ class PrefabTemplate:
     raw_documents: list[dict] = field(default_factory=list)
     referenced_material_guids: set[str] = field(default_factory=set)
     referenced_mesh_guids: set[str] = field(default_factory=set)
+    is_multi_root: bool = False          # True when prefab had multiple root nodes
 
 
 @dataclass
@@ -212,9 +213,20 @@ def _parse_single_prefab(prefab_path: Path) -> PrefabTemplate:
             else:
                 roots.append(node)
 
-    if roots:
-        # Use the first root (typically the top-level prefab GameObject)
+    if len(roots) == 1:
         template.root = roots[0]
+    elif len(roots) > 1:
+        # Multi-root prefab: create a synthetic container node to hold all roots.
+        # This is common in procedurally-generated prefabs and prefabs with
+        # detached hierarchies (e.g. particle systems, UI overlays).
+        template.is_multi_root = True
+        container = PrefabNode(
+            name=template.name,
+            file_id="__synthetic_root__",
+            active=True,
+            children=roots,
+        )
+        template.root = container
 
     return template
 
