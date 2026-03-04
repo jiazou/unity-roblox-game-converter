@@ -350,9 +350,26 @@ class _LuauEmitter:
         if name in LIFECYCLE_MAP:
             return self._emit_lifecycle(name, body_node)
 
+        # Check if this is a coroutine (returns IEnumerator)
+        ret_node = node.child_by_field_name("type") or (
+            node.children[0] if node.children else None
+        )
+        ret_type = self._text(ret_node) if ret_node else ""
+        is_coroutine = ret_type == "IEnumerator"
+
         # Regular method
         params = self._emit_param_names(params_node)
         body = self._emit_block_body(body_node) if body_node else ""
+        if is_coroutine:
+            # Coroutine → wrap body in task.spawn
+            self.warnings.append(f"Coroutine '{name}' converted to task.spawn — verify timing")
+            return (
+                f"{self._ind()}local function {name}({params})\n"
+                f"{self._ind()}    task.spawn(function()\n"
+                f"{body}\n"
+                f"{self._ind()}    end)\n"
+                f"{self._ind()}end"
+            )
         return (
             f"{self._ind()}local function {name}({params})\n"
             f"{body}\n"
@@ -751,11 +768,46 @@ class _LuauEmitter:
         return f"nil --[[ new {type_text}({args}) ]]"
 
     def _emit_assignment_expression(self, node: Any) -> str:
-        left = self.emit(node.child_by_field_name("left"))
+        left_node = node.child_by_field_name("left")
         op_node = node.child_by_field_name("operator")
-        right = self.emit(node.child_by_field_name("right"))
+        right_node = node.child_by_field_name("right")
+        left = self.emit(left_node)
+        right = self.emit(right_node)
         op = self._text(op_node) if op_node else "="
+
+        # Event subscription: obj.Event += Handler → obj.Event:Connect(Handler)
+        if op == "+=" and self._looks_like_event_target(left_node):
+            return f"{left}:Connect({right})"
+        # Event unsubscription: obj.Event -= Handler → comment (no direct Roblox equiv)
+        if op == "-=" and self._looks_like_event_target(left_node):
+            return f"-- {left} -= {right} (TODO: Disconnect)"
+
         return f"{left} {op} {right}"
+
+    def _looks_like_event_target(self, node: Any) -> bool:
+        """Heuristic: is this a likely C# event (member access ending in
+        an event-like name such as onClick, OnClick, Collided, etc.)?"""
+        if node is None:
+            return False
+        text = self._text(node)
+        # Common Unity event patterns
+        _EVENT_SUFFIXES = (
+            "onClick", "OnClick", "onValueChanged", "OnValueChanged",
+            "onEndEdit", "OnEndEdit", "onSubmit", "OnSubmit",
+            "AddListener",
+        )
+        for suffix in _EVENT_SUFFIXES:
+            if text.endswith(suffix):
+                return True
+        # Pattern: SomeEvent += where right side is a lambda or method group
+        if node.type == "member_access_expression":
+            name_node = node.child_by_field_name("name")
+            if name_node:
+                name = self._text(name_node)
+                # Event names typically start with "On" or end with common suffixes
+                if name.startswith("On") or name.endswith("Event") or name.endswith("Changed"):
+                    return True
+        return False
 
     def _emit_binary_expression(self, node: Any) -> str:
         left_node = node.child_by_field_name("left")
@@ -861,9 +913,27 @@ class _LuauEmitter:
         return self._text(node)
 
     def _emit_interpolated_string_expression(self, node: Any) -> str:
-        # $"hello {x}" — convert to string.format or concatenation
-        # For simplicity, fall back to raw text (valid enough for review)
-        return self._text(node)
+        # $"hello {x}" → string.format("hello %s", tostring(x))
+        format_parts: list[str] = []
+        format_args: list[str] = []
+        for child in node.children:
+            if child.type == "interpolated_string_text":
+                # Literal text portion — escape any existing % for string.format
+                format_parts.append(self._text(child).replace("%", "%%"))
+            elif child.type == "interpolation":
+                # {expression} portion
+                expr_nodes = [c for c in child.children if c.is_named]
+                if expr_nodes:
+                    format_parts.append("%s")
+                    format_args.append(f"tostring({self.emit(expr_nodes[0])})")
+                else:
+                    format_parts.append("%s")
+                    format_args.append("nil")
+            # Skip $, ", { } tokens
+        format_str = "".join(format_parts)
+        if format_args:
+            return f'string.format("{format_str}", {", ".join(format_args)})'
+        return f'"{format_str}"'
 
     def _emit_character_literal(self, node: Any) -> str:
         return self._text(node)
@@ -942,6 +1012,30 @@ class _LuauEmitter:
     def _emit_continue_statement(self, _node: Any) -> str:
         return f"{self._ind()}continue"
 
+    def _emit_yield_statement(self, node: Any) -> str:
+        # yield return null → task.wait()
+        # yield return new WaitForSeconds(n) → task.wait(n)
+        # yield return expr → task.wait() -- expr
+        expr_nodes = [c for c in node.children if c.is_named]
+        if not expr_nodes:
+            self.services.add("RunService")
+            return f"{self._ind()}task.wait()"
+        expr_node = expr_nodes[0]
+        expr_text = self._text(expr_node)
+        if expr_text == "null":
+            return f"{self._ind()}task.wait()"
+        # new WaitForSeconds(n)
+        if expr_node.type == "object_creation_expression":
+            type_node = expr_node.child_by_field_name("type")
+            type_text = self._text(type_node) if type_node else ""
+            if type_text == "WaitForSeconds":
+                args_node = expr_node.child_by_field_name("arguments")
+                args = self._emit_args(args_node) if args_node else ""
+                return f"{self._ind()}task.wait({args})"
+            if type_text in ("WaitForEndOfFrame", "WaitForFixedUpdate"):
+                return f"{self._ind()}task.wait()"
+        return f"{self._ind()}task.wait() --[[ yield {expr_text} ]]"
+
     def _emit_throw_statement(self, node: Any) -> str:
         expr = next((c for c in node.children if c.is_named), None)
         if expr:
@@ -999,6 +1093,51 @@ class _LuauEmitter:
             f"{body_text}\n"
             f"{self._ind()}until not ({cond})"
         )
+
+    def _emit_lambda_expression(self, node: Any) -> str:
+        # (args) => expr  or  (args) => { body }
+        params_node = node.child_by_field_name("parameters") or next(
+            (c for c in node.children if c.type == "parameter_list"), None
+        )
+        body_node = node.child_by_field_name("body") or next(
+            (c for c in node.children if c.type in ("block", "expression_statement")), None
+        )
+        params = self._emit_param_names(params_node) if params_node else ""
+        # Single-parameter lambda without parens
+        if params_node is None:
+            for child in node.children:
+                if child.type == "identifier":
+                    params = self._text(child)
+                    break
+        if body_node and body_node.type == "block":
+            body = self._emit_block_body(body_node)
+            return (
+                f"function({params})\n"
+                f"{body}\n"
+                f"{self._ind()}end"
+            )
+        elif body_node:
+            expr = self.emit(body_node)
+            return f"function({params}) return {expr} end"
+        return f"function({params}) end"
+
+    def _emit_anonymous_method_expression(self, node: Any) -> str:
+        # delegate(args) { body } → function(args) ... end
+        params_node = next(
+            (c for c in node.children if c.type == "parameter_list"), None
+        )
+        body_node = next(
+            (c for c in node.children if c.type == "block"), None
+        )
+        params = self._emit_param_names(params_node) if params_node else ""
+        if body_node:
+            body = self._emit_block_body(body_node)
+            return (
+                f"function({params})\n"
+                f"{body}\n"
+                f"{self._ind()}end"
+            )
+        return f"function({params}) end"
 
     # -- helpers ----------------------------------------------------------
 
@@ -1492,6 +1631,63 @@ def _rule_based_transpile(
 
     # Convert .ToString() to tostring()
     luau = re.sub(r"(\w+)\.ToString\(\)", r"tostring(\1)", luau)
+
+    # Coroutine: yield return null → task.wait()
+    luau = re.sub(r"\byield\s+return\s+null\b", "task.wait()", luau)
+    # Coroutine: yield return new WaitForSeconds(n) → task.wait(n)
+    luau = re.sub(
+        r"\byield\s+return\s+new\s+WaitForSeconds\(([^)]+)\)",
+        r"task.wait(\1)",
+        luau,
+    )
+    # Coroutine: yield return new WaitForEndOfFrame/WaitForFixedUpdate() → task.wait()
+    luau = re.sub(
+        r"\byield\s+return\s+new\s+WaitFor(?:EndOfFrame|FixedUpdate)\(\)",
+        "task.wait()",
+        luau,
+    )
+
+    # Event subscription: obj.OnClick += handler → obj.OnClick:Connect(handler)
+    luau = re.sub(
+        r"(\w[\w.]*\.(?:On\w+|on\w+|\w+Event|\w+Changed))\s*\+=\s*([^;\n]+)",
+        r"\1:Connect(\2)",
+        luau,
+    )
+
+    # C# string interpolation: $"text {expr}" → string.format("text %s", tostring(expr))
+    def _convert_interpolated_string(m: re.Match) -> str:
+        content = m.group(1)
+        fmt_parts: list[str] = []
+        args: list[str] = []
+        i = 0
+        while i < len(content):
+            if content[i] == "{":
+                # Find matching }
+                depth = 1
+                j = i + 1
+                while j < len(content) and depth > 0:
+                    if content[j] == "{":
+                        depth += 1
+                    elif content[j] == "}":
+                        depth -= 1
+                    j += 1
+                expr = content[i + 1 : j - 1]
+                fmt_parts.append("%s")
+                args.append(f"tostring({expr})")
+                i = j
+            else:
+                # Escape existing % for string.format
+                if content[i] == "%":
+                    fmt_parts.append("%%")
+                else:
+                    fmt_parts.append(content[i])
+                i += 1
+        fmt_str = "".join(fmt_parts)
+        if args:
+            return f'string.format("{fmt_str}", {", ".join(args)})'
+        return f'"{fmt_str}"'
+
+    luau = re.sub(r'\$"([^"]*)"', _convert_interpolated_string, luau)
 
     # Convert Mathf calls to math calls
     luau = re.sub(r"\bMathf\.Abs\b", "math.abs", luau)

@@ -8,20 +8,22 @@ silent error swallowing, hardcoded tables, and brittle structural assumptions.
 
 ## Tier 1: HIGH — Structurally Fragile
 
-### P0: Unity YAML Parsing
+### ~~P0: Unity YAML Parsing~~
+
+**Status**: RESOLVED (2026-03-04)
 
 **Files**: `modules/unity_yaml_utils.py`, `modules/scene_parser.py`, `modules/prefab_parser.py`
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| 1 | `UNITY_DOC_SEPARATOR` regex `(\d+)` rejects negative fileIDs | `unity_yaml_utils.py:30` | Silently drops all Prefab Variant documents (standard since Unity 2018.3) |
-| 2 | No awareness of `stripped` suffix on document separators | `unity_yaml_utils.py:30` | Stripped objects parsed as full → wrong positions, missing names, incorrect defaults |
-| 3 | Single `yaml.YAMLError` drops entire file — all-or-nothing | `unity_yaml_utils.py:115-118` | One malformed component in a 500-object scene → empty result, no warning |
-| 4 | Positional doc-header pairing via counter | `unity_yaml_utils.py:106-134` | If `yaml.safe_load_all` produces unexpected docs, all subsequent nodes get wrong IDs |
-| 5 | Prefab parser component allowlist (4 types) vs scene parser (15 types) | `prefab_parser.py:118-119` | Colliders, rigidbodies, lights, cameras, particles, animators silently lost from prefabs |
-| 6 | `doc_body()` returns first dict value found | `unity_yaml_utils.py:138-146` | Custom MonoBehaviour structures with multiple dict-valued top-level keys: wrong data |
-| 7 | Header regex assumes exactly 2-line `%YAML\n%TAG` format | `unity_yaml_utils.py:29` | Extra `%TAG` lines or whitespace → header not stripped → parse failure |
-| 8 | `m_Materials: null` (YAML None) causes `TypeError: NoneType not iterable` | `scene_parser.py:310` | MeshRenderer with empty materials field crashes node processing |
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | ~~`UNITY_DOC_SEPARATOR` regex `(\d+)` rejects negative fileIDs~~ | RESOLVED — regex now uses `(-?\d+)` for both classID and fileID |
+| 2 | ~~No awareness of `stripped` suffix on document separators~~ | RESOLVED — `stripped` suffix detected and documents filtered during assembly |
+| 3 | ~~Single `yaml.YAMLError` drops entire file — all-or-nothing~~ | RESOLVED — per-document `yaml.safe_load()` with individual error recovery |
+| 4 | ~~Positional doc-header pairing via counter~~ | RESOLVED — manual `_split_yaml_documents()` replaces `safe_load_all`; pre-scanned separators match 1:1 |
+| 5 | ~~Prefab parser component allowlist (4 types) vs scene parser (15 types)~~ | RESOLVED — shared `KNOWN_COMPONENT_CIDS` frozenset (15 types) imported by both parsers |
+| 6 | `doc_body()` returns first dict value found | Accepted risk — Unity documents always have exactly one top-level class-name key |
+| 7 | Header regex assumes exactly 2-line `%YAML\n%TAG` format | Accepted risk — standard Unity files follow exact format; regex is intentionally conservative |
+| 8 | ~~`m_Materials: null` (YAML None) causes `TypeError: NoneType not iterable`~~ | RESOLVED — `or []` guard handles both missing keys and explicit None values |
 
 **Skill**: `harden-unity-yaml-parsing`
 
