@@ -404,6 +404,15 @@ class TestSerializedFieldRefs:
 # ── AST-driven transpiler improvement tests ────────────────────────────
 
 
+_has_tree_sitter = False
+try:
+    import tree_sitter_c_sharp  # noqa: F401
+    _has_tree_sitter = True
+except ImportError:
+    pass
+
+
+@pytest.mark.skipif(not _has_tree_sitter, reason="tree-sitter-c-sharp not installed")
 class TestASTTranspilerImprovements:
     """Tests for behaviours the AST emitter handles better than regex.
 
