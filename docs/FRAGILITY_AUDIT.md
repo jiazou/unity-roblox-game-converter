@@ -27,77 +27,79 @@ silent error swallowing, hardcoded tables, and brittle structural assumptions.
 
 ---
 
-### P1a: Asset Extraction Crash-on-Error
+### ~~P1a: Asset Extraction Crash-on-Error~~
+
+**Status**: RESOLVED (2026-03-04)
 
 **File**: `modules/asset_extractor.py`
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| 1 | Zero try/except in file-walk loop | `asset_extractor.py:93-114` | One broken symlink, permission error, or race condition crashes entire extraction |
-| 2 | `fpath.stat()` and `_sha256_of()` both can raise `OSError` | `asset_extractor.py:108-109` | Unhandled exception kills the manifest build |
-
-**Skill**: `harden-asset-extraction`
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | ~~Zero try/except in file-walk loop~~ | RESOLVED — per-file try/except OSError |
+| 2 | ~~`fpath.stat()` and `_sha256_of()` can raise OSError~~ | RESOLVED — wrapped with warnings |
 
 ---
 
-### P1b: RBXL Asset ID Patching via str.replace
+### ~~P1b: RBXL Asset ID Patching via str.replace~~
+
+**Status**: RESOLVED (2026-03-04)
 
 **File**: `modules/roblox_uploader.py`
 
-| # | Issue | Location | Impact |
+| # | Issue | Location | Status |
 |---|-------|----------|--------|
-| 1 | `content.replace(f"rbxassetid://{local_name}", rbx_url)` on raw XML | `roblox_uploader.py:311-321` | Replaces ALL occurrences — including inside Luau ProtectedString source blocks |
-| 2 | `re.IGNORECASE` fallback regex compounds the problem | `roblox_uploader.py:317` | Case-insensitive match can hit Luau variable names matching asset filenames |
-| 3 | HTTP error codes lost — `urllib.error` imported but caught as generic `Exception` | `roblox_uploader.py:389-449` | 401/403/429 errors not distinguishable from network failures |
-
-**Skill**: `fix-rbxl-asset-patching`
+| 1 | ~~`content.replace()` on raw XML~~ | `roblox_uploader.py` | RESOLVED — XML-aware ElementTree patching |
+| 2 | ~~`re.IGNORECASE` fallback regex~~ | `roblox_uploader.py` | RESOLVED — only patches `<Content>`/`<url>` elements |
+| 3 | ~~HTTP error codes lost~~ | `roblox_uploader.py` | RESOLVED — `_describe_upload_error()` extracts HTTP status codes |
 
 ---
 
 ## Tier 2: MEDIUM — Silent Data Loss / Incomplete Coverage
 
-### P2a: Code Validator False Positives
+### ~~P2a: Code Validator False Positives~~
+
+**Status**: RESOLVED (2026-03-04)
 
 **File**: `modules/code_validator.py`
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| 1 | Comment/string stripper doesn't handle Luau long strings `[=[...]=]` | `code_validator.py:68-77` | Long strings containing `function`/`if`/`{` cause false block-balance errors |
-| 2 | `--` comment stripping runs before `--[[` block comment removal | `code_validator.py:68-77` | `--[[ function foo() ]]` → partial content survives stripping |
-
-**Skill**: `fix-luau-validator-stripping`
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | ~~Long strings `[=[...]=]` not handled~~ | RESOLVED — level-N long string support |
+| 2 | ~~Comment stripping order wrong~~ | RESOLVED — block comments stripped first |
 
 ---
 
-### P2b: Material Mapper Coverage Gaps
+### ~~P2b: Material Mapper Coverage Gaps~~
+
+**Status**: RESOLVED (2026-03-04)
 
 **File**: `modules/material_mapper.py`
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| 1 | `_BUILTIN_SHADERS` missing UI/Default, Unlit/*, Mobile/*, Transparent/* | `material_mapper.py:136-147` | Common shaders fall through to heuristic, may be misclassified |
-| 2 | YAML tag stripping via regex (same fragile pattern as unity_yaml_utils) | `material_mapper.py:321-326` | Multi-`%TAG` or reformatted headers cause parse failure |
-| 3 | Pillow missing → ALL texture processing silently skipped | `material_mapper.py:1149-1153` | No warning; downstream references dangling texture filenames |
-| 4 | Blanket `except Exception: continue` in texture loop, no logging | `material_mapper.py:1504-1506` | Corrupt texture or OOM silently swallowed, texture never generated |
-| 5 | Binary specular→metallic threshold (0 or 1, no gradient) | `material_mapper.py:813-843` | All semi-metallic materials collapse to fully metallic or non-metallic |
-| 6 | Legacy `_Shininess` clamped to [0,1] — wrong for pre-Unity5 range 0-128 | `material_mapper.py:598-601` | All high-shininess materials become fully smooth |
-| 7 | Project-specific custom shader patterns (Curved*, UnlitBlinking) | `material_mapper.py:168-175` | Useless for any other project |
-| 8 | Substring-based shader property detection (`"_Color" in full_source`) | `material_mapper.py:245-250` | Matches in comments/variable names; misses unconventional aliases |
-
-**Skill**: `review-material-mapper-coverage`
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | ~~Missing built-in shaders~~ | RESOLVED — added 10 shaders |
+| 2 | ~~YAML tag stripping regex~~ | RESOLVED — multiline-aware regex |
+| 3 | ~~Pillow missing silently skipped~~ | RESOLVED — warns when Pillow missing |
+| 4 | ~~Blanket except, no logging~~ | RESOLVED — per-texture error logging |
+| 5 | ~~Binary specular→metallic threshold~~ | RESOLVED — continuous mapping |
+| 6 | ~~Legacy _Shininess clamped to [0,1]~~ | RESOLVED — normalizes 0-128 range |
+| 7 | ~~Project-specific shader patterns~~ | RESOLVED — data-driven lookup |
+| 8 | Substring-based shader property detection | Accepted risk — conservative fallback for short sources mitigates |
 
 ---
 
-### P2c: GUID Resolver
+### ~~P2c: GUID Resolver~~
+
+**Status**: RESOLVED (2026-03-04)
 
 **File**: `modules/guid_resolver.py`
 
-| # | Issue | Location | Impact |
-|---|-------|----------|--------|
-| 1 | `_extract_parent_guid` regex `[^}]*` fails on multi-line serialized refs | `guid_resolver.py:211` | Prefab variant chain resolution silently stops early |
-| 2 | Only `.prefab`/`.unity` scanned for parent refs; `.asset` ignored | `guid_resolver.py:204` | ScriptableObject prefab references invisible |
-| 3 | No `Library/PackageCache/` awareness for UPM packages | `guid_resolver.py:251-255` | All UPM package asset references resolve to None |
-| 4 | Dead `import yaml` — imported but never used | `guid_resolver.py:31` | Code smell; suggests intended YAML parsing was never implemented |
+| # | Issue | Status |
+|---|-------|--------|
+| 1 | ~~`_extract_parent_guid` regex fails on multi-line refs~~ | RESOLVED — added block-style YAML pattern |
+| 2 | ~~Only `.prefab`/`.unity` scanned; `.asset` ignored~~ | RESOLVED — `.asset` files now scanned |
+| 3 | ~~No `Library/PackageCache/` awareness~~ | RESOLVED — UPM cache dir now scanned |
+| 4 | ~~Dead `import yaml`~~ | RESOLVED — removed |
 
 ---
 
@@ -131,9 +133,9 @@ Three different `_EXT_TO_KIND` / `SUPPORTED_ASSET_EXTENSIONS` maps with differen
 |--------|-------|----------|
 | `ui_translator.py:221-222` | Hardcoded partial GUID prefix for Image component detection | MEDIUM |
 | `ui_translator.py:122-127` | 4-entry font map, no fallback warning | MEDIUM |
-| `mesh_decimator.py:108-113` | OBJ face counter counts `f` lines naively (n-gons undercount) | MEDIUM |
-| `mesh_decimator.py:254` | Decimation failure doesn't copy original mesh as fallback | MEDIUM |
-| `scriptable_object_converter.py:139` | Silent `yaml.YAMLError` swallowing, no file name logged | HIGH |
+| ~~`mesh_decimator.py:108-113`~~ | ~~OBJ face counter counts `f` lines naively (n-gons undercount)~~ | ~~RESOLVED~~ |
+| ~~`mesh_decimator.py:254`~~ | ~~Decimation failure doesn't copy original mesh as fallback~~ | ~~RESOLVED~~ |
+| ~~`scriptable_object_converter.py:139`~~ | ~~Silent `yaml.YAMLError` swallowing, no file name logged~~ | ~~RESOLVED~~ |
 | `scriptable_object_converter.py:110-111` | Unconditional `m_` prefix stripping on all nested dict keys | MEDIUM |
 | `rbxl_writer.py:549-557` | Positional tuple unpacking for light/sound/particle (no named struct) | MEDIUM |
 

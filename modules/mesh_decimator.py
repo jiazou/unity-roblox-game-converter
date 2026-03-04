@@ -254,10 +254,21 @@ def decimate_meshes(
                 f"({stats.faces} faces, Roblox limit is {roblox_max_faces})."
             )
         except Exception as exc:  # noqa: BLE001
-            entry.skipped = True
-            entry.error = str(exc)
-            result.skipped += 1
-            result.warnings.append(f"Decimation failed for {mesh_path.name}: {exc}")
+            # Decimation failed — copy original as fallback so downstream
+            # pipeline stages still have a mesh to work with.
+            try:
+                shutil.copy2(mesh_path, entry.output_path)
+                entry.was_copied = True
+                entry.final_faces = stats.faces
+                entry.reduction_ratio = 1.0
+            except OSError:
+                entry.skipped = True
+                entry.error = str(exc)
+                result.skipped += 1
+            result.warnings.append(
+                f"Decimation failed for {mesh_path.name}: {exc}. "
+                f"Original mesh copied as fallback."
+            )
 
         result.entries.append(entry)
 

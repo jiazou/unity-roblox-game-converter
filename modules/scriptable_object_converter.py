@@ -32,12 +32,15 @@ No other module is imported here.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 # Unity YAML document headers
@@ -135,7 +138,8 @@ def convert_asset_file(asset_path: Path) -> ConvertedAsset | None:
 
     try:
         docs = list(yaml.safe_load_all(cleaned))
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        logger.warning("Failed to parse YAML in %s: %s", asset_path.name, exc)
         return None
 
     # Find the MonoBehaviour document (ScriptableObjects serialize as MonoBehaviour)

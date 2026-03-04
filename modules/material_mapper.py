@@ -608,9 +608,13 @@ def _parse_material(
             parsed.smoothness_source = 0  # MaskMap A, treated like metallic alpha
 
         # Legacy shininess → smoothness approximation
+        # Pre-Unity5 legacy shaders use 0-128 range; post-Unity5 uses 0-1.
+        # Normalise to [0,1] before the sqrt perceptual mapping.
         if shader.category == "legacy_specular" and "_Shininess" in floats:
             shininess = floats["_Shininess"]
-            parsed.smoothness_value = math.sqrt(max(0, min(1, shininess)))
+            if shininess > 1.0:
+                shininess = shininess / 128.0
+            parsed.smoothness_value = math.sqrt(max(0.0, min(1.0, shininess)))
 
         # Occlusion (non-HDRP; HDRP AO was already set above from MaskMap G)
         if shader.category != "hdrp_lit":
