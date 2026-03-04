@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-03-03T15:15:26.694596+00:00",
+  "generated_at": "2026-03-04T03:35:22.746967+00:00",
   "unity_project_path": "/home/user/trash-dash",
   "output_dir": "/home/user/trash-dash-roblox-build",
-  "duration_seconds": 34.69879463299958,
+  "duration_seconds": 33.70653001599999,
   "success": true,
   "errors": [],
   "warnings": [],
@@ -108,7 +108,7 @@
   },
   "output": {
     "rbxl_path": "/home/user/trash-dash-roblox-build/converted_place.rbxl",
-    "parts_written": 420,
+    "parts_written": 61,
     "scripts_in_place": 120,
     "report_path": "/home/user/trash-dash-roblox-build/conversion_report.json",
     "packages": {
