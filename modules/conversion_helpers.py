@@ -852,6 +852,35 @@ def _detect_unlit_game(
     return unlit_count / total > 0.7
 
 
+def _is_ui_subtree(node: scene_parser.SceneNode) -> bool:
+    """Return True if the node is a UI root (Canvas) or a container whose
+    children are predominantly RectTransform-based UI elements."""
+    comp_types = {c.component_type for c in node.components}
+    if "Canvas" in comp_types:
+        return True
+    if node.children:
+        rect_count = sum(
+            1 for child in node.children
+            if any(c.component_type == "RectTransform" for c in child.components)
+        )
+        if rect_count > len(node.children) * 0.5:
+            return True
+    return False
+
+
+_SYSTEM_COMPONENT_TYPES: set[str] = {"Camera", "Light"}
+
+
+def _is_system_node(node: scene_parser.SceneNode) -> bool:
+    """Return True if the node is a Unity system object with no visual output."""
+    comp_types = {c.component_type for c in node.components}
+    if comp_types & _SYSTEM_COMPONENT_TYPES:
+        return True
+    if node.name == "EventSystem":
+        return True
+    return False
+
+
 def scene_nodes_to_parts(
     parsed_scenes: list[scene_parser.ParsedScene],
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None = None,
@@ -867,6 +896,10 @@ def scene_nodes_to_parts(
 ]:
     """Convert parsed Unity scene nodes into RbxPartEntry objects.
 
+    UI subtrees (Canvas/RectTransform hierarchies) and system nodes
+    (Camera, Light, EventSystem) are filtered out — they are handled
+    separately by ui_translator and lighting/camera extraction.
+
     Returns:
         Tuple of (parts, lighting_config, camera_config, skybox_config).
     """
@@ -874,6 +907,8 @@ def scene_nodes_to_parts(
     directional_lights: list[dict] = []
     for parsed in parsed_scenes:
         for node in parsed.roots:
+            if _is_ui_subtree(node) or _is_system_node(node):
+                continue
             parts.append(node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
                 mesh_path_remap, directional_lights,
