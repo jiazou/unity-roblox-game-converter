@@ -295,6 +295,8 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bUpdate\s*\(\s*\)"), "game:GetService('RunService').Heartbeat:Connect(function()"),
     # this. → self.
     (re.compile(r"\bthis\."), "self."),
+    # SetActive → Visible assignment (handles any variable, e.g. tutorialBlocker.SetActive(false))
+    (re.compile(r"(\w[\w.]*)\.SetActive\(([^)]*)\)"), r"\1.Visible = \2"),
 ]
 
 

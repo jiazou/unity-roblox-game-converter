@@ -79,6 +79,25 @@ class TestRuleBasedTranspilePatterns:
         luau, _, _ = _rule_based_transpile("void Update()")
         assert "Heartbeat" in luau
 
+    def test_set_active_simple(self) -> None:
+        luau, _, _ = _rule_based_transpile("tutorialBlocker.SetActive(false)")
+        assert "tutorialBlocker.Visible = false" in luau
+        assert "SetActive" not in luau
+
+    def test_set_active_with_expression(self) -> None:
+        luau, _, _ = _rule_based_transpile(
+            "tutorialBlocker.SetActive(not PlayerData.instance.tutorialDone)"
+        )
+        assert "tutorialBlocker.Visible = not PlayerData.instance.tutorialDone" in luau
+
+    def test_set_active_on_gameobject(self) -> None:
+        luau, _, _ = _rule_based_transpile("gameObject.SetActive(true)")
+        assert "gameObject.Visible = true" in luau
+
+    def test_set_active_on_dotted_path(self) -> None:
+        luau, _, _ = _rule_based_transpile("foo.gameObject.SetActive(true)")
+        assert "foo.gameObject.Visible = true" in luau
+
 
 class TestRuleBasedConfidence:
     """Test confidence scoring logic."""
