@@ -365,6 +365,9 @@ def translate_ui_hierarchy(
             if bg_props:
                 elem.background_color = bg_props.get("background_color", (1.0, 1.0, 1.0))
                 elem.background_transparency = bg_props.get("background_transparency", 0.0)
+            else:
+                # No Image component → no visual background in Unity → transparent
+                elem.background_transparency = 1.0
 
         result.converted += 1
         result.warnings.extend(elem.warnings)

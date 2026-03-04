@@ -731,12 +731,86 @@ def resolve_prefab_instances(
 # Mesh bounding box extraction
 # ---------------------------------------------------------------------------
 
+def _get_fbx_bounds(filepath: str | Path) -> tuple[float, float, float] | None:
+    """Extract bounding box from a binary FBX file by parsing vertex arrays.
+
+    FBX stores vertices in centimeters.  We apply a 0.01 scale factor to
+    convert to Unity metres (matching Unity's default FBX import behaviour
+    with ``useFileScale=1``).
+    """
+    import struct
+    import zlib
+
+    try:
+        with open(filepath, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+
+    if not data.startswith(b"Kaydara FBX Binary"):
+        return None
+
+    min_xyz = [float("inf")] * 3
+    max_xyz = [float("-inf")] * 3
+    found = False
+    idx = 0
+
+    while True:
+        idx = data.find(b"Vertices", idx)
+        if idx < 0:
+            break
+        search_start = idx + 8
+        for offset in range(search_start, min(search_start + 100, len(data))):
+            if data[offset : offset + 1] == b"d":  # double array
+                arr_len = struct.unpack_from("<I", data, offset + 1)[0]
+                encoding = struct.unpack_from("<I", data, offset + 5)[0]
+                comp_len = struct.unpack_from("<I", data, offset + 9)[0]
+                if arr_len < 3 or arr_len % 3 != 0:
+                    break
+                if encoding == 0:
+                    raw = data[offset + 13 :]
+                elif encoding == 1:
+                    try:
+                        raw = zlib.decompress(data[offset + 13 : offset + 13 + comp_len])
+                    except zlib.error:
+                        break
+                else:
+                    break
+                for i in range(0, arr_len, 3):
+                    x, y, z = struct.unpack_from("<ddd", raw, i * 8)
+                    min_xyz[0] = min(min_xyz[0], x)
+                    min_xyz[1] = min(min_xyz[1], y)
+                    min_xyz[2] = min(min_xyz[2], z)
+                    max_xyz[0] = max(max_xyz[0], x)
+                    max_xyz[1] = max(max_xyz[1], y)
+                    max_xyz[2] = max(max_xyz[2], z)
+                found = True
+                break
+        idx += 8
+
+    if not found:
+        return None
+
+    # FBX centimetres → Unity metres
+    scale = 0.01
+    return (
+        (max_xyz[0] - min_xyz[0]) * scale,
+        (max_xyz[1] - min_xyz[1]) * scale,
+        (max_xyz[2] - min_xyz[2]) * scale,
+    )
+
+
 def _get_mesh_bounds(mesh_path: str | Path) -> tuple[float, float, float] | None:
     """Read a mesh file and return its bounding box size (x, y, z).
 
-    Uses trimesh to parse FBX/OBJ/DAE files. Returns None if trimesh is not
-    available or the file can't be parsed.
+    Uses trimesh for OBJ/DAE/PLY and a binary parser for FBX files.
     """
+    mesh_path = Path(mesh_path)
+
+    # Binary FBX parser (trimesh does not support FBX)
+    if mesh_path.suffix.lower() == ".fbx":
+        return _get_fbx_bounds(mesh_path)
+
     try:
         import trimesh
         mesh = trimesh.load(str(mesh_path), force="mesh")
