@@ -62,6 +62,8 @@ class RobloxUIElement:
     background_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
     background_transparency: float = 0.0
 
+    visible: bool = True
+
     children: list["RobloxUIElement"] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -389,6 +391,9 @@ def translate_ui_hierarchy(
                 # No Image component → no visual background in Unity → transparent
                 elem.background_transparency = 1.0
 
+        # Preserve Unity GameObject active state
+        elem.visible = getattr(node, "active", True)
+
         result.converted += 1
         result.warnings.extend(elem.warnings)
 
@@ -441,6 +446,7 @@ def to_rbx_ui_element(elem: RobloxUIElement) -> Any:
         image=elem.image,
         image_color=elem.image_color,
         image_transparency=elem.image_transparency,
+        visible=elem.visible,
         children=[to_rbx_ui_element(c) for c in elem.children],
     )
     return rbx
