@@ -35,17 +35,17 @@ API_CALL_MAP: dict[str, str] = {
     "Instantiate": ".Clone",
     "Destroy": ".Destroy",
     "DestroyImmediate": ":Destroy()",
-    "DontDestroyOnLoad": "-- DontDestroyOnLoad: use ReplicatedStorage parenting",
+    "DontDestroyOnLoad": "-- DontDestroyOnLoad: parent to ReplicatedStorage to persist across places",
 
     # --- GameObject ---
     # Note: SetActive is handled by a regex rule in code_transpiler.py
     # that maps <var>.SetActive(<arg>) → <var>.Visible = <arg>
     "gameObject.name": ".Name",
     "gameObject.tag": ":GetAttribute('Tag')",
-    "gameObject.layer": "-- layer: use CollisionGroups",
+    "gameObject.layer": "CollisionGroup",  # set via PhysicsService:SetPartCollisionGroup()
     "CompareTag": ":GetAttribute('Tag') ==",
     "GameObject.Find": "workspace:FindFirstChild",
-    "GameObject.FindWithTag": "-- FindWithTag: use CollectionService:GetTagged",
+    "GameObject.FindWithTag": "CollectionService:GetTagged",
     "GameObject.FindGameObjectsWithTag": "CollectionService:GetTagged",
 
     # --- Transform ---
@@ -75,16 +75,16 @@ API_CALL_MAP: dict[str, str] = {
     "GetComponentInParent": ":FindFirstAncestorOfClass",
     "GetComponents": ":GetChildren",
     "GetComponentsInChildren": ":GetDescendants",
-    "AddComponent": "-- AddComponent: create Instance.new() and parent it",
+    "AddComponent": "Instance.new",  # parent result to self
 
     # --- Time ---
     "Time.time": "workspace:GetServerTimeNow()",
     "Time.deltaTime": "dt",  # from Heartbeat callback parameter
     "Time.fixedDeltaTime": "dt",
-    "Time.timeScale": "-- timeScale: no direct Roblox equivalent",
+    "Time.timeScale": "workspace:SetAttribute('TimeScale', 1)",  # custom attribute pattern
     "Time.unscaledDeltaTime": "dt",
     "Time.realtimeSinceStartup": "os.clock()",
-    "Time.frameCount": "-- frameCount: no direct equivalent",
+    "Time.frameCount": "-- frameCount: no direct Roblox equivalent",
 
     # --- Input ---
     "Input.GetKey": "UserInputService:IsKeyDown",
@@ -92,7 +92,7 @@ API_CALL_MAP: dict[str, str] = {
     "Input.GetKeyUp": "UserInputService.InputEnded",
     "Input.GetMouseButton": "UserInputService:IsMouseButtonPressed",
     "Input.GetMouseButtonDown": "UserInputService.InputBegan",
-    "Input.GetAxis": "-- GetAxis: use UserInputService or ContextActionService",
+    "Input.GetAxis": "UserInputService:GetGamepadState(Enum.UserInputType.Gamepad1)",  # approximate; remap per axis
     "Input.mousePosition": "UserInputService:GetMouseLocation()",
     "Input.GetTouch": "UserInputService.TouchStarted",
 
@@ -104,7 +104,7 @@ API_CALL_MAP: dict[str, str] = {
     "Mathf.Clamp01": "math.clamp",  # clamp(x, 0, 1)
     "Mathf.Floor": "math.floor",
     "Mathf.FloorToInt": "math.floor",
-    "Mathf.Lerp": "-- Mathf.Lerp: use a + (b - a) * t",
+    "Mathf.Lerp": "math.lerp",  # Luau-native since 2023; fallback: a + (b - a) * t
     "Mathf.Max": "math.max",
     "Mathf.Min": "math.min",
     "Mathf.Pow": "math.pow",
@@ -123,9 +123,9 @@ API_CALL_MAP: dict[str, str] = {
     "Mathf.Infinity": "math.huge",
     "Mathf.Deg2Rad": "math.rad(1)",
     "Mathf.Rad2Deg": "math.deg(1)",
-    "Mathf.MoveTowards": "-- MoveTowards: manual impl a + sign(b-a) * min(abs(b-a), maxDelta)",
-    "Mathf.SmoothDamp": "-- SmoothDamp: manual implementation needed",
-    "Mathf.PingPong": "-- PingPong: manual implementation needed",
+    "Mathf.MoveTowards": "math.clamp",  # MoveTowards(a, b, d) ≈ clamp(a + sign(b-a)*d, min(a,b), max(a,b))
+    "Mathf.SmoothDamp": "TweenService:Create",  # approximate: use TweenService for smooth interpolation
+    "Mathf.PingPong": "math.abs",  # PingPong(t, len) ≈ len - abs(t % (2*len) - len)
     "Mathf.PerlinNoise": "math.noise",
 
     # --- Vector3 ---
@@ -142,9 +142,9 @@ API_CALL_MAP: dict[str, str] = {
     "Vector3.Normalize": ".Unit",
     "Vector3.Cross": ":Cross",
     "Vector3.Dot": ":Dot",
-    "Vector3.Angle": "-- Vector3.Angle: math.acos(a.Unit:Dot(b.Unit))",
-    "Vector3.MoveTowards": "-- MoveTowards: manual implementation",
-    "Vector3.ClampMagnitude": "-- ClampMagnitude: v.Unit * math.min(v.Magnitude, max)",
+    "Vector3.Angle": "math.acos",  # Vector3.Angle(a,b) = math.acos(a.Unit:Dot(b.Unit))
+    "Vector3.MoveTowards": ":Lerp",  # approximate: a:Lerp(b, math.min(1, maxDelta / (b-a).Magnitude))
+    "Vector3.ClampMagnitude": ".Unit",  # ClampMagnitude(v, max) = v.Unit * math.min(v.Magnitude, max)
     "new Vector3": "Vector3.new",
 
     # --- Vector2 ---
@@ -181,7 +181,7 @@ API_CALL_MAP: dict[str, str] = {
     "rigidbody.AddForce": ":ApplyImpulse",
     "rigidbody.AddTorque": ":ApplyAngularImpulse",
     "rigidbody.isKinematic": ".Anchored",
-    "rigidbody.useGravity": "-- useGravity: no per-object gravity toggle",
+    "rigidbody.useGravity": "workspace.Gravity",  # set to 0 to disable; no per-object toggle
     "rigidbody.MovePosition": ".CFrame",
 
     # --- Collider events ---
@@ -193,15 +193,15 @@ API_CALL_MAP: dict[str, str] = {
     # --- Coroutines ---
     "StartCoroutine": "task.spawn",
     "StopCoroutine": "task.cancel",
-    "StopAllCoroutines": "-- StopAllCoroutines: cancel tracked tasks",
+    "StopAllCoroutines": "task.cancel",  # must track task handles to cancel all
     "yield return null": "task.wait()",
     "yield return new WaitForSeconds": "task.wait",
     "yield return new WaitForEndOfFrame": "task.wait()",
     "yield return new WaitForFixedUpdate": "task.wait()",
 
     # --- Scene management ---
-    "SceneManager.LoadScene": "-- LoadScene: use TeleportService or place switching",
-    "SceneManager.GetActiveScene": "-- GetActiveScene: no direct equivalent",
+    "SceneManager.LoadScene": "TeleportService:Teleport",  # teleport player to another place
+    "SceneManager.GetActiveScene": "game.PlaceId",  # current place identifier
 
     # --- Audio ---
     "AudioSource.Play": ":Play()",
@@ -215,11 +215,11 @@ API_CALL_MAP: dict[str, str] = {
     "AudioSource.isPlaying": ".IsPlaying",
 
     # --- Animation ---
-    "Animator.SetBool": "-- Animator: use Roblox AnimationController",
-    "Animator.SetFloat": "-- Animator: use Roblox AnimationController",
-    "Animator.SetTrigger": "-- Animator: use AnimationTrack:Play()",
-    "Animator.Play": "-- Animator: use AnimationTrack:Play()",
-    "Animation.Play": "-- Animation: use AnimationTrack:Play()",
+    "Animator.SetBool": ":SetAttribute",  # store animator params as attributes
+    "Animator.SetFloat": ":SetAttribute",  # store animator params as attributes
+    "Animator.SetTrigger": "AnimationTrack:Play()",
+    "Animator.Play": "AnimationTrack:Play()",
+    "Animation.Play": "AnimationTrack:Play()",
 
     # --- Camera ---
     "Camera.main": "workspace.CurrentCamera",
@@ -232,32 +232,33 @@ API_CALL_MAP: dict[str, str] = {
     "Text.text": ".Text",
     "Image.sprite": ".Image",
     "Button.onClick": ".Activated",
-    "RectTransform": "-- RectTransform: use UDim2 for positioning",
+    "RectTransform": "UDim2",  # Roblox uses UDim2 for UI positioning
 
-    # --- PlayerPrefs ---
-    "PlayerPrefs.SetInt": "-- PlayerPrefs: use DataStoreService",
-    "PlayerPrefs.GetInt": "-- PlayerPrefs: use DataStoreService",
-    "PlayerPrefs.SetFloat": "-- PlayerPrefs: use DataStoreService",
-    "PlayerPrefs.GetFloat": "-- PlayerPrefs: use DataStoreService",
-    "PlayerPrefs.SetString": "-- PlayerPrefs: use DataStoreService",
-    "PlayerPrefs.GetString": "-- PlayerPrefs: use DataStoreService",
-    "PlayerPrefs.Save": "-- PlayerPrefs: DataStoreService auto-saves",
+    # --- PlayerPrefs → DataStoreService ---
+    "PlayerPrefs.SetInt": "DataStoreService:GetDataStore('PlayerPrefs'):SetAsync",
+    "PlayerPrefs.GetInt": "DataStoreService:GetDataStore('PlayerPrefs'):GetAsync",
+    "PlayerPrefs.SetFloat": "DataStoreService:GetDataStore('PlayerPrefs'):SetAsync",
+    "PlayerPrefs.GetFloat": "DataStoreService:GetDataStore('PlayerPrefs'):GetAsync",
+    "PlayerPrefs.SetString": "DataStoreService:GetDataStore('PlayerPrefs'):SetAsync",
+    "PlayerPrefs.GetString": "DataStoreService:GetDataStore('PlayerPrefs'):GetAsync",
+    "PlayerPrefs.Save": "-- DataStoreService auto-saves; no explicit save needed",
+    "PlayerPrefs.DeleteKey": "DataStoreService:GetDataStore('PlayerPrefs'):RemoveAsync",
 
     # --- Networking (common patterns) ---
-    "[Command]": "-- [Command]: use RemoteEvent (client → server)",
-    "[ClientRpc]": "-- [ClientRpc]: use RemoteEvent (server → client)",
-    "[SyncVar]": "-- [SyncVar]: use Attributes or ValueObjects for replication",
+    "[Command]": "RemoteEvent:FireServer",  # client → server RPC
+    "[ClientRpc]": "RemoteEvent:FireAllClients",  # server → client RPC
+    "[SyncVar]": ":SetAttribute",  # replicated via Attributes
 
     # --- Random ---
     "Random.Range": "math.random",
     "Random.value": "math.random()",
-    "Random.insideUnitSphere": "-- Random.insideUnitSphere: Random.new():NextUnitVector()",
-    "Random.insideUnitCircle": "-- Random.insideUnitCircle: manual impl",
+    "Random.insideUnitSphere": "Random.new():NextUnitVector()",
+    "Random.insideUnitCircle": "Vector2.new(math.random() * 2 - 1, math.random() * 2 - 1).Unit",
     "UnityEngine.Random": "Random.new()",
 
     # --- String ---
     "string.Format": "string.format",
-    "string.IsNullOrEmpty": "-- IsNullOrEmpty: check s == nil or s == ''",
+    "string.IsNullOrEmpty": "(s == nil or s == '')",  # inline nil/empty check
 
     # --- Collections ---
     # NOTE: .Length, .Count, .Add(), .Remove(), .Contains() are handled by

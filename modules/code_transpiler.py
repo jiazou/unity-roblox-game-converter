@@ -790,23 +790,40 @@ class _LuauEmitter:
         if node is None:
             return False
         text = self._text(node)
-        # Common Unity event patterns
-        _EVENT_SUFFIXES = (
+
+        # Known Unity event member names (exact matches on the member name)
+        _KNOWN_EVENTS = {
             "onClick", "OnClick", "onValueChanged", "OnValueChanged",
             "onEndEdit", "OnEndEdit", "onSubmit", "OnSubmit",
-            "AddListener",
-        )
-        for suffix in _EVENT_SUFFIXES:
-            if text.endswith(suffix):
-                return True
-        # Pattern: SomeEvent += where right side is a lambda or method group
+            "onSelect", "OnSelect", "onDeselect", "OnDeselect",
+            "AddListener", "RemoveListener",
+            "Touched", "TouchEnded",
+            "MouseClick", "MouseHoverEnter", "MouseHoverLeave",
+            "InputBegan", "InputEnded", "InputChanged",
+            "AncestryChanged", "ChildAdded", "ChildRemoved",
+            "Destroying", "DescendantAdded", "DescendantRemoving",
+        }
+
         if node.type == "member_access_expression":
             name_node = node.child_by_field_name("name")
             if name_node:
                 name = self._text(name_node)
-                # Event names typically start with "On" or end with common suffixes
-                if name.startswith("On") or name.endswith("Event") or name.endswith("Changed"):
+                # Exact match against known events
+                if name in _KNOWN_EVENTS:
                     return True
+                # Pattern-based: starts with "On" (but not "One", "Only", etc.)
+                if name.startswith("On") and len(name) > 2 and name[2].isupper():
+                    return True
+                # Ends with common event suffixes
+                if name.endswith(("Event", "Changed", "Completed",
+                                  "Started", "Ended", "Triggered",
+                                  "Clicked", "Pressed", "Released")):
+                    return True
+
+        # Fallback: check the full text for known event patterns
+        for evt in _KNOWN_EVENTS:
+            if text.endswith(evt):
+                return True
         return False
 
     def _emit_binary_expression(self, node: Any) -> str:
@@ -1209,6 +1226,67 @@ class _LuauEmitter:
         return False
 
 
+def _compute_confidence(
+    original: str,
+    output: str,
+    warnings: list[str],
+    *,
+    api_subs: int = 0,
+    ast_driven: bool = False,
+) -> float:
+    """Compute a transpilation confidence score using multiple signals.
+
+    Signals considered:
+      - Ratio of lines changed (baseline — more changes = more transformation)
+      - AST vs. regex path (AST is inherently more reliable)
+      - Number of API substitutions made (more = better coverage)
+      - Presence of residual C# artifacts (braces, class keyword = problems)
+      - Placeholder comments left behind (-- TODO, -- comment mappings)
+      - Warning count (more warnings = lower confidence)
+      - Trivial/empty scripts (nothing to convert)
+    """
+    orig_lines = original.splitlines()
+    out_lines = output.splitlines()
+    non_blank = [l for l in orig_lines if l.strip()]
+    code_lines = [l for l in non_blank if not l.strip().startswith("//")]
+
+    # Trivial / near-empty scripts: low confidence (flag for review)
+    if len(code_lines) <= 1:
+        return 0.3
+
+    # Base: ratio of lines that changed
+    changed = sum(a != b for a, b in zip(orig_lines, out_lines))
+    base = min(1.0, changed / max(len(orig_lines), 1) * 1.5)
+
+    # Bonuses
+    if ast_driven:
+        base = min(1.0, base + 0.15)
+    if api_subs > 0:
+        base = min(1.0, base + 0.05 * min(api_subs, 5))
+
+    # Penalties: residual C# artifacts indicate incomplete conversion
+    remaining_braces = output.count("{") + output.count("}")
+    if remaining_braces > 0:
+        base -= min(0.2, remaining_braces * 0.02)
+    if re.search(r"\bclass\s+\w+", output):
+        base -= 0.1
+    # Placeholder comments from API_CALL_MAP (lines starting with "-- ")
+    placeholder_count = sum(
+        1 for line in out_lines
+        if line.strip().startswith("-- ") and (
+            "TODO" in line or "no direct" in line or "manual" in line.lower()
+            or "use " in line.lower()
+        )
+    )
+    if placeholder_count > 0:
+        base -= min(0.15, placeholder_count * 0.03)
+    # Warning penalty
+    if warnings:
+        base -= min(0.1, len(warnings) * 0.02)
+
+    return max(0.0, min(1.0, base))
+
+
 def _has_parse_errors(root: Any) -> bool:
     """Check if the tree-sitter parse tree contains ERROR nodes."""
     if root.type == "ERROR":
@@ -1250,25 +1328,12 @@ def _ast_transpile_luau(
         if lines:
             luau = "\n".join(lines) + "\n\n" + luau
 
-    # Confidence scoring — AST-based is inherently more reliable
-    original_lines = source.splitlines()
-    new_lines = luau.splitlines()
-    changed = sum(a != b for a, b in zip(original_lines, new_lines))
-    base_confidence = min(1.0, changed / max(len(original_lines), 1) * 1.5)
+    confidence = _compute_confidence(
+        source, luau, emitter.warnings,
+        api_subs=emitter.api_subs, ast_driven=True,
+    )
 
-    # Trivial / near-empty scripts get low confidence (nothing meaningful
-    # to convert → should be flagged for review)
-    non_blank = [l for l in original_lines if l.strip()]
-    code_lines = [l for l in non_blank if not l.strip().startswith("//")]
-    if len(code_lines) <= 1:
-        base_confidence = min(base_confidence, 0.3)
-    else:
-        # AST bonuses (higher than regex since we have structural understanding)
-        base_confidence = min(1.0, base_confidence + 0.15)
-        if emitter.api_subs > 0:
-            base_confidence = min(1.0, base_confidence + 0.05 * min(emitter.api_subs, 5))
-
-    return luau, base_confidence, emitter.warnings
+    return luau, confidence, emitter.warnings
 
 
 # ---------------------------------------------------------------------------
@@ -1279,24 +1344,42 @@ def _ast_transpile_luau(
 # These access player input, camera, screen, or GUI — services only
 # available on the Roblox client.
 _CLIENT_INDICATORS: set[str] = {
+    # Input
     "Input.GetKey", "Input.GetKeyDown", "Input.GetKeyUp",
     "Input.GetMouseButton", "Input.GetMouseButtonDown",
     "Input.GetAxis", "Input.mousePosition", "Input.GetTouch",
+    "Input.GetJoystickNames", "Input.anyKey", "Input.anyKeyDown",
+    # Camera
     "Camera.main", "Camera.fieldOfView",
     "Camera.ScreenToWorldPoint", "Camera.WorldToScreenPoint",
-    "Screen.width", "Screen.height",
+    "Camera.ScreenPointToRay", "Camera.ViewportToWorldPoint",
+    # Screen / display
+    "Screen.width", "Screen.height", "Screen.orientation",
+    # UI
     "Canvas", "Text.text", "Image.sprite", "Button.onClick",
-    "RectTransform",
+    "RectTransform", "EventSystem", "Slider.value", "Toggle.isOn",
+    "InputField.text", "Dropdown.value", "ScrollRect",
+    # Cursor
+    "Cursor.lockState", "Cursor.visible",
+    # Lifecycle hooks that are client-only
     "OnMouseDown", "OnMouseEnter", "OnMouseExit", "OnGUI",
+    "OnBecameVisible", "OnBecameInvisible",
 }
 
 # Unity APIs / attributes that indicate server-side execution.
 _SERVER_INDICATORS: set[str] = {
-    "[Command]", "[SyncVar]", "[ClientRpc]",
+    # Networking attributes
+    "[Command]", "[SyncVar]", "[ClientRpc]", "[ServerRpc]",
+    "[Server]", "[ServerCallback]",
+    # Persistent data (server-side in Roblox)
     "PlayerPrefs.SetInt", "PlayerPrefs.GetInt",
     "PlayerPrefs.SetFloat", "PlayerPrefs.GetFloat",
     "PlayerPrefs.SetString", "PlayerPrefs.GetString",
-    "SceneManager.LoadScene",
+    "PlayerPrefs.Save", "PlayerPrefs.DeleteKey",
+    # Scene management
+    "SceneManager.LoadScene", "SceneManager.GetActiveScene",
+    # Server-side physics
+    "Physics.Raycast", "Physics.OverlapSphere", "Physics.SphereCast",
 }
 
 # Lifecycle hooks that are inherently client-side in Roblox.
@@ -1315,18 +1398,20 @@ def _classify_script_type(
     Classify a C# script as LocalScript, Script, or ModuleScript based on
     which Unity APIs it uses and its structural characteristics.
 
-    Heuristic:
-      - No MonoBehaviour base class and no lifecycle hooks → ModuleScript
-      - Uses client-only APIs (Input, Camera, GUI, etc.) → LocalScript
-      - Otherwise → Script (server)
+    Heuristic (in priority order):
+      1. No MonoBehaviour/NetworkBehaviour base AND no lifecycle hooks → ModuleScript
+      2. Uses client-only APIs (Input, Camera, GUI, etc.) → LocalScript
+      3. Uses server-only APIs (networking attrs, PlayerPrefs, Physics) → Script
+      4. Has only client-side lifecycle hooks → LocalScript
+      5. Default → Script (server)
     """
     client_score = 0
     server_score = 0
 
     if ast_info:
-        # Pure utility class — no MonoBehaviour, no lifecycle hooks
-        if ast_info.base_class not in ("MonoBehaviour", "NetworkBehaviour") and not ast_info.lifecycle_hooks:
-            # Check if it has any class at all (not just a loose file)
+        # Pure utility / data class — no MonoBehaviour, no lifecycle hooks
+        _BEHAVIOUR_BASES = {"MonoBehaviour", "NetworkBehaviour", "StateMachineBehaviour"}
+        if ast_info.base_class not in _BEHAVIOUR_BASES and not ast_info.lifecycle_hooks:
             if ast_info.class_name:
                 return "ModuleScript"
 
@@ -1337,10 +1422,10 @@ def _classify_script_type(
             if api in _SERVER_INDICATORS:
                 server_score += 1
 
-        # Client-only lifecycle hooks
+        # Client-only lifecycle hooks get stronger weight (2 points each)
         for hook in ast_info.lifecycle_hooks:
             if hook in _CLIENT_LIFECYCLE:
-                client_score += 1
+                client_score += 2
 
     # Fallback: regex scan for patterns AST might miss
     for pattern in _CLIENT_INDICATORS:
@@ -1352,8 +1437,22 @@ def _classify_script_type(
         if pattern in source:
             server_score += 1
 
+    # Client wins on tie (client-side patterns are more specific signals)
     if client_score > 0 and client_score >= server_score:
         return "LocalScript"
+
+    # Only classify as Script if there's actual evidence of server work,
+    # or if the script has lifecycle hooks (it does something at runtime)
+    if server_score > 0:
+        return "Script"
+
+    # Has lifecycle hooks but no strong client/server signal → default server
+    if ast_info and ast_info.lifecycle_hooks:
+        return "Script"
+
+    # No signals at all but has a MonoBehaviour base → Script
+    if ast_info and ast_info.base_class in _BEHAVIOUR_BASES:
+        return "Script"
 
     return "Script"
 
@@ -1729,24 +1828,7 @@ def _rule_based_transpile(
     if service_header:
         luau = service_header + luau
 
-    # Confidence scoring — improved with AST data
-    original_lines = csharp.splitlines()
-    new_lines = luau.splitlines()
-    changed = sum(a != b for a, b in zip(original_lines, new_lines))
-    base_confidence = min(1.0, changed / max(len(original_lines), 1) * 1.5)
-
-    # Boost confidence if AST was available and we detected real structure
-    if ast_info:
-        if ast_info.class_name:
-            base_confidence = min(1.0, base_confidence + 0.1)
-        if ast_info.lifecycle_hooks:
-            base_confidence = min(1.0, base_confidence + 0.1)
-        if api_subs > 0:
-            base_confidence = min(1.0, base_confidence + 0.05 * min(api_subs, 5))
-
-    confidence = base_confidence
-
-    # Warnings are now more targeted since we handle braces and classes
+    # Detect residual C# artifacts and add warnings
     if re.search(r"\bclass\s+\w+", luau):
         warnings.append("Residual 'class' keyword detected — manual cleanup needed.")
     remaining_braces = luau.count("{") + luau.count("}")
@@ -1763,6 +1845,11 @@ def _rule_based_transpile(
                 f"APIs requiring manual work: {', '.join(unmapped[:5])}"
                 + (f" (+{len(unmapped)-5} more)" if len(unmapped) > 5 else "")
             )
+
+    confidence = _compute_confidence(
+        csharp, luau, warnings,
+        api_subs=api_subs, ast_driven=False,
+    )
 
     return luau, confidence, warnings
 
@@ -1856,8 +1943,24 @@ def transpile_scripts(
             luau, confidence, warnings = _ai_transpile(csharp_source, api_key, model, max_tokens)
             strategy: TranspilationStrategy = "ai"
         else:
-            luau, confidence, warnings = _rule_based_transpile(csharp_source, script_refs)
-            strategy = "rule_based"
+            # Tiered fallback: AST (best) → AI (if key available) → regex (last resort)
+            ast_result = _ast_transpile_luau(csharp_source, script_refs)
+            if ast_result is not None:
+                luau, confidence, warnings = ast_result
+                strategy = "rule_based"
+            elif api_key:
+                # AST failed (no tree-sitter or parse errors) but we have an API key —
+                # use AI rather than the fragile regex pipeline
+                luau, confidence, warnings = _ai_transpile(
+                    csharp_source, api_key, model, max_tokens,
+                )
+                strategy = "ai"
+            else:
+                # No AST, no API key — regex is all we have
+                luau, confidence, warnings = _rule_based_transpile(
+                    csharp_source, script_refs,
+                )
+                strategy = "rule_based"
 
         # Classify script type based on Unity API usage
         script_type = _classify_script_type(csharp_source, ast_info)

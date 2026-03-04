@@ -143,79 +143,56 @@ Three different `_EXT_TO_KIND` / `SUPPORTED_ASSET_EXTENSIONS` maps with differen
 
 ---
 
-## P4: Transpiler — Remaining Fragile Areas (Skill Candidates)
+## ~~P4: Transpiler — Remaining Fragile Areas (Skill Candidates)~~
 
-**Status**: OPEN
+**Status**: RESOLVED (2026-03-04)
 **File**: `modules/code_transpiler.py`, `modules/api_mappings.py`
 
-The AST emitter (`_LuauEmitter`) resolved structural fragility, but the following
-areas remain fragile in both the AST path and the regex fallback. These are
-**semantic** problems that rule-based code handles poorly and would be better
-delegated to an AI skill.
+### ~~4a. Regex Fallback Pipeline~~
 
-### 4a. Regex Fallback Pipeline (lines 1374–1767)
+**Resolution**: Restructured fallback chain to AST → AI → regex. When tree-sitter
+fails but an API key is available, the transpiler now escalates to AI rather than
+falling through to the fragile regex pipeline. Regex is now a last resort only
+when both tree-sitter and AI are unavailable.
 
-**Risk**: HIGH — Still the active path when tree-sitter is unavailable or source has parse errors.
+### ~~4b. Script Type Classification~~
 
-| # | Issue | Impact |
-|---|-------|--------|
-| 1 | Context-blind: regexes transform inside string literals and comments | `"x != y"` becomes `"x ~= y"` |
-| 2 | Order-dependent: 50+ sequential substitutions with hidden coupling | Reordering or adding patterns can silently break others |
-| 3 | Duplicate rules: `Debug.Log` in both `_RULE_PATTERNS` and `API_CALL_MAP` | Double-application risk |
-| 4 | Hardcoded type lists (lines 1521–1540) diverge from `TYPE_MAP` | New types added to one place forgotten in other |
-| 5 | Brace-to-`end` heuristic (line 1607): any `}` on own line → `end` | Wrong for inline objects, string templates, etc. |
-| 6 | Ternary regex (line 1613) fails on nested ternaries and multi-line | Produces broken Luau |
-| 7 | String concat `+` → `..` only detects adjacent string literals | `a + b` where both are string variables stays as `+` |
+**Resolution**: Expanded `_CLIENT_INDICATORS` (added Cursor, EventSystem, Slider,
+Toggle, InputField, more Camera/Input patterns) and `_SERVER_INDICATORS` (added
+`[ServerRpc]`, `[Server]`, Physics, more PlayerPrefs). Client-side lifecycle hooks
+now weighted 2x. Added `StateMachineBehaviour` to behaviour base classes.
 
-**Recommendation**: Replace with AI skill for the regex fallback case. When tree-sitter
-is unavailable (rare in practice), send the C# source to an LLM rather than applying
-broken regex transforms.
+### ~~4c. Confidence Scoring~~
 
-### 4b. Script Type Classification (lines 1310–1358)
+**Resolution**: Extracted shared `_compute_confidence()` function used by both AST
+and regex paths. Now penalizes residual C# artifacts (braces, `class` keyword),
+placeholder comments (TODO/manual/no direct), and warning count. Penalties offset
+the arbitrary bonuses, producing scores that better reflect actual output quality.
 
-**Risk**: MEDIUM — Heuristic scoring, no ground truth.
+### ~~4d. API Mapping Placeholders~~
 
-| # | Issue | Impact |
-|---|-------|--------|
-| 1 | Client/server score ties default to `Script` (server) | Client scripts misclassified |
-| 2 | Scripts with both client+server patterns (networking code) scored by count | Often wrong |
-| 3 | `ModuleScript` detection requires "no MonoBehaviour AND no lifecycle hooks" | Utility classes inheriting MonoBehaviour misclassified |
-| 4 | Hardcoded indicator sets (`_CLIENT_INDICATORS`, `_SERVER_INDICATORS`) | Incomplete, not maintained |
+**Resolution**: Replaced ~20 `-- comment` placeholder entries with real Roblox
+implementations:
+- `PlayerPrefs.*` → `DataStoreService:GetDataStore('PlayerPrefs'):SetAsync/GetAsync`
+- `Animator.SetBool/SetFloat` → `:SetAttribute` (store params as attributes)
+- `Animator.SetTrigger/Play` → `AnimationTrack:Play()`
+- `SceneManager.LoadScene` → `TeleportService:Teleport`
+- `[Command]` → `RemoteEvent:FireServer`
+- `[ClientRpc]` → `RemoteEvent:FireAllClients`
+- `[SyncVar]` → `:SetAttribute`
+- `AddComponent` → `Instance.new`
+- `Mathf.Lerp` → `math.lerp`
+- `Random.insideUnitSphere` → `Random.new():NextUnitVector()`
+- `RectTransform` → `UDim2`
+- And others (Vector3.Angle, MoveTowards, ClampMagnitude, etc.)
 
-**Recommendation**: AI skill can read the script and reason about intent: "this handles
-player input → LocalScript", "this manages game state → Script".
+### ~~4e. Event Detection Heuristic~~
 
-### 4c. Confidence Scoring (lines 1253–1271, 1732–1767)
-
-**Risk**: MEDIUM — Arbitrary formula determines what gets flagged for human review.
-
-| # | Issue | Impact |
-|---|-------|--------|
-| 1 | Formula `changed_lines / total_lines * 1.5 + bonuses` has no validation | No correlation between score and actual output quality |
-| 2 | Trivial scripts (≤1 code line) get 0.3 ceiling | May flag empty `Start()` stubs unnecessarily |
-| 3 | AST bonus (+0.15) and API sub bonus (+0.05 each) are arbitrary | Could auto-accept bad output or flag good output |
-
-**Recommendation**: AI skill can self-assess: "I'm confident about this conversion"
-vs. "this networking code needs manual review".
-
-### 4d. API Mapping Placeholders (`api_mappings.py`)
-
-**Risk**: MEDIUM — ~30 entries produce `-- comment` placeholders that compile but don't work.
-
-Examples: `Animator.SetBool`, `PlayerPrefs.*`, `SceneManager.LoadScene`, `AddComponent`,
-`DontDestroyOnLoad`, `Mathf.SmoothDamp`, `RectTransform`, networking attributes.
-
-**Recommendation**: AI skill can actually *implement* the Roblox equivalent (e.g.,
-DataStoreService code for PlayerPrefs) rather than leaving a TODO comment.
-
-### 4e. Event Detection Heuristic (lines 787–810)
-
-**Risk**: LOW-MEDIUM — Hardcoded suffix list, no semantic understanding.
-
-| # | Issue | Impact |
-|---|-------|--------|
-| 1 | `_looks_like_event_target` checks 8 hardcoded suffixes | Misses custom events |
-| 2 | `On*` prefix heuristic false-positives on non-event members | `OnGround` property treated as event |
+**Resolution**: Expanded `_looks_like_event_target` from 8 hardcoded suffixes to a
+comprehensive approach: 20+ known Roblox/Unity event names (exact match), `On*`
+prefix with uppercase-third-char guard (avoids `OnGround` false positives), and
+pattern suffixes (`Event`, `Changed`, `Completed`, `Started`, `Ended`, `Triggered`,
+`Clicked`, `Pressed`, `Released`).
 
 ---
 
