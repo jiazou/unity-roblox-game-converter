@@ -625,11 +625,16 @@ def _create_fbx_scene_node(
     file's GUID instead of a .prefab GUID.  This function creates a minimal
     SceneNode with the correct mesh reference so the model appears in the
     converted output.
+
+    Unity's FBX import uses well-known fileIDs: 100000 for the root
+    GameObject and 400000 for its Transform component.  We set these on the
+    node so that apply_prefab_modifications() can match the modification
+    targets correctly (position, rotation, scale, name).
     """
     name = asset_path.stem
     node = scene_parser.SceneNode(
         name=name,
-        file_id="",
+        file_id="100000",  # Unity FBX root GameObject fileID
         active=True,
         layer=0,
         tag="Untagged",
@@ -639,6 +644,13 @@ def _create_fbx_scene_node(
         mesh_guid=guid,
         from_prefab_instance=True,
     )
+    # Add a Transform component with the standard FBX Transform fileID so
+    # that apply_prefab_modifications can match m_LocalPosition etc.
+    node.components.append(scene_parser.ComponentData(
+        component_type="Transform",
+        file_id="400000",
+        properties={},
+    ))
     # Apply position/rotation/scale modifications from the PrefabInstance
     apply_prefab_modifications(node, modifications)
     return node
@@ -665,6 +677,14 @@ def resolve_prefab_instances(
 
     resolved = 0
     for scene in parsed_scenes:
+        # Build a component fileID → node index so we can resolve
+        # transform_parent_file_id (which references Transform components,
+        # not GameObjects).
+        comp_fid_to_node: dict[str, scene_parser.SceneNode] = {}
+        for node in scene.all_nodes.values():
+            for comp in node.components:
+                comp_fid_to_node[comp.file_id] = node
+
         for pi in scene.prefab_instances:
             template = guid_to_prefab.get(pi.source_prefab_guid)
 
@@ -688,8 +708,15 @@ def resolve_prefab_instances(
                 )
                 scene.referenced_mesh_guids.add(pi.source_prefab_guid)
 
+            # Look up parent node: transform_parent_file_id may reference a
+            # Transform component rather than a GameObject, so check both.
             parent_fid = pi.transform_parent_file_id
-            parent_node = scene.all_nodes.get(parent_fid) if parent_fid else None
+            parent_node = None
+            if parent_fid:
+                parent_node = (
+                    scene.all_nodes.get(parent_fid)
+                    or comp_fid_to_node.get(parent_fid)
+                )
             if parent_node:
                 parent_node.children.append(root_node)
             else:
