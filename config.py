@@ -34,21 +34,52 @@ ASSET_EXT_TO_KIND: dict[str, str] = {
     # Textures
     ".png": "texture", ".jpg": "texture", ".jpeg": "texture",
     ".tga": "texture", ".bmp": "texture", ".exr": "texture",
-    ".hdr": "texture", ".psd": "texture",
-    # Meshes
+    ".hdr": "texture", ".psd": "texture", ".gif": "texture",
+    ".tif": "texture", ".tiff": "texture", ".svg": "texture",
+    # Meshes (including glTF/USD formats common in modern pipelines)
     ".fbx": "mesh", ".obj": "mesh", ".dae": "mesh", ".blend": "mesh",
-    # Audio
+    ".gltf": "mesh", ".glb": "mesh",
+    ".usd": "mesh", ".usda": "mesh", ".usdc": "mesh", ".usdz": "mesh",
+    ".ply": "mesh", ".stl": "mesh",
+    # Audio (including additional common formats)
     ".wav": "audio", ".mp3": "audio", ".ogg": "audio",
+    ".aiff": "audio", ".aif": "audio", ".flac": "audio",
+    # Video (used by VideoPlayer component)
+    ".mp4": "video", ".webm": "video", ".mov": "video",
     # Materials / animations / shaders
     ".mat": "material",
     ".anim": "animation", ".controller": "animation",
+    ".overrideController": "animation",  # AnimatorOverrideController
+    ".mask": "animation",               # AvatarMask
     ".shader": "shader", ".cginc": "shader", ".hlsl": "shader",
+    ".shadergraph": "shader",           # Shader Graph (URP/HDRP)
+    ".shadersubgraph": "shader",        # Shader Graph sub-graphs
+    ".compute": "shader",              # Compute shaders
+    # Font assets (TextMeshPro uses .asset but regular fonts are TTF/OTF)
+    ".ttf": "font", ".otf": "font", ".fontsettings": "font",
     # Scene / prefab / script
     ".prefab": "prefab",
     ".unity": "scene",
     ".cs": "script",
-    # Other
+    # Assembly definitions (important for filtering editor/test scripts)
+    ".asmdef": "assembly_definition",
+    ".asmref": "assembly_definition",
+    # Data / configuration
     ".asset": "unknown",
+    ".json": "data", ".xml": "data", ".yaml": "data", ".yml": "data",
+    ".txt": "data", ".csv": "data",
+    # ScriptableObject presets
+    ".preset": "preset",
+    # Lighting data
+    ".lighting": "lighting",
+    # Terrain data
+    ".terrainlayer": "terrain",
+    # Input System
+    ".inputactions": "input",
+    # Addressables
+    ".playable": "timeline",           # Timeline assets
+    ".signal": "timeline",             # Timeline signal assets
+    ".spriteatlas": "texture",         # Sprite atlas
 }
 
 SUPPORTED_ASSET_EXTENSIONS: frozenset[str] = frozenset(ASSET_EXT_TO_KIND.keys())

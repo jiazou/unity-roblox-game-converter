@@ -268,6 +268,105 @@ API_CALL_MAP: dict[str, str] = {
     "Dictionary<": "-- Dictionary<K,V>: use Luau table {}",
     ".Clear()": "table.clear",
     "foreach": "for _, v in",
+
+    # --- TextMeshPro (TMP) — widely used in modern Unity games ---
+    "TextMeshProUGUI": "TextLabel",
+    "TextMeshPro": "TextLabel",
+    "TMP_Text": "TextLabel",
+    "TMP_InputField": "TextBox",
+    ".SetText(": ".Text =",
+
+    # --- DOTween (most popular tweening library) ---
+    "DOTween.To": "TweenService:Create",
+    ".DOMove(": "-- DOMove: use TweenService:Create(part, info, {Position = target})",
+    ".DORotate(": "-- DORotate: use TweenService:Create(part, info, {CFrame = target})",
+    ".DOScale(": "-- DOScale: use TweenService:Create(part, info, {Size = target})",
+    ".DOFade(": "-- DOFade: use TweenService:Create(part, info, {Transparency = target})",
+    ".DOColor(": "-- DOColor: use TweenService:Create(part, info, {Color = target})",
+    ".DOLocalMove(": "-- DOLocalMove: use TweenService:Create with relative CFrame",
+    ".DOKill(": "-- DOKill: cancel tween",
+    ".SetEase(": "-- SetEase: use TweenInfo EasingStyle",
+    ".SetDelay(": "-- SetDelay: use TweenInfo DelayTime",
+    ".SetLoops(": "-- SetLoops: use TweenInfo RepeatCount",
+    ".OnComplete(": "-- OnComplete: use Tween.Completed:Connect()",
+
+    # --- NavMesh / AI Navigation ---
+    "NavMeshAgent": "-- NavMeshAgent: use Roblox PathfindingService",
+    "NavMesh.CalculatePath": "PathfindingService:CreatePath()",
+    ".SetDestination(": "-- SetDestination: use Path:ComputeAsync(target)",
+    ".remainingDistance": "-- remainingDistance: compute from waypoints",
+    ".isStopped": "-- isStopped: track manually",
+    "navMeshAgent.speed": "-- NavMeshAgent.speed: set Humanoid.WalkSpeed",
+    "agent.speed": "-- NavMeshAgent.speed: set Humanoid.WalkSpeed",
+    "NavMeshObstacle": "-- NavMeshObstacle: no direct equivalent, use collision",
+
+    # --- New Input System (Unity 2019+) ---
+    "InputAction": "-- InputAction: use ContextActionService or UserInputService",
+    ".ReadValue<Vector2>()": "-- ReadValue: use UserInputService input events",
+    ".performed": "-- performed: use InputBegan/InputChanged",
+    ".canceled": "-- canceled: use InputEnded",
+    "PlayerInput": "-- PlayerInput: use UserInputService",
+
+    # --- async/await patterns (common in modern Unity) ---
+    "async Task": "-- async Task: use task.spawn(function()",
+    "async void": "-- async void: use task.spawn(function()",
+    "await Task.Delay": "task.wait",
+    "await Task.Yield()": "task.wait()",
+    "UniTask": "-- UniTask: use task library",
+    "await UniTask.Delay": "task.wait",
+    "await UniTask.Yield()": "task.wait()",
+
+    # --- LINQ (very common in C# game code) ---
+    ".Where(": "-- Where: use manual loop filter",
+    ".Select(": "-- Select: use manual loop map",
+    ".FirstOrDefault(": "-- FirstOrDefault: use manual find",
+    ".First(": "-- First: use manual find",
+    ".Any(": "-- Any: use manual loop check",
+    ".All(": "-- All: use manual loop check",
+    ".OrderBy(": "-- OrderBy: use table.sort",
+    ".OrderByDescending(": "-- OrderByDescending: use table.sort with reverse",
+    ".ToList()": "-- ToList: already a table",
+    ".ToArray()": "-- ToArray: already a table",
+    ".Sum(": "-- Sum: use manual loop accumulator",
+    ".Max(": "-- Max: use math.max in loop",
+    ".Min(": "-- Min: use math.min in loop",
+    ".Count(": "-- Count: use # operator or manual loop",
+    ".Distinct()": "-- Distinct: use dictionary-based dedup",
+    ".GroupBy(": "-- GroupBy: use manual dictionary grouping",
+
+    # --- Cinemachine (very common camera system) ---
+    "CinemachineVirtualCamera": "-- CinemachineVirtualCamera: configure workspace.CurrentCamera",
+    "CinemachineBrain": "-- CinemachineBrain: use workspace.CurrentCamera",
+    ".m_Lens.FieldOfView": ".FieldOfView",
+
+    # --- Terrain ---
+    "Terrain.activeTerrain": "-- Terrain: use Roblox Terrain object",
+    "TerrainData": "-- TerrainData: use workspace.Terrain",
+    ".GetHeight(": "-- GetHeight: no direct equivalent",
+    "SplatPrototype": "-- SplatPrototype: use Terrain:FillBall/FillBlock with materials",
+
+    # --- 2D Physics ---
+    "Rigidbody2D": "-- Rigidbody2D: no 2D physics in Roblox",
+    "Physics2D.Raycast": "workspace:Raycast",
+    "Collider2D": "BasePart",
+
+    # --- Miscellaneous common APIs ---
+    "Application.targetFrameRate": "-- targetFrameRate: no equivalent",
+    "Application.persistentDataPath": "-- persistentDataPath: use DataStoreService",
+    "Application.isPlaying": "-- isPlaying: always true at runtime",
+    "Application.platform": "-- platform: use UserInputService:GetPlatform()",
+    "Application.Quit": "-- Quit: no equivalent, use TeleportService",
+    "Resources.Load": "-- Resources.Load: use ReplicatedStorage:FindFirstChild",
+    "Addressables.LoadAssetAsync": "-- Addressables: use ReplicatedStorage:WaitForChild",
+    "Object.FindObjectOfType": "-- FindObjectOfType: use workspace:FindFirstChildOfClass",
+    "Object.FindObjectsOfType": "-- FindObjectsOfType: use workspace:GetDescendants()",
+    "LayerMask": "-- LayerMask: use CollisionGroups",
+    "Physics.IgnoreCollision": "-- IgnoreCollision: use CollisionGroups",
+    "WaitUntil": "-- WaitUntil: use while loop with task.wait()",
+    "WaitWhile": "-- WaitWhile: use while loop with task.wait()",
+    "Invoke(": "task.delay",
+    "InvokeRepeating(": "-- InvokeRepeating: use task.spawn with while loop and task.wait",
+    "CancelInvoke": "-- CancelInvoke: cancel spawned task",
 }
 
 
@@ -303,6 +402,39 @@ TYPE_MAP: dict[str, str] = {
     "Animator": "AnimationController",
     "MonoBehaviour": "-- (script module)",
     "ScriptableObject": "-- (ModuleScript)",
+    # Additional type mappings for common game patterns
+    "Bounds": "-- Bounds (use Region3)",
+    "Rect": "-- Rect (use Rect or UDim2)",
+    "Ray": "Ray",
+    "RaycastHit": "RaycastResult",
+    "LayerMask": "number",
+    "Texture2D": "string",  # asset ID
+    "Sprite": "string",     # asset ID
+    "Material": "string",   # asset ID
+    "Mesh": "string",       # asset ID
+    "NavMeshAgent": "-- (PathfindingService)",
+    "CharacterController": "Humanoid",
+    "Terrain": "Terrain",
+    "Canvas": "ScreenGui",
+    "RectTransform": "Frame",
+    "Image": "ImageLabel",
+    "Button": "TextButton",
+    "Text": "TextLabel",
+    "TMP_Text": "TextLabel",
+    "TextMeshProUGUI": "TextLabel",
+    "Slider": "-- Slider (custom UI)",
+    "Toggle": "-- Toggle (custom UI)",
+    "Dropdown": "-- Dropdown (custom UI)",
+    "InputField": "TextBox",
+    "ScrollRect": "ScrollingFrame",
+    "IEnumerable": "-- table",
+    "IList": "-- table",
+    "Action": "-- function",
+    "Func": "-- function",
+    "UnityAction": "-- function",
+    "UnityEvent": "BindableEvent",
+    "Coroutine": "thread",
+    "WaitForSeconds": "number",
 }
 
 
@@ -348,4 +480,11 @@ SERVICE_IMPORTS: dict[str, str] = {
     "TeleportService": 'local TeleportService = game:GetService("TeleportService")',
     "SoundService": 'local SoundService = game:GetService("SoundService")',
     "Workspace": "local Workspace = workspace",
+    "PathfindingService": 'local PathfindingService = game:GetService("PathfindingService")',
+    "ContextActionService": 'local ContextActionService = game:GetService("ContextActionService")',
+    "GuiService": 'local GuiService = game:GetService("GuiService")',
+    "MarketplaceService": 'local MarketplaceService = game:GetService("MarketplaceService")',
+    "PhysicsService": 'local PhysicsService = game:GetService("PhysicsService")',
+    "HttpService": 'local HttpService = game:GetService("HttpService")',
+    "TextService": 'local TextService = game:GetService("TextService")',
 }
