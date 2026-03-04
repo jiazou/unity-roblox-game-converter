@@ -138,10 +138,12 @@ def convert_audio_components(
 
         volume = float(props.get("m_Volume", 1.0))
         pitch = float(props.get("m_Pitch", 1.0))
-        loop = bool(props.get("m_Loop", 0))
+        # Unity YAML uses "Loop" (no m_ prefix) for AudioSource
+        loop = bool(props.get("Loop", props.get("m_Loop", 0)))
         play_on_awake = bool(props.get("m_PlayOnAwake", 1))
-        min_dist = float(props.get("m_MinDistance", 1.0))
-        max_dist = float(props.get("m_MaxDistance", 500.0))
+        # Unity YAML uses "MinDistance"/"MaxDistance" (no m_ prefix)
+        min_dist = float(props.get("MinDistance", props.get("m_MinDistance", 1.0)))
+        max_dist = float(props.get("MaxDistance", props.get("m_MaxDistance", 500.0)))
 
         part.sound_children.append((
             node_name + "_Sound",

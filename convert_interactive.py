@@ -694,7 +694,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
             ui_translator.to_rbx_screen_gui("ConvertedUI", ui_result.elements)
         ]
 
-    # Write .rbxl
+    # Build parts from scene nodes
     parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
@@ -702,6 +702,21 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
     )
+
+    # Copy referenced audio files to <output_dir>/audio/ for the upload step
+    import shutil
+    audio_out = out_dir / "audio"
+    audio_copied = 0
+    for part in parts:
+        for sc in part.sound_children:
+            clip_path = sc[1]  # resolved file path from convert_audio_components
+            if clip_path and Path(clip_path).is_file():
+                audio_out.mkdir(parents=True, exist_ok=True)
+                dest = audio_out / Path(clip_path).name
+                if not dest.exists():
+                    shutil.copy2(clip_path, dest)
+                    audio_copied += 1
+
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
@@ -745,6 +760,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         "rbxl_size_mb": rbxl_size_mb,
         "parts_written": write_result.parts_written,
         "scripts_written": write_result.scripts_written,
+        "audio_files_staged": audio_copied,
         "warnings": write_result.warnings,
         "decimation": decimation_info,
         "ui_translation": ui_info,

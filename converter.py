@@ -349,6 +349,23 @@ def convert(
         click.echo(f"    → Camera → Workspace.CurrentCamera (FOV={camera_config.field_of_view:.0f})")
     if skybox_config:
         click.echo("    → Skybox material → Sky object")
+
+    # Copy referenced audio files to <output_dir>/audio/ for the upload step
+    import shutil
+    audio_out = out_dir / "audio"
+    audio_copied = 0
+    for part in parts:
+        for sc in part.sound_children:
+            clip_path = sc[1]
+            if clip_path and Path(clip_path).is_file():
+                audio_out.mkdir(parents=True, exist_ok=True)
+                dest = audio_out / Path(clip_path).name
+                if not dest.exists():
+                    shutil.copy2(clip_path, dest)
+                    audio_copied += 1
+    if audio_copied:
+        click.echo(f"    → Staged {audio_copied} audio file(s) in {audio_out}")
+
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
@@ -371,10 +388,14 @@ def convert(
 
     click.echo("☁️   Checking Roblox upload …")
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
+    sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
+    audio_dir = audio_out if audio_out.is_dir() else None
     upload_result = call_with_retry(
         roblox_uploader.upload_to_roblox,
         rbxl_path=rbxl_path,
         textures_dir=textures_dir,
+        sprites_dir=sprites_dir,
+        audio_dir=audio_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
