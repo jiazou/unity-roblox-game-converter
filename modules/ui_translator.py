@@ -203,11 +203,31 @@ def _extract_image_properties(components: list[Any]) -> dict[str, Any]:
     return {}
 
 
+def _is_image_component(comp: Any) -> bool:
+    """Detect Unity Image component (may be classified as MonoBehaviour)."""
+    ct = getattr(comp, "component_type", "")
+    if ct in ("Image", "UnityEngine.UI.Image"):
+        return True
+    # Scene parser classifies all script-based components as MonoBehaviour.
+    # Detect Image by its well-known script GUID or presence of m_Sprite.
+    if ct == "MonoBehaviour":
+        props = getattr(comp, "properties", {})
+        script = props.get("m_Script", {})
+        if isinstance(script, dict):
+            guid = script.get("guid", "")
+            # fe87c0e1cc204ed48ad3b37840f39efc = UnityEngine.UI.Image
+            if guid.startswith("fe87c0e1cc204ed48ad3"):
+                return True
+        # Fallback: has m_Sprite field (unique to Image)
+        if "m_Sprite" in props:
+            return True
+    return False
+
+
 def _extract_background_color(components: list[Any]) -> dict[str, Any]:
     """Extract background color from Unity Image component used as background."""
     for comp in components:
-        ct = getattr(comp, "component_type", "")
-        if ct in ("Image", "UnityEngine.UI.Image"):
+        if _is_image_component(comp):
             props = getattr(comp, "properties", {})
             color = props.get("m_Color", {})
             if isinstance(color, dict):
