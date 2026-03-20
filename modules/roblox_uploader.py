@@ -112,6 +112,26 @@ def _check_rate_limit_headers(resp: Any) -> None:
             time.sleep(sleep_seconds)
 
 
+def _poll_operation(api_key: str, operation_id: str, max_wait: float = 30.0) -> dict[str, Any]:
+    """Poll a Roblox async operation until done, returning the response payload."""
+    import urllib.request
+
+    url = f"https://apis.roblox.com/assets/v1/operations/{operation_id}"
+    deadline = time.time() + max_wait
+    interval = 1.0
+
+    while time.time() < deadline:
+        time.sleep(interval)
+        req = urllib.request.Request(url, headers={"x-api-key": api_key})
+        resp = urllib.request.urlopen(req, timeout=30)
+        data = json.loads(resp.read().decode("utf-8"))
+        if data.get("done"):
+            return data.get("response", data)
+        interval = min(interval * 1.5, 5.0)
+
+    raise TimeoutError(f"Operation {operation_id} did not complete within {max_wait}s")
+
+
 def _upload_place(
     rbxl_path: Path,
     api_key: str,
@@ -229,7 +249,14 @@ def _upload_image_asset(
 
     resp = urllib.request.urlopen(req, timeout=120)
     _check_rate_limit_headers(resp)
-    return json.loads(resp.read().decode("utf-8"))
+    data = json.loads(resp.read().decode("utf-8"))
+
+    # Roblox returns an async operation — poll until done to get the asset ID.
+    op_id = data.get("operationId")
+    if op_id and not data.get("done", True):
+        data = _poll_operation(api_key, op_id)
+
+    return data
 
 
 def _upload_audio_asset(
@@ -314,67 +341,300 @@ def _upload_audio_asset(
 
     resp = urllib.request.urlopen(req, timeout=120)
     _check_rate_limit_headers(resp)
-    return json.loads(resp.read().decode("utf-8"))
+    data = json.loads(resp.read().decode("utf-8"))
+
+    # Roblox returns an async operation — poll until done to get the asset ID.
+    op_id = data.get("operationId")
+    if op_id and not data.get("done", True):
+        data = _poll_operation(api_key, op_id)
+
+    return data
+
+
+def _build_mesh_material_map(unity_project_path: Path | None) -> dict[str, str]:
+    """Build a mapping of mesh filename stem → material texture filename.
+
+    Parses Unity YAML (.prefab/.unity) by splitting on document markers
+    (``---``) and grouping components that share the same ``m_GameObject``
+    fileID.  For each GameObject that has both a MeshFilter and a
+    MeshRenderer, resolves the mesh GUID → mesh filename and the first
+    material GUID → material name → ``<MatName>_color.png``.
+
+    Returns e.g. ``{"road01": "Plaster_color.png"}``.
+    """
+    import re as _re
+
+    if not unity_project_path or not unity_project_path.is_dir():
+        return {}
+
+    assets_dir = unity_project_path / "Assets"
+    if not assets_dir.is_dir():
+        return {}
+
+    # ── Step 1: GUID → asset path from .meta files ─────────────────
+    guid_to_path: dict[str, Path] = {}
+    for meta in assets_dir.rglob("*.meta"):
+        try:
+            text = meta.read_text(encoding="utf-8", errors="replace")
+            m = _re.search(r"guid:\s*([0-9a-f]{32})", text)
+            if m:
+                guid_to_path[m.group(1)] = meta.with_suffix("")
+        except OSError:
+            continue
+
+    # ── Step 2: material GUID → texture filename ───────────────────
+    # A .mat file references its _MainTex via a GUID.  We map the
+    # material's own GUID → "<MaterialName>_color.png" (matching the
+    # texture filenames produced by the material_mapper).
+    mat_guid_to_texture: dict[str, str] = {}
+    for guid, path in guid_to_path.items():
+        if path.suffix.lower() != ".mat":
+            continue
+        mat_guid_to_texture[guid] = f"{path.stem}_color.png"
+
+    # ── Step 3: parse prefabs/scenes for mesh↔material pairs ───────
+    # Unity YAML uses multi-document format.  Each document starts with
+    # ``--- !u!<classID> &<fileID>``.  We split on these markers, then
+    # group components by their ``m_GameObject: {fileID: ...}`` value.
+    _DOC_SEP = _re.compile(r"^--- !u!\d+ &(\d+)\s*$", _re.MULTILINE)
+    _GUID_RE = _re.compile(r"guid:\s*([0-9a-f]{32})")
+
+    mesh_to_texture: dict[str, str] = {}
+
+    for ext in ("*.prefab", "*.unity"):
+        for scene_file in assets_dir.rglob(ext):
+            try:
+                text = scene_file.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            # Split into documents.  Each doc is (fileID, body).
+            parts = _DOC_SEP.split(text)
+            # parts = [preamble, fileID1, body1, fileID2, body2, ...]
+            docs: dict[str, str] = {}
+            for i in range(1, len(parts) - 1, 2):
+                docs[parts[i]] = parts[i + 1]
+
+            # For each doc, extract the component type and m_GameObject fileID.
+            go_mesh_guids: dict[str, str] = {}  # gameObject_fileID → mesh_guid
+            go_mat_guids: dict[str, list[str]] = {}  # gameObject_fileID → [mat_guids]
+
+            for _file_id, body in docs.items():
+                # Determine component type from first non-blank line.
+                first_line = ""
+                for line in body.strip().splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        first_line = stripped
+                        break
+
+                # Extract m_GameObject fileID.
+                go_match = _re.search(
+                    r"m_GameObject:\s*\{fileID:\s*(\d+)", body,
+                )
+                if not go_match:
+                    continue
+                go_fid = go_match.group(1)
+
+                if first_line.startswith("MeshFilter:"):
+                    mesh_m = _re.search(
+                        r"m_Mesh:\s*\{[^}]*guid:\s*([0-9a-f]{32})", body,
+                    )
+                    if mesh_m:
+                        go_mesh_guids[go_fid] = mesh_m.group(1)
+
+                elif first_line.startswith("MeshRenderer:") or first_line.startswith("SkinnedMeshRenderer:"):
+                    mat_section = _re.search(r"m_Materials:(.*?)(?:\n\S|\Z)", body, _re.DOTALL)
+                    if mat_section:
+                        mat_guids = _GUID_RE.findall(mat_section.group(1))
+                        if mat_guids:
+                            go_mat_guids[go_fid] = mat_guids
+
+            # Pair mesh GUIDs with material GUIDs via shared GameObject.
+            for go_fid, mesh_guid in go_mesh_guids.items():
+                mat_guids = go_mat_guids.get(go_fid)
+                if not mat_guids:
+                    continue
+                mesh_path = guid_to_path.get(mesh_guid)
+                if not mesh_path:
+                    continue
+                # Use first material.
+                tex_fn = mat_guid_to_texture.get(mat_guids[0])
+                if tex_fn:
+                    mesh_to_texture[mesh_path.stem.lower()] = tex_fn
+
+    return mesh_to_texture
 
 
 def _patch_rbxl_asset_ids(
     rbxl_path: Path,
     asset_ids: dict[str, int],
+    mesh_texture_map: dict[str, str] | None = None,
+    unity_project_path: Path | None = None,
 ) -> bool:
     """
     Rewrite a .rbxl XML file, replacing local placeholder references with
     rbxassetid:// URLs.
 
-    Only patches ``<Content>`` and ``<url>`` elements (Roblox asset reference
-    property types).  ``<ProtectedString>`` elements (Luau script source) and
-    ``<string>`` elements are left untouched to avoid corrupting embedded code.
+    Handles three kinds of references:
+    1. ``rbxassetid://filename`` or ``rbxassetid://stem`` placeholders
+    2. ``-- TODO: upload ...filename`` comments in SoundId properties
+    3. Local filesystem paths in Content elements (MeshId, SoundId, etc.)
+       matched by filename or stem against uploaded asset names
 
-    Returns True if any replacements were made.
+    Also injects SurfaceAppearance children on MeshPart items when a
+    matching ``<stem>_color.png`` texture was uploaded but no
+    SurfaceAppearance exists yet.
+
+    Returns True if any changes were made.
     """
     import re
     import xml.etree.ElementTree as ET
 
     content = rbxl_path.read_text(encoding="utf-8")
 
-    # Try XML-aware patching first; fall back to text-based for malformed XML
     try:
         tree = ET.parse(rbxl_path)  # noqa: S314 — trusted local file
     except ET.ParseError:
-        # Fallback: text-based replacement (original behavior)
         return _patch_rbxl_asset_ids_text(content, rbxl_path, asset_ids)
 
     root = tree.getroot()
     changed = False
 
-    # Asset reference property tags in Roblox XML
+    # ── Build lookup indices from uploaded asset names ───────────────
+    # Map stem (no extension) → rbxassetid URL for fast matching.
+    stem_to_url: dict[str, str] = {}
+    name_to_url: dict[str, str] = {}
+    for local_name, asset_id in asset_ids.items():
+        url = f"rbxassetid://{asset_id}"
+        name_to_url[local_name.lower()] = url
+        stem_to_url[Path(local_name).stem.lower()] = url
+
+    # Separate texture assets (images) from other assets (audio).
+    texture_stem_to_url: dict[str, str] = {}
+    for local_name, asset_id in asset_ids.items():
+        if Path(local_name).suffix.lower() in {".png", ".jpg", ".jpeg"}:
+            texture_stem_to_url[Path(local_name).stem.lower()] = f"rbxassetid://{asset_id}"
+
+    # Build Unity mesh→material map if project path is available.
+    _unity_mesh_material_map = _build_mesh_material_map(unity_project_path) if unity_project_path else {}
+
     ASSET_TAGS = {"Content", "url"}
 
-    for local_name, asset_id in asset_ids.items():
-        rbx_url = f"rbxassetid://{asset_id}"
-        stem = Path(local_name).stem
-        placeholders = [f"rbxassetid://{local_name}", f"rbxassetid://{stem}"]
+    # ── Pass 1: patch existing Content/url elements ─────────────────
+    for elem in root.iter():
+        if elem.tag not in ASSET_TAGS:
+            continue
+        if elem.text is None:
+            continue
 
-        # Also build regex for TODO audio placeholders
-        todo_pattern = re.compile(
-            r"-- TODO: upload [^\n]*?" + re.escape(local_name),
-            re.IGNORECASE,
-        )
+        text = elem.text
+        original_text = text
 
-        for elem in root.iter():
-            if elem.tag not in ASSET_TAGS:
-                continue
-            if elem.text is None:
-                continue
-            text = elem.text
-            for placeholder in placeholders:
-                if placeholder in text:
-                    text = text.replace(placeholder, rbx_url)
-                    changed = True
-            new_text = todo_pattern.sub(rbx_url, text)
-            if new_text != text:
-                changed = True
-                text = new_text
+        # (a) Replace rbxassetid:// placeholders.
+        for local_name, asset_id in asset_ids.items():
+            rbx_url = f"rbxassetid://{asset_id}"
+            stem = Path(local_name).stem
+            text = text.replace(f"rbxassetid://{local_name}", rbx_url)
+            text = text.replace(f"rbxassetid://{stem}", rbx_url)
+
+        # (b) Replace "-- TODO: upload ..." patterns.
+        for local_name, asset_id in asset_ids.items():
+            pattern = re.compile(
+                r"-- TODO: upload [^\n]*?" + re.escape(local_name),
+                re.IGNORECASE,
+            )
+            text = pattern.sub(f"rbxassetid://{asset_id}", text)
+
+        # (c) Replace local filesystem paths by matching the filename.
+        #     e.g. "/Users/.../MenuTheme.ogg" → rbxassetid://12345
+        if text.startswith("/") or text.startswith("\\"):
+            fname = Path(text).name.lower()
+            fstem = Path(text).stem.lower()
+            if fname in name_to_url:
+                text = name_to_url[fname]
+            elif fstem in stem_to_url:
+                text = stem_to_url[fstem]
+
+        if text != original_text:
             elem.text = text
+            changed = True
+
+    # ── Pass 2: inject SurfaceAppearance on MeshParts ───────────────
+    # Uses mesh_texture_map (mesh_id → texture filename) built during assembly,
+    # plus a fallback name-matching strategy.
+    for item in list(root.iter("Item")):
+        if item.get("class") != "MeshPart":
+            continue
+
+        # Skip if SurfaceAppearance already exists.
+        has_sa = any(
+            child.get("class") == "SurfaceAppearance"
+            for child in item.findall("Item")
+        )
+        if has_sa:
+            continue
+
+        props = item.find("Properties")
+        if props is None:
+            continue
+
+        part_name = ""
+        mesh_id = ""
+        for p in props:
+            if p.get("name") == "Name":
+                part_name = p.text or ""
+            elif p.get("name") == "MeshId":
+                mesh_id = p.text or ""
+
+        matched_url = None
+
+        # Strategy 1: mesh_texture_map from assembly (mesh_id → texture filename).
+        if mesh_texture_map and mesh_id:
+            tex_filename = mesh_texture_map.get(mesh_id)
+            if tex_filename:
+                tex_lower = tex_filename.lower()
+                stem_lower = Path(tex_filename).stem.lower()
+                if tex_lower in name_to_url:
+                    matched_url = name_to_url[tex_lower]
+                elif stem_lower in stem_to_url:
+                    matched_url = stem_to_url[stem_lower]
+
+        # Strategy 2: Unity project mesh→material mapping.
+        if not matched_url and _unity_mesh_material_map:
+            mesh_stem = Path(mesh_id).stem.lower() if mesh_id else part_name.lower()
+            tex_fn = _unity_mesh_material_map.get(mesh_stem)
+            if tex_fn:
+                tex_lower = tex_fn.lower()
+                stem_lower = Path(tex_fn).stem.lower()
+                if tex_lower in name_to_url:
+                    matched_url = name_to_url[tex_lower]
+                elif stem_lower in stem_to_url:
+                    matched_url = stem_to_url[stem_lower]
+
+        # Strategy 3: name-based fallback.
+        if not matched_url:
+            candidates = [
+                f"{part_name.lower()}_color",
+                f"{Path(mesh_id).stem.lower()}_color" if mesh_id else "",
+                part_name.lower(),
+            ]
+            for candidate in candidates:
+                if candidate and candidate in texture_stem_to_url:
+                    matched_url = texture_stem_to_url[candidate]
+                    break
+
+        if matched_url:
+            sa_item = ET.SubElement(item, "Item")
+            sa_item.set("class", "SurfaceAppearance")
+            sa_props = ET.SubElement(sa_item, "Properties")
+            sa_name = ET.SubElement(sa_props, "string")
+            sa_name.set("name", "Name")
+            sa_name.text = "SurfaceAppearance"
+            sa_cmap = ET.SubElement(sa_props, "Content")
+            sa_cmap.set("name", "ColorMap")
+            sa_cmap.text = matched_url
+            changed = True
 
     if changed:
         tree.write(rbxl_path, encoding="unicode", xml_declaration=True)
@@ -420,6 +680,8 @@ def upload_to_roblox(
     audio_dir: Path | None = None,
     creator_id: int | None = None,
     creator_type: str = "User",
+    mesh_texture_map: dict[str, str] | None = None,
+    unity_project_path: Path | None = None,
 ) -> UploadResult:
     """
     Upload a converted .rbxl place file (and optionally textures, sprites,
@@ -525,16 +787,32 @@ def upload_to_roblox(
     # ── Patch .rbxl with uploaded asset IDs ────────────────────────────
     if result.asset_ids:
         try:
-            result.rbxl_patched = _patch_rbxl_asset_ids(rbxl_path, result.asset_ids)
+            result.rbxl_patched = _patch_rbxl_asset_ids(
+                rbxl_path, result.asset_ids, mesh_texture_map, unity_project_path,
+            )
             if result.rbxl_patched:
                 logger.info("Patched .rbxl with %d asset ID(s)", len(result.asset_ids))
         except Exception as exc:  # noqa: BLE001
             result.warnings.append(f"Failed to patch .rbxl with asset IDs: {exc}")
 
+    # ── Convert XML to binary format (required by Roblox Open Cloud) ──
+    upload_path = rbxl_path
+    if rbxl_path.exists():
+        try:
+            raw = rbxl_path.read_bytes()
+            if raw.lstrip().startswith(b"<?xml"):
+                from modules.rbxl_binary_writer import xml_to_binary
+                binary_path = rbxl_path.with_name(rbxl_path.stem + "_binary.rbxl")
+                xml_to_binary(rbxl_path, binary_path)
+                upload_path = binary_path
+                logger.info("Converted XML .rbxl to binary format for upload")
+        except Exception as exc:  # noqa: BLE001
+            result.warnings.append(f"Binary conversion failed, uploading XML: {exc}")
+
     # ── Upload place file (after patching) ─────────────────────────────
     if universe_id and place_id:
         try:
-            resp = _upload_place(rbxl_path, api_key, universe_id, place_id)
+            resp = _upload_place(upload_path, api_key, universe_id, place_id)
             result.place_id = place_id
             result.universe_id = universe_id
             result.version_number = resp.get("versionNumber")

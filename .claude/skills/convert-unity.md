@@ -19,6 +19,16 @@ You are orchestrating the Unity → Roblox game converter. This is a multi-phase
 5. **Assembly** — Build the .rbxl file
 6. **Upload** (optional) — Push to Roblox Cloud
 
+### Prerequisites
+
+Before running, install dependencies:
+```bash
+pip3 install -r requirements.txt --break-system-packages
+```
+Use `python3` (not `python`) — macOS does not ship `python`.
+
+All commands require **two positional arguments**: `<unity_project_path>` and `<output_dir>`.
+
 ### Step-by-step Workflow
 
 #### Step 0: Gather Inputs
@@ -34,10 +44,8 @@ Validate that the Unity project path exists and contains an `Assets/` directory.
 
 #### Step 1: Discovery — Parse Scenes & Prefabs
 
-Run Phase 1 of the pipeline using `convert_interactive.py`:
-
 ```bash
-cd <project-root> && python convert_interactive.py discover <unity_project_path>
+python3 convert_interactive.py discover <unity_project_path> <output_dir>
 ```
 
 This outputs a JSON summary to stdout. Present the results to the user:
@@ -51,7 +59,7 @@ This outputs a JSON summary to stdout. Present the results to the user:
 #### Step 2: Asset Inventory & GUID Resolution
 
 ```bash
-python convert_interactive.py inventory <unity_project_path>
+python3 convert_interactive.py inventory <unity_project_path> <output_dir>
 ```
 
 Present results:
@@ -64,7 +72,7 @@ Present results:
 #### Step 3: Material Mapping
 
 ```bash
-python convert_interactive.py materials <unity_project_path> <output_dir> [--referenced-guids <comma-separated-guids>]
+python3 convert_interactive.py materials <unity_project_path> <output_dir> [--referenced-guids <comma-separated-guids>]
 ```
 
 Present results:
@@ -78,11 +86,18 @@ Present results:
 - Want to provide manual mappings for specific materials?
 - Skip certain materials entirely?
 
+**Known issue — vertex colors:** Many Unity games (e.g., Trash Dash) use vertex-color-only shaders. Roblox does not support vertex colors, so these materials will appear flat/uncolored. The material mapper flags these as HIGH severity. There is no automated fix — the user must bake vertex colors into albedo textures manually in a 3D tool.
+
 #### Step 4: Code Transpilation
 
 ```bash
-python convert_interactive.py transpile <unity_project_path> [--use-ai] [--api-key <key>]
+python3 convert_interactive.py transpile <unity_project_path> <output_dir> [--use-ai] [--no-ai] [--api-key <key>]
 ```
+
+**AI mode vs rule-based:**
+- `--use-ai --api-key <key>` uses Claude for high-quality transpilation. Always prefer this when the user has a funded Anthropic API key.
+- `--no-ai` uses the rule-based transpiler. Faster but produces many errors (residual C# curly braces, unbalanced blocks). Expect ~30% of scripts to have validation errors.
+- If AI mode fails with "credit balance too low" or 401, the key has no credits. Do NOT retry the same key — inform the user and offer `--no-ai` as fallback.
 
 Present results:
 - Total scripts found
@@ -100,15 +115,17 @@ Present results:
 
 After the user reviews flagged scripts, run Luau validation:
 ```bash
-python convert_interactive.py validate <output_dir>
+python3 convert_interactive.py validate <output_dir>
 ```
 
 Report validation errors and let the user decide how to handle them.
 
+**Known issue — false positive curly-brace errors:** The validator flags valid Luau table constructors (`{}`) as C# curly braces. If AI transpilation was used and the scripts look correct, these errors are noise. Inform the user and proceed.
+
 #### Step 5: Assembly — Build .rbxl
 
 ```bash
-python convert_interactive.py assemble <unity_project_path> <output_dir> [--decimate] [--state-file <path>]
+python3 convert_interactive.py assemble <unity_project_path> <output_dir> [--decimate] [--state-file <path>]
 ```
 
 Present results:
@@ -117,33 +134,52 @@ Present results:
 - Output file path and size
 - Any warnings from the writer
 
+**Known issues:**
+- **FBX meshes skipped**: `trimesh` does not support `.fbx` format. All FBX meshes will be skipped for decimation and referenced by local filesystem path. The user will need to import FBX files manually into Roblox Studio.
+- **SurfaceAppearance may be missing**: The assembly phase relies on MeshRenderer components being present on scene nodes. If most meshes are inside prefab instances, the prefab resolution may not fully extract MeshRenderer data, resulting in 0 SurfaceAppearance items. The upload patcher (Step 6) compensates by scanning the Unity project for mesh→material relationships.
+
 **Decision point:** If mesh decimation was enabled and some meshes were significantly reduced or skipped, present the details and ask if the user wants to adjust quality settings and re-run.
 
 #### Step 6: Upload (Optional)
 
 Ask the user if they want to upload to Roblox Cloud. If yes, they need:
 - Roblox Open Cloud API key (with `asset:read`, `asset:write`, and `place:write` scopes)
-- Universe ID
-- Place ID
+- Universe ID and Place ID (must already exist — the API cannot create them)
 - Creator ID (their Roblox user ID or group ID)
 
-The upload step handles three asset categories:
+**Important — place must exist first:** The Roblox Place Publishing API only uploads to existing places. If the user just created the game, they must publish an initial version from Roblox Studio before the API will accept uploads. A persistent HTTP 409 "Server is busy" error means the place needs this initial publish.
 
-1. **Sprites/Images** — Sliced sprite PNGs from `<output_dir>/sprites/` are uploaded as Decal assets
-2. **Audio** — Audio files from `<output_dir>/audio/` are uploaded as Audio assets
-3. **Place file** — The .rbxl is uploaded to the specified place
+**Important — look up numeric user ID:** If the user provides a Roblox username, resolve it to a numeric ID:
+```bash
+curl -s -X POST "https://users.roblox.com/v1/usernames/users" \
+  -H "Content-Type: application/json" \
+  -d '{"usernames": ["<username>"]}'
+```
 
-**Important:** Sprites and audio must be uploaded *before* the place file, because the .rbxl needs to be patched with the resulting `rbxassetid://` URLs.
+The upload step handles four operations in order:
+
+1. **Textures** — PNGs from `<output_dir>/textures/` uploaded as Decal assets
+2. **Sprites** — Sliced sprite PNGs from `<output_dir>/sprites/` uploaded as Decal assets
+3. **Audio** — Audio files from `<output_dir>/audio/` uploaded as Audio assets
+4. **Patch & Upload Place** — The .rbxl is patched with `rbxassetid://` URLs, converted from XML to binary format, then uploaded
+
+**Critical:** The Roblox asset upload API is **asynchronous**. The initial POST returns an `operationId` with `done: false`. The uploader polls the operation until complete to get the actual `assetId`. This is handled automatically.
+
+**Critical:** The Roblox Place Publishing API only accepts **binary .rbxl** format, not XML. The uploader automatically converts XML → binary using `modules/rbxl_binary_writer.py`.
 
 ```bash
-python convert_interactive.py upload <output_dir> [--roblox-api-key <key>] [--universe-id <id>] [--place-id <id>] [--creator-id <id>] [--creator-type User|Group]
+python3 convert_interactive.py upload <output_dir> [--roblox-api-key <key>] [--universe-id <id>] [--place-id <id>] [--creator-id <id>] [--creator-type User|Group]
 ```
 
 Present results:
-- Number of sprites uploaded and their asset IDs
-- Number of audio files uploaded and their asset IDs
+- Number of textures/sprites/audio uploaded and their asset IDs
 - Whether the .rbxl was patched with the new asset IDs
 - Place upload success/failure and version number
+
+**Asset patching details:** The patcher uses three strategies to inject `rbxassetid://` URLs:
+1. Replaces `rbxassetid://` placeholders and `-- TODO: upload` comments
+2. Replaces local filesystem paths in Content elements by matching filenames
+3. Injects SurfaceAppearance children on MeshParts by scanning the Unity project for mesh→material relationships (MeshFilter + MeshRenderer GUID pairs in .prefab/.unity files)
 
 **Decision point:** If some asset uploads fail (rate limits, size limits, format issues), ask the user:
 - Retry failed uploads?
@@ -155,7 +191,7 @@ After a successful upload, the .rbxl in the output directory will have been rewr
 #### Step 7: Final Report
 
 ```bash
-python convert_interactive.py report <output_dir>
+python3 convert_interactive.py report <output_dir>
 ```
 
 Read the generated report and present a summary to the user. Highlight:
@@ -169,6 +205,7 @@ Read the generated report and present a summary to the user. Highlight:
 - If any phase command fails, show the error to the user and ask how to proceed
 - Offer to retry, skip the phase, or abort the conversion
 - Never silently swallow errors — every issue is a potential decision point
+- If a command outputs a YAML parse warning to stderr before the JSON (e.g., "Failed to parse YAML in UIRenderer.asset"), strip it before parsing JSON
 
 ### State Management
 
@@ -176,6 +213,7 @@ The interactive pipeline writes intermediate state to `<output_dir>/.convert_sta
 - Resuming a partially completed conversion
 - Re-running individual phases with different settings
 - If state exists from a previous run, ask the user if they want to resume or start fresh
+- The `mesh_texture_map` and `unity_project_path` fields in state are used by the upload patcher
 
 ### Tips for the Operator (Claude)
 
@@ -184,3 +222,6 @@ The interactive pipeline writes intermediate state to `<output_dir>/.convert_sta
 - For large lists (many materials, many scripts), summarize counts first, then offer to drill into specifics
 - Remember the user's earlier decisions — if they said "accept all partial materials", don't re-ask for the same category
 - If the Unity project is a well-known game template (e.g., Trash Dash), mention that you recognize it and highlight known conversion considerations from the docs
+- If an API key fails, do NOT retry the same key more than once with the same error — inform the user
+- Parse JSON output carefully: some commands emit warnings to stderr before the JSON on stdout. Use a Python one-liner to extract just the JSON, or redirect stderr
+- When presenting upload results, always show the count of asset IDs actually captured (not just uploads attempted), as async operations may fail silently

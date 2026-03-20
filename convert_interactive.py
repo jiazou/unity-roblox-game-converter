@@ -703,6 +703,18 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         mesh_path_remap=mesh_path_remap,
     )
 
+    # Record mesh→texture mapping for the upload patcher.
+    # Walks all parts and collects {mesh_id: color_map} for parts that have
+    # a surface_appearance assigned during apply_materials.
+    mesh_texture_map: dict[str, str] = {}
+    def _collect_mesh_textures(plist: list) -> None:
+        for p in plist:
+            if p.mesh_id and p.surface_appearance and p.surface_appearance.color_map:
+                mesh_texture_map[p.mesh_id] = p.surface_appearance.color_map
+            _collect_mesh_textures(p.children)
+    _collect_mesh_textures(parts)
+    state["mesh_texture_map"] = mesh_texture_map
+
     # Copy referenced audio files to <output_dir>/audio/ for the upload step
     import shutil
     audio_out = out_dir / "audio"
@@ -817,6 +829,10 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
     sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
     audio_dir = out_dir / "audio" if (out_dir / "audio").is_dir() else None
 
+    # Load mesh→texture mapping from state (stored during assembly).
+    mesh_texture_map = state.get("mesh_texture_map")
+    unity_project_path = Path(state.get("unity_project_path", ""))
+
     upload_result = call_with_retry(
         roblox_uploader.upload_to_roblox,
         rbxl_path=rbxl_path,
@@ -828,6 +844,8 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         place_id=place_id,
         creator_id=creator_id,
         creator_type=creator_type,
+        mesh_texture_map=mesh_texture_map,
+        unity_project_path=unity_project_path if unity_project_path.is_dir() else None,
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,
