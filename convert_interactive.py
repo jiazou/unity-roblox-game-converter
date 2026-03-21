@@ -103,6 +103,72 @@ def cli() -> None:
 # status — show current conversion state
 # ---------------------------------------------------------------------------
 
+ALL_PHASES = ["discover", "inventory", "materials", "transpile", "assemble", "upload", "report"]
+
+
+@cli.command()
+@click.argument("unity_project_path", type=click.Path())
+@click.argument("output_dir", type=click.Path())
+@click.option("--install", is_flag=True, help="Auto-install missing dependencies.")
+def preflight(unity_project_path: str, output_dir: str, install: bool) -> None:
+    """Check prerequisites: Python version, packages, Unity project validity."""
+    import subprocess
+    import sys
+
+    result: dict = {"phase": "preflight", "success": True}
+    result["python_version"] = sys.version.split()[0]
+
+    # Check Python version
+    if sys.version_info < (3, 10):
+        result["success"] = False
+        result["python_error"] = f"Python >= 3.10 required, got {sys.version}"
+
+    # Check required packages
+    required = {
+        "yaml": "PyYAML", "lxml": "lxml", "click": "click", "PIL": "Pillow",
+        "trimesh": "trimesh", "anthropic": "anthropic", "tree_sitter": "tree-sitter",
+        "tree_sitter_c_sharp": "tree-sitter-c-sharp", "lz4": "lz4",
+    }
+    missing = []
+    for mod, pkg in required.items():
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(pkg)
+    result["missing_packages"] = missing
+
+    if missing and install:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", "requirements.txt",
+             "--break-system-packages"],
+            capture_output=True,
+        )
+        # Re-check
+        still_missing = []
+        for mod, pkg in required.items():
+            try:
+                __import__(mod)
+            except ImportError:
+                still_missing.append(pkg)
+        result["missing_packages"] = still_missing
+        result["install_ran"] = True
+
+    # Validate Unity project
+    unity_path = Path(unity_project_path)
+    result["unity_project_valid"] = unity_path.is_dir() and (unity_path / "Assets").is_dir()
+    if not result["unity_project_valid"]:
+        result["success"] = False
+    if result["missing_packages"]:
+        result["success"] = False
+
+    # Check output dir
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    result["output_dir"] = str(out_dir.resolve())
+
+    _emit(result)
+
+
 @cli.command()
 @click.argument("output_dir", type=click.Path())
 def status(output_dir: str) -> None:
@@ -112,12 +178,23 @@ def status(output_dir: str) -> None:
     if not state:
         _emit({"status": "no_conversion", "message": "No conversion in progress at this path."})
         return
+
+    completed = state.get("completed_phases", [])
+    # Find next incomplete phase
+    next_phase = None
+    for phase in ALL_PHASES:
+        if phase not in completed:
+            next_phase = phase
+            break
+
     _emit({
         "status": "in_progress",
-        "completed_phases": state.get("completed_phases", []),
+        "completed_phases": completed,
         "unity_project_path": state.get("unity_project_path", ""),
         "output_dir": str(out),
         "errors": state.get("errors", []),
+        "resumable": len(completed) > 0 and next_phase is not None,
+        "next_phase": next_phase,
     })
 
 
@@ -420,6 +497,27 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
             "skipped": transpilation.skipped,
         }
 
+        # M8: suggest batch review when many scripts are flagged
+        if transpilation.flagged > 5:
+            result_info["batch_review_suggested"] = True
+
+        # M5: classify API key failures when all scripts are flagged
+        if transpilation.total > 0 and transpilation.flagged == transpilation.total:
+            all_warnings = []
+            for ts in transpilation.scripts:
+                all_warnings.extend(ts.warnings)
+            warnings_text = " ".join(all_warnings).lower()
+            if "credit balance" in warnings_text or "insufficient_credits" in warnings_text:
+                result_info["error_type"] = "insufficient_credits"
+                result_info["suggestion"] = "Provide a funded API key or use --no-ai"
+            elif (
+                "authentication_error" in warnings_text
+                or "invalid x-api-key" in warnings_text
+                or "401" in warnings_text
+            ):
+                result_info["error_type"] = "auth_failure"
+                result_info["suggestion"] = "Provide a funded API key or use --no-ai"
+
     except FileNotFoundError as exc:
         errors.append(str(exc))
         scripts_info = []
@@ -713,6 +811,10 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
                 mesh_texture_map[p.mesh_id] = p.surface_appearance.color_map
             _collect_mesh_textures(p.children)
     _collect_mesh_textures(parts)
+    # Also collect from ServerStorage templates (prefabs)
+    if emit_packages and package_info:
+        for _name, root_part in (package_result.server_storage_templates or []):
+            _collect_mesh_textures([root_part])
     state["mesh_texture_map"] = mesh_texture_map
 
     # Copy referenced audio files to <output_dir>/audio/ for the upload step
@@ -810,11 +912,26 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
 @click.option("--creator-type", default=config.ROBLOX_CREATOR_TYPE,
               type=click.Choice(["User", "Group"]),
               help="Whether creator-id is a User or Group.")
+@click.option("--creator-username", default=None,
+              help="Roblox username (resolved to numeric ID if --creator-id not given).")
 def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
-           place_id: int | None, creator_id: int | None, creator_type: str) -> None:
+           place_id: int | None, creator_id: int | None, creator_type: str,
+           creator_username: str | None) -> None:
     """Phase 5: Upload assets and .rbxl to Roblox Cloud."""
     out_dir = Path(output_dir).resolve()
     state = _load_state(out_dir)
+
+    # Resolve username to numeric ID if needed
+    if creator_username and not creator_id:
+        resolved = roblox_uploader.resolve_roblox_username(creator_username)
+        if resolved:
+            creator_id = resolved
+        else:
+            _emit({
+                "phase": "upload", "success": False,
+                "errors": [f"Could not resolve Roblox username '{creator_username}' to a numeric ID."],
+            })
+            return
 
     rbxl_path = Path(state.get("assembly", {}).get("rbxl_path", out_dir / config.RBXL_OUTPUT_FILENAME))
     if not rbxl_path.exists():
@@ -861,7 +978,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
     }
     _save_state(out_dir, state)
 
-    _emit({
+    output = {
         "phase": "upload",
         "success": upload_result.success,
         "skipped": upload_result.skipped,
@@ -873,7 +990,12 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         "rbxl_patched": upload_result.rbxl_patched,
         "errors": upload_result.errors,
         "warnings": upload_result.warnings,
-    })
+    }
+    if upload_result.error_type:
+        output["error_type"] = upload_result.error_type
+    if upload_result.suggestion:
+        output["suggestion"] = upload_result.suggestion
+    _emit(output)
 
 
 # ---------------------------------------------------------------------------

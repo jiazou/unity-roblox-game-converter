@@ -56,11 +56,11 @@ _BLOCK_OPENERS = re.compile(
     re.VERBOSE,
 )
 
-# Stand-alone `end` on a line (not inside a string or comment)
-_END_KW = re.compile(r"^\s*end\b", re.MULTILINE)
+# `end` keyword anywhere (not just start of line — catches inline `if x then return end`)
+_END_KW = re.compile(r"\bend\b")
 
 # `until` closes a `repeat` block (instead of `end`)
-_UNTIL_KW = re.compile(r"^\s*until\b", re.MULTILINE)
+_UNTIL_KW = re.compile(r"\buntil\b")
 
 
 def _strip_comments_and_strings(source: str) -> str:
@@ -95,8 +95,20 @@ _CSHARP_PATTERNS: list[tuple[re.Pattern, str, str]] = [
      "W010", "Possible C# 'new' constructor call (Luau uses .new())"),
 ]
 
-# Braces that shouldn't appear in Luau outside strings/comments
-_CURLY_BRACES = re.compile(r"[{}]")
+# Curly braces that look like C# blocks (after control-flow keywords, etc.)
+# We only flag braces that follow patterns indicating C# block syntax,
+# NOT valid Luau table constructors (e.g., {}, {1,2,3}, setmetatable({}, mt)).
+# Valid Luau contexts for '{': after '=', ',', '(', 'return', or at line start.
+_CSHARP_OPEN_BRACE = re.compile(
+    r"(?:(?:^|;)\s*(?:if|else\s*if|else|for|foreach|while|do|switch|try|catch|finally|class|struct|interface|namespace|enum)\b[^{\n]*)\{",
+    re.MULTILINE,
+)
+# Only flag closing braces followed by C# keywords (else/catch/finally).
+# Standalone `}` on its own line is ambiguous — could be a Luau table close.
+_CSHARP_CLOSE_BRACE = re.compile(
+    r"^\s*\}\s*(?:else|catch|finally)\b",
+    re.MULTILINE,
+)
 
 # Semicolons at end of line (C# artifact)
 _TRAILING_SEMICOLON = re.compile(r";\s*$", re.MULTILINE)
@@ -199,12 +211,18 @@ def validate_luau(source: str, source_name: str = "<script>") -> ValidationResul
                 message=f"{msg}: '{match.group().strip()}'",
             ))
 
-    # 3. Curly braces (C# artifact in Luau)
-    for match in _CURLY_BRACES.finditer(stripped):
+    # 3. Curly braces that look like C# blocks (not Luau table constructors)
+    for match in _CSHARP_OPEN_BRACE.finditer(stripped):
         line_num = stripped[:match.start()].count("\n") + 1
         result.issues.append(ValidationIssue(
             line=line_num, column=0, severity="error", code="E030",
-            message=f"Curly brace '{match.group()}' found — Luau uses 'do/then...end' blocks",
+            message="C#-style opening brace '{' found — Luau uses 'do/then...end' blocks",
+        ))
+    for match in _CSHARP_CLOSE_BRACE.finditer(stripped):
+        line_num = stripped[:match.start()].count("\n") + 1
+        result.issues.append(ValidationIssue(
+            line=line_num, column=0, severity="error", code="E030",
+            message="C#-style closing brace '}' found — Luau uses 'do/then...end' blocks",
         ))
 
     # 4. Trailing semicolons
