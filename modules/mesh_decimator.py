@@ -77,6 +77,41 @@ class DecimationResult:
 # Mesh loading helpers (trimesh)
 # ---------------------------------------------------------------------------
 
+def _load_fbx_as_trimesh(mesh_path: Path):
+    """Load an FBX file via pyassimp and return a trimesh.Trimesh object.
+
+    Requires the ``assimp`` native library (``brew install assimp`` on macOS)
+    and the ``pyassimp`` Python package.  Returns None if loading fails.
+    """
+    import os
+    import numpy as np
+
+    # Ensure pyassimp can find the Homebrew-installed library.
+    if "/opt/homebrew/lib" not in os.environ.get("LD_LIBRARY_PATH", ""):
+        os.environ["LD_LIBRARY_PATH"] = (
+            os.environ.get("LD_LIBRARY_PATH", "") + ":/opt/homebrew/lib"
+        )
+
+    import pyassimp  # type: ignore
+    import trimesh   # type: ignore
+
+    with pyassimp.load(str(mesh_path)) as scene:
+        if not scene.meshes:
+            return None
+        # Merge all sub-meshes into one trimesh.
+        all_verts = []
+        all_faces = []
+        offset = 0
+        for m in scene.meshes:
+            all_verts.append(np.array(m.vertices, dtype=np.float64))
+            faces = np.array([f.tolist() for f in m.faces], dtype=np.int64)
+            all_faces.append(faces + offset)
+            offset += len(m.vertices)
+        verts = np.vstack(all_verts)
+        faces = np.vstack(all_faces)
+        return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+
 def _load_mesh_stats(mesh_path: Path) -> MeshStats:
     """
     Load a mesh file and return its vertex/face counts.
@@ -95,6 +130,22 @@ def _load_mesh_stats(mesh_path: Path) -> MeshStats:
         return stats
     except ImportError:
         pass
+    except NotImplementedError:
+        # trimesh doesn't support this format (e.g. FBX) — try pyassimp.
+        if mesh_path.suffix.lower() in (".fbx",):
+            try:
+                mesh = _load_fbx_as_trimesh(mesh_path)
+                if mesh is not None and len(mesh.vertices) > 0:
+                    stats.vertices = len(mesh.vertices)
+                    stats.faces = len(mesh.faces)
+                    return stats
+                stats.is_valid = False
+                stats.error = f"FBX loaded but contained no geometry"
+                return stats
+            except Exception as exc:  # noqa: BLE001
+                stats.is_valid = False
+                stats.error = f"pyassimp FBX load failed: {exc}"
+                return stats
     except Exception as exc:  # noqa: BLE001
         stats.is_valid = False
         stats.error = f"trimesh load failed: {exc}"
@@ -138,7 +189,13 @@ def _decimate_mesh(
     """
     import trimesh  # type: ignore
 
-    mesh = trimesh.load(str(mesh_path), force="mesh", process=False)
+    try:
+        mesh = trimesh.load(str(mesh_path), force="mesh", process=False)
+    except NotImplementedError:
+        # FBX not supported by trimesh — fall back to pyassimp
+        mesh = _load_fbx_as_trimesh(mesh_path)
+        if mesh is None:
+            raise ValueError(f"Could not load {mesh_path}")
     original_faces = len(mesh.faces)
 
     if original_faces <= target_faces:
