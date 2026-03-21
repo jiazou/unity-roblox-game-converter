@@ -25,9 +25,9 @@ Sub-commands:
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import time
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import click
@@ -824,8 +824,6 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
             _collect_mesh_textures([root_part])
     state["mesh_texture_map"] = mesh_texture_map
 
-    # Copy referenced audio files to <output_dir>/audio/ for the upload step
-    import shutil
     audio_out = out_dir / "audio"
     audio_copied = 0
     # From AudioSource components (sound_children on parts)

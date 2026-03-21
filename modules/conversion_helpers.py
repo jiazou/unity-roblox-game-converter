@@ -24,9 +24,17 @@ from modules import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Material → SurfaceAppearance bridge
-# ---------------------------------------------------------------------------
+def _parse_color3(color_data: Any, normalize_255: bool = False) -> tuple[float, float, float]:
+    """Extract an (r, g, b) tuple from a Unity color dict, defaulting to white."""
+    if not isinstance(color_data, dict):
+        return (1.0, 1.0, 1.0)
+    channels = []
+    for key in ("r", "g", "b"):
+        v = float(color_data.get(key, 1.0))
+        if normalize_255 and v > 1:
+            v /= 255.0
+        channels.append(v)
+    return (channels[0], channels[1], channels[2])
 
 def roblox_def_to_surface_appearance(
     rdef: material_mapper.RobloxMaterialDef,
@@ -94,12 +102,7 @@ def convert_light_components(
             continue
         props = comp.properties
         light_type = int(props.get("m_Type", 2))
-        color_data = props.get("m_Color", {})
-        color = (
-            float(color_data.get("r", 1.0)) if isinstance(color_data, dict) else 1.0,
-            float(color_data.get("g", 1.0)) if isinstance(color_data, dict) else 1.0,
-            float(color_data.get("b", 1.0)) if isinstance(color_data, dict) else 1.0,
-        )
+        color = _parse_color3(props.get("m_Color", {}))
         intensity = float(props.get("m_Intensity", 1.0))
         range_val = float(props.get("m_Range", 10.0))
         shadows = int(props.get("m_Shadows", {}).get("m_Type", 0) if isinstance(props.get("m_Shadows"), dict) else props.get("m_Shadows", 0))
@@ -185,11 +188,7 @@ def convert_particle_components(
 
         start_color = initial_module.get("startColor", {})
         color_data = start_color.get("maxColor", {}) if isinstance(start_color, dict) else {}
-        p_color = (
-            float(color_data.get("r", 1.0)) / 255.0 if float(color_data.get("r", 1.0)) > 1 else float(color_data.get("r", 1.0)),
-            float(color_data.get("g", 1.0)) / 255.0 if float(color_data.get("g", 1.0)) > 1 else float(color_data.get("g", 1.0)),
-            float(color_data.get("b", 1.0)) / 255.0 if float(color_data.get("b", 1.0)) > 1 else float(color_data.get("b", 1.0)),
-        ) if isinstance(color_data, dict) else (1.0, 1.0, 1.0)
+        p_color = _parse_color3(color_data, normalize_255=True)
 
         part.particle_children.append((
             node_name + "_Particles",

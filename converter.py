@@ -19,6 +19,7 @@ No module imports another module — all wiring happens here.
 
 from __future__ import annotations
 
+import shutil
 import time
 from pathlib import Path
 
@@ -48,7 +49,6 @@ from modules.conversion_helpers import (
     transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
     build_report as _build_report,
 )
-from modules.llm_cache import LLMCache
 from modules.retry import call_with_retry
 
 
@@ -358,8 +358,6 @@ def convert(
     if skybox_config:
         click.echo("    → Skybox material → Sky object")
 
-    # Copy referenced audio files to <output_dir>/audio/ for the upload step
-    import shutil
     audio_out = out_dir / "audio"
     audio_copied = 0
     # From AudioSource components (sound_children on parts)

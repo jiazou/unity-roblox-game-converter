@@ -207,69 +207,73 @@ def _upload_place(
     return json.loads(resp.read().decode("utf-8"))
 
 
-def _upload_image_asset(
-    image_path: Path,
+_CONTENT_TYPE_MAP: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".ogg": "audio/ogg",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".fbx": "application/octet-stream",
+    ".obj": "model/obj",
+}
+
+
+def _upload_asset(
+    file_path: Path,
     api_key: str,
+    asset_type: str,
     display_name: str,
     description: str = "Uploaded by unity-roblox-game-converter",
     creator_id: int | None = None,
     creator_type: str = "User",
 ) -> dict[str, Any]:
     """
-    Upload a single image (texture) as a Roblox asset via Open Cloud Assets API.
+    Upload a file to Roblox via Open Cloud Assets API (POST /v1/assets).
 
-    Uses POST /v1/assets with multipart form data.
+    Works for images (Decal), audio (Audio), and meshes (Model).
     """
     import urllib.request
-    import urllib.error
 
-    url = "https://apis.roblox.com/assets/v1/assets"
-
-    boundary = f"----UnityRobloxConverter{int(time.time() * 1000)}"
-
-    request_body = json.dumps({
-        "assetType": "Decal",
-        "displayName": display_name,
-        "description": description,
-        "creationContext": {
-            "creator": {
-                "userId": str(creator_id),
-            } if creator_type == "User" and creator_id else {},
-            "expectedPrice": 0,
-        },
-    })
-
-    image_bytes = image_path.read_bytes()
-
-    # Validate file size before upload
-    if len(image_bytes) > ASSET_MAX_BYTES:
+    file_bytes = file_path.read_bytes()
+    if len(file_bytes) > ASSET_MAX_BYTES:
         raise ValueError(
-            f"Asset file too large for Roblox Open Cloud: "
-            f"{len(image_bytes) / 1_048_576:.1f} MB (limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
+            f"File too large for Roblox Open Cloud: "
+            f"{len(file_bytes) / 1_048_576:.1f} MB (limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
         )
 
-    content_type = "image/png" if image_path.suffix.lower() == ".png" else "application/octet-stream"
+    if creator_type == "User" and creator_id:
+        creator = {"userId": str(creator_id)}
+    elif creator_type == "Group" and creator_id:
+        creator = {"groupId": str(creator_id)}
+    else:
+        creator = {}
 
-    body_parts = [
+    boundary = f"----UnityRobloxConverter{int(time.time() * 1000)}"
+    request_body = json.dumps({
+        "assetType": asset_type,
+        "displayName": display_name,
+        "description": description,
+        "creationContext": {"creator": creator, "expectedPrice": 0},
+    })
+
+    content_type = _CONTENT_TYPE_MAP.get(file_path.suffix.lower(), "application/octet-stream")
+    body_prefix = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="request"\r\n'
         f"Content-Type: application/json\r\n\r\n"
-        f"{request_body}\r\n",
-    ]
-    body_prefix = "".join(body_parts).encode("utf-8")
-
+        f"{request_body}\r\n"
+    ).encode("utf-8")
     file_header = (
         f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="fileContent"; filename="{image_path.name}"\r\n'
+        f'Content-Disposition: form-data; name="fileContent"; filename="{file_path.name}"\r\n'
         f"Content-Type: {content_type}\r\n\r\n"
     ).encode("utf-8")
     file_footer = f"\r\n--{boundary}--\r\n".encode("utf-8")
 
-    full_body = body_prefix + file_header + image_bytes + file_footer
-
     req = urllib.request.Request(
-        url,
-        data=full_body,
+        "https://apis.roblox.com/assets/v1/assets",
+        data=body_prefix + file_header + file_bytes + file_footer,
         method="POST",
         headers={
             "x-api-key": api_key,
@@ -281,190 +285,6 @@ def _upload_image_asset(
     _check_rate_limit_headers(resp)
     data = json.loads(resp.read().decode("utf-8"))
 
-    # Roblox returns an async operation — poll until done to get the asset ID.
-    op_id = data.get("operationId")
-    if op_id and not data.get("done", True):
-        data = _poll_operation(api_key, op_id)
-
-    return data
-
-
-def _upload_audio_asset(
-    audio_path: Path,
-    api_key: str,
-    display_name: str,
-    description: str = "Uploaded by unity-roblox-game-converter",
-    creator_id: int | None = None,
-    creator_type: str = "User",
-) -> dict[str, Any]:
-    """
-    Upload a single audio file as a Roblox Audio asset via Open Cloud Assets API.
-
-    Uses POST /v1/assets with multipart form data.
-    Supported formats: .ogg, .mp3, .wav (Roblox converts server-side).
-    """
-    import urllib.request
-    import urllib.error
-
-    url = "https://apis.roblox.com/assets/v1/assets"
-
-    boundary = f"----UnityRobloxConverter{int(time.time() * 1000)}"
-
-    request_body = json.dumps({
-        "assetType": "Audio",
-        "displayName": display_name,
-        "description": description,
-        "creationContext": {
-            "creator": {
-                "userId": str(creator_id),
-            } if creator_type == "User" and creator_id else (
-                {
-                    "groupId": str(creator_id),
-                } if creator_type == "Group" and creator_id else {}
-            ),
-            "expectedPrice": 0,
-        },
-    })
-
-    audio_bytes = audio_path.read_bytes()
-
-    if len(audio_bytes) > ASSET_MAX_BYTES:
-        raise ValueError(
-            f"Audio file too large for Roblox Open Cloud: "
-            f"{len(audio_bytes) / 1_048_576:.1f} MB (limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
-        )
-
-    suffix = audio_path.suffix.lower()
-    content_type_map = {
-        ".ogg": "audio/ogg",
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-    }
-    content_type = content_type_map.get(suffix, "application/octet-stream")
-
-    body_parts = [
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="request"\r\n'
-        f"Content-Type: application/json\r\n\r\n"
-        f"{request_body}\r\n",
-    ]
-    body_prefix = "".join(body_parts).encode("utf-8")
-
-    file_header = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="fileContent"; filename="{audio_path.name}"\r\n'
-        f"Content-Type: {content_type}\r\n\r\n"
-    ).encode("utf-8")
-    file_footer = f"\r\n--{boundary}--\r\n".encode("utf-8")
-
-    full_body = body_prefix + file_header + audio_bytes + file_footer
-
-    req = urllib.request.Request(
-        url,
-        data=full_body,
-        method="POST",
-        headers={
-            "x-api-key": api_key,
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        },
-    )
-
-    resp = urllib.request.urlopen(req, timeout=120)
-    _check_rate_limit_headers(resp)
-    data = json.loads(resp.read().decode("utf-8"))
-
-    # Roblox returns an async operation — poll until done to get the asset ID.
-    op_id = data.get("operationId")
-    if op_id and not data.get("done", True):
-        data = _poll_operation(api_key, op_id)
-
-    return data
-
-
-def _upload_mesh_asset(
-    mesh_path: Path,
-    api_key: str,
-    display_name: str,
-    description: str = "Uploaded by unity-roblox-game-converter",
-    creator_id: int | None = None,
-    creator_type: str = "User",
-) -> dict[str, Any]:
-    """
-    Upload a single mesh file as a Roblox Model asset via Open Cloud Assets API.
-
-    Uses POST /v1/assets with multipart form data.
-    Supported formats: .fbx, .obj (Roblox converts server-side).
-    """
-    import urllib.request
-    import urllib.error
-
-    url = "https://apis.roblox.com/assets/v1/assets"
-
-    boundary = f"----UnityRobloxConverter{int(time.time() * 1000)}"
-
-    request_body = json.dumps({
-        "assetType": "Model",
-        "displayName": display_name,
-        "description": description,
-        "creationContext": {
-            "creator": {
-                "userId": str(creator_id),
-            } if creator_type == "User" and creator_id else (
-                {
-                    "groupId": str(creator_id),
-                } if creator_type == "Group" and creator_id else {}
-            ),
-            "expectedPrice": 0,
-        },
-    })
-
-    mesh_bytes = mesh_path.read_bytes()
-
-    if len(mesh_bytes) > ASSET_MAX_BYTES:
-        raise ValueError(
-            f"Mesh file too large for Roblox Open Cloud: "
-            f"{len(mesh_bytes) / 1_048_576:.1f} MB (limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
-        )
-
-    suffix = mesh_path.suffix.lower()
-    content_type_map = {
-        ".fbx": "application/octet-stream",
-        ".obj": "model/obj",
-    }
-    content_type = content_type_map.get(suffix, "application/octet-stream")
-
-    body_parts = [
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="request"\r\n'
-        f"Content-Type: application/json\r\n\r\n"
-        f"{request_body}\r\n",
-    ]
-    body_prefix = "".join(body_parts).encode("utf-8")
-
-    file_header = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="fileContent"; filename="{mesh_path.name}"\r\n'
-        f"Content-Type: {content_type}\r\n\r\n"
-    ).encode("utf-8")
-    file_footer = f"\r\n--{boundary}--\r\n".encode("utf-8")
-
-    full_body = body_prefix + file_header + mesh_bytes + file_footer
-
-    req = urllib.request.Request(
-        url,
-        data=full_body,
-        method="POST",
-        headers={
-            "x-api-key": api_key,
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        },
-    )
-
-    resp = urllib.request.urlopen(req, timeout=120)
-    _check_rate_limit_headers(resp)
-    data = json.loads(resp.read().decode("utf-8"))
-
-    # Roblox returns an async operation — poll until done to get the asset ID.
     op_id = data.get("operationId")
     if op_id and not data.get("done", True):
         data = _poll_operation(api_key, op_id)
@@ -855,8 +675,8 @@ def upload_to_roblox(
             if mesh_path.suffix.lower() not in mesh_exts:
                 continue
             try:
-                resp = _upload_mesh_asset(
-                    mesh_path, api_key,
+                resp = _upload_asset(
+                    mesh_path, api_key, asset_type="Model",
                     display_name=mesh_path.stem,
                     creator_id=creator_id,
                     creator_type=creator_type,
@@ -878,8 +698,8 @@ def upload_to_roblox(
             if img_path.suffix.lower() not in image_exts:
                 continue
             try:
-                resp = _upload_image_asset(
-                    img_path, api_key,
+                resp = _upload_asset(
+                    img_path, api_key, asset_type="Decal",
                     display_name=img_path.stem,
                     creator_id=creator_id,
                     creator_type=creator_type,
@@ -900,8 +720,8 @@ def upload_to_roblox(
             if img_path.suffix.lower() not in image_exts:
                 continue
             try:
-                resp = _upload_image_asset(
-                    img_path, api_key,
+                resp = _upload_asset(
+                    img_path, api_key, asset_type="Decal",
                     display_name=img_path.stem,
                     creator_id=creator_id,
                     creator_type=creator_type,
@@ -923,8 +743,8 @@ def upload_to_roblox(
             if audio_path.suffix.lower() not in audio_exts:
                 continue
             try:
-                resp = _upload_audio_asset(
-                    audio_path, api_key,
+                resp = _upload_asset(
+                    audio_path, api_key, asset_type="Audio",
                     display_name=audio_path.stem,
                     creator_id=creator_id,
                     creator_type=creator_type,

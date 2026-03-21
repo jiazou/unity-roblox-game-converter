@@ -1650,10 +1650,9 @@ def _rule_based_transpile(
         luau,
     )
 
-    # Convert C# type casts to nothing
     luau = re.sub(r"\((?:int|float|double|string|bool)\)\s*", "", luau)
 
-    # Convert C# new keyword for common types
+    # C# new → Luau constructors
     luau = re.sub(r"\bnew\s+Vector3\(", "Vector3.new(", luau)
     luau = re.sub(r"\bnew\s+Vector2\(", "Vector2.new(", luau)
     luau = re.sub(r"\bnew\s+Color\(", "Color3.new(", luau)
@@ -1661,66 +1660,49 @@ def _rule_based_transpile(
     luau = re.sub(r"\bnew\s+Dictionary<[^>]*>\(\)", "{}", luau)
     luau = re.sub(r"\bnew\s+\w+\(\)", "nil --[[ new object ]]", luau)
 
-    # Convert != to ~= (Luau inequality operator)
+    # C# operators → Luau equivalents
     luau = re.sub(r"!=", "~=", luau)
-
-    # Convert && to and, || to or, ! to not (with word boundary)
     luau = re.sub(r"&&", " and ", luau)
     luau = re.sub(r"\|\|", " or ", luau)
     luau = re.sub(r"!(\w)", r"not \1", luau)
-
-    # Convert null to nil
     luau = re.sub(r"\bnull\b", "nil", luau)
-
-    # Convert true/false (same in Luau, but ensure lowercase)
     luau = re.sub(r"\bTrue\b", "true", luau)
     luau = re.sub(r"\bFalse\b", "false", luau)
 
-    # Convert string concatenation + to ..
+    # String concatenation: + → ..
     luau = re.sub(r'"\s*\+\s*', '" .. ', luau)
     luau = re.sub(r'\s*\+\s*"', ' .. "', luau)
 
-    # Convert for(int i = 0; i < n; i++) to for i = 0, n-1 do
-    # Note: (?:int|local) because _RULE_PATTERNS may already convert "int" to "local"
+    # for loops ((?:int|local) because _RULE_PATTERNS may already convert "int" to "local")
     luau = re.sub(
         r"for\s*\(\s*(?:(?:int|local)\s+)?(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<\s*(\w+)\s*;\s*\1\+\+\s*\)",
         r"for \1 = \2, \3 - 1 do",
         luau,
     )
-
-    # Convert for(int i = 0; i <= n; i++) to for i = 0, n do
     luau = re.sub(
         r"for\s*\(\s*(?:(?:int|local)\s+)?(\w+)\s*=\s*(\d+)\s*;\s*\1\s*<=\s*(\w+)\s*;\s*\1\+\+\s*\)",
         r"for \1 = \2, \3 do",
         luau,
     )
-
-    # Convert foreach (Type item in collection) to for _, item in collection do
     luau = re.sub(
         r"foreach\s*\(\s*\w+\s+(\w+)\s+in\s+(\w+)\s*\)",
         r"for _, \1 in \2 do",
         luau,
     )
 
-    # Convert while (condition) { to while condition do
+    # Control flow (else if/else must be converted before standalone if)
     luau = re.sub(r"\bwhile\s*\(([^)]+)\)\s*\{", r"while \1 do", luau)
-
-    # Convert } else if (condition) { to elseif condition then  (MUST be before standalone if)
     luau = re.sub(r"\}\s*else\s+if\s*\(([^)]+)\)\s*\{", r"elseif \1 then", luau)
-
-    # Convert } else { to else  (MUST be before standalone if)
     luau = re.sub(r"\}\s*else\s*\{", "else", luau)
-
-    # Convert if (condition) { to if condition then
     luau = re.sub(r"\bif\s*\(([^)]+)\)\s*\{", r"if \1 then", luau)
 
-    # Convert switch/case to if/elseif chains
+    # switch/case → if/elseif
     luau = re.sub(r"\bswitch\s*\(([^)]+)\)\s*\{", r"-- switch on \1", luau)
     luau = re.sub(r"\bcase\s+([^:]+):", r"if _switchVal == \1 then -- case", luau)
     luau = re.sub(r"\bdefault\s*:", "else -- default", luau)
     luau = re.sub(r"\bbreak\s*;?\s*$", "-- break", luau, flags=re.MULTILINE)
 
-    # Convert try/catch/finally to pcall pattern
+    # try/catch → pcall
     luau = re.sub(r"\btry\s*\{", "local ok, err = pcall(function()", luau)
     luau = re.sub(
         r"\}\s*catch\s*\(\s*(?:\w+\s+)?(\w+)\s*\)\s*\{",
@@ -1730,7 +1712,7 @@ def _rule_based_transpile(
     luau = re.sub(r"\}\s*catch\s*\{", "end)\nif not ok then", luau)
     luau = re.sub(r"\}\s*finally\s*\{", "end\n-- finally:", luau)
 
-    # Strip enum declarations → convert to Luau table
+    # enum → Luau table
     def _convert_enum(m: re.Match) -> str:
         name = m.group(1)
         body = m.group(2)
@@ -1746,7 +1728,6 @@ def _rule_based_transpile(
         luau,
     )
 
-    # Strip interface and struct declarations (no Luau equivalent)
     luau = re.sub(
         r"\b(?:public\s+|private\s+|internal\s+)?interface\s+\w+\s*(?::\s*[\w.,\s<>]+)?\s*\{[^}]*\}",
         "-- interface stripped (no Luau equivalent)",
@@ -1758,49 +1739,38 @@ def _rule_based_transpile(
         luau,
     )
 
-    # Convert C# properties (get/set) to simple fields
     # Auto-property: int Foo { get; set; } → local Foo = nil
-    # (access modifiers already stripped by this point)
     luau = re.sub(
         r"\b\w+(?:<[^>]*>)?\s+(\w+)\s*\{\s*get\s*;\s*(?:private\s+)?set\s*;\s*\}",
         r"local \1 = nil",
         luau,
     )
 
-    # Lambda expressions: (x) => expr → function(x) return expr end
+    # Lambda: (x) => expr → function(x) return expr end
     luau = re.sub(
         r"\(([^)]*)\)\s*=>\s*([^{;\n]+)",
         r"function(\1) return \2 end",
         luau,
     )
-    # Lambda with single param: x => expr → function(x) return expr end
     luau = re.sub(
         r"\b(\w+)\s*=>\s*([^{;\n]+)",
         r"function(\1) return \2 end",
         luau,
     )
 
-    # Convert remaining closing braces to end (heuristic: standalone } on a line)
     luau = re.sub(r"^\s*\}\s*$", "end", luau, flags=re.MULTILINE)
-
-    # Strip semicolons at end of lines (Luau doesn't need them)
     luau = re.sub(r";\s*$", "", luau, flags=re.MULTILINE)
 
-    # Convert ternary operator: condition ? a : b → if condition then a else b
+    # Ternary: condition ? a : b → if condition then a else b
     luau = re.sub(
         r"(\w+)\s*\?\s*([^:]+)\s*:\s*([^;\n]+)",
         r"if \1 then \2 else \3",
         luau,
     )
 
-    # Convert .Length / .Count to # operator
     luau = re.sub(r"(\w+)\.Length\b", r"#\1", luau)
     luau = re.sub(r"(\w+)\.Count\b", r"#\1", luau)
-
-    # Convert .Add() to table.insert()
     luau = re.sub(r"(\w+)\.Add\(([^)]+)\)", r"table.insert(\1, \2)", luau)
-
-    # Convert .Remove() to table.remove()
     luau = re.sub(r"(\w+)\.Remove\(([^)]+)\)", r"table.remove(\1, \2)", luau)
 
     # Convert .Contains() to table.find()
