@@ -112,7 +112,7 @@ class TestUploadWithMockedHTTP:
         assert len(result.errors) == 1
         assert "403 Forbidden" in result.errors[0]
 
-    @patch("modules.roblox_uploader._upload_image_asset")
+    @patch("modules.roblox_uploader._upload_asset")
     @patch("modules.roblox_uploader._upload_place")
     def test_texture_upload(
         self, mock_place: MagicMock, mock_img: MagicMock, tmp_path: Path
@@ -135,7 +135,7 @@ class TestUploadWithMockedHTTP:
         assert mock_img.call_count == 2
         assert len(result.asset_ids) == 2
 
-    @patch("modules.roblox_uploader._upload_image_asset")
+    @patch("modules.roblox_uploader._upload_asset")
     @patch("modules.roblox_uploader._upload_place")
     def test_texture_upload_failure_doesnt_crash(
         self, mock_place: MagicMock, mock_img: MagicMock, tmp_path: Path

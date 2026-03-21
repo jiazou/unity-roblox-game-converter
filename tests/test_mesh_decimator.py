@@ -91,14 +91,17 @@ class TestDecimateMeshes:
         assert result.total_meshes == 2
         assert len(result.entries) == 2
 
-    def test_invalid_mesh_skipped(self, tmp_path: Path) -> None:
+    def test_invalid_mesh_copied_without_analysis(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.fbx"
         bad.write_text("not a mesh", encoding="utf-8")
         out = tmp_path / "out"
         result = decimate_meshes([bad], out)
         assert result.total_meshes == 1
-        assert result.skipped == 1
-        assert result.entries[0].skipped is True
+        assert result.already_compliant == 1
+        entry = result.entries[0]
+        assert entry.was_copied is True
+        assert entry.skipped is False
+        assert (out / "bad.fbx").exists()
 
     def test_reduction_ratio(self, tmp_path: Path) -> None:
         mesh = tmp_path / "compliant.obj"

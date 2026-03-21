@@ -25,9 +25,9 @@ Sub-commands:
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import time
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import click
@@ -712,11 +712,11 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
 
     decimation_result = mesh_decimator.DecimationResult()
     decimation_info: dict = {}
-    if decimate:
-        mesh_entries = manifest.by_kind.get("mesh", [])
-        mesh_paths = [e.path for e in mesh_entries]
-        if mesh_paths:
-            meshes_out = out_dir / "meshes"
+    mesh_entries = manifest.by_kind.get("mesh", [])
+    mesh_paths = [e.path for e in mesh_entries]
+    if mesh_paths:
+        meshes_out = out_dir / "meshes"
+        if decimate:
             decimation_result = mesh_decimator.decimate_meshes(
                 mesh_paths=mesh_paths,
                 output_dir=meshes_out,
@@ -724,13 +724,20 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
                 quality_floor=config.MESH_QUALITY_FLOOR,
                 roblox_max_faces=config.MESH_ROBLOX_MAX_FACES,
             )
-            decimation_info = {
-                "total_meshes": decimation_result.total_meshes,
-                "already_compliant": decimation_result.already_compliant,
-                "decimated": decimation_result.decimated,
-                "skipped": decimation_result.skipped,
-                "warnings": decimation_result.warnings,
-            }
+        else:
+            # Copy all meshes without decimation (set max faces to infinity)
+            decimation_result = mesh_decimator.decimate_meshes(
+                mesh_paths=mesh_paths,
+                output_dir=meshes_out,
+                roblox_max_faces=2**31,
+            )
+        decimation_info = {
+            "total_meshes": decimation_result.total_meshes,
+            "already_compliant": decimation_result.already_compliant,
+            "decimated": decimation_result.decimated,
+            "skipped": decimation_result.skipped,
+            "warnings": decimation_result.warnings,
+        }
 
     # Build mesh path remap
     mesh_path_remap: dict[str, str] | None = None
@@ -817,8 +824,6 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
             _collect_mesh_textures([root_part])
     state["mesh_texture_map"] = mesh_texture_map
 
-    # Copy referenced audio files to <output_dir>/audio/ for the upload step
-    import shutil
     audio_out = out_dir / "audio"
     audio_copied = 0
     # From AudioSource components (sound_children on parts)
@@ -945,6 +950,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
     sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
     audio_dir = out_dir / "audio" if (out_dir / "audio").is_dir() else None
+    meshes_dir = out_dir / "meshes" if (out_dir / "meshes").is_dir() else None
 
     # Load mesh→texture mapping from state (stored during assembly).
     mesh_texture_map = state.get("mesh_texture_map")
@@ -956,6 +962,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         textures_dir=textures_dir,
         sprites_dir=sprites_dir,
         audio_dir=audio_dir,
+        meshes_dir=meshes_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
