@@ -77,39 +77,44 @@ class DecimationResult:
 # Mesh loading helpers (trimesh)
 # ---------------------------------------------------------------------------
 
+def _find_assimp_cli() -> str | None:
+    """Find the ``assimp`` CLI tool (installed via ``brew install assimp``)."""
+    import shutil
+    return shutil.which("assimp")
+
+
+_assimp_cli = _find_assimp_cli()
+
+
 def _load_fbx_as_trimesh(mesh_path: Path):
-    """Load an FBX file via pyassimp and return a trimesh.Trimesh object.
+    """Load an FBX file by converting to OBJ via the assimp CLI, then loading with trimesh.
 
-    Requires the ``assimp`` native library (``brew install assimp`` on macOS)
-    and the ``pyassimp`` Python package.  Returns None if loading fails.
+    Requires ``brew install assimp`` on macOS.  Returns None if conversion fails.
     """
-    import os
-    import numpy as np
+    import subprocess
+    import tempfile
+    import trimesh  # type: ignore
 
-    # Ensure pyassimp can find the Homebrew-installed library.
-    if "/opt/homebrew/lib" not in os.environ.get("LD_LIBRARY_PATH", ""):
-        os.environ["LD_LIBRARY_PATH"] = (
-            os.environ.get("LD_LIBRARY_PATH", "") + ":/opt/homebrew/lib"
+    if not _assimp_cli:
+        return None
+
+    with tempfile.NamedTemporaryFile(suffix=".obj", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        result = subprocess.run(
+            [_assimp_cli, "export", str(mesh_path), tmp_path],
+            capture_output=True, timeout=30,
         )
-
-    import pyassimp  # type: ignore
-    import trimesh   # type: ignore
-
-    with pyassimp.load(str(mesh_path)) as scene:
-        if not scene.meshes:
+        if result.returncode != 0:
             return None
-        # Merge all sub-meshes into one trimesh.
-        all_verts = []
-        all_faces = []
-        offset = 0
-        for m in scene.meshes:
-            all_verts.append(np.array(m.vertices, dtype=np.float64))
-            faces = np.array([f.tolist() for f in m.faces], dtype=np.int64)
-            all_faces.append(faces + offset)
-            offset += len(m.vertices)
-        verts = np.vstack(all_verts)
-        faces = np.vstack(all_faces)
-        return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+        return trimesh.load(tmp_path, force="mesh", process=False)
+    except Exception:
+        return None
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+        # assimp also creates a .mtl file
+        Path(tmp_path.replace(".obj", ".mtl")).unlink(missing_ok=True)
 
 
 def _load_mesh_stats(mesh_path: Path) -> MeshStats:
