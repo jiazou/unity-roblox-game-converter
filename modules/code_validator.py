@@ -99,8 +99,19 @@ _CSHARP_PATTERNS: list[tuple[re.Pattern, str, str]] = [
 # We only flag braces that follow patterns indicating C# block syntax,
 # NOT valid Luau table constructors (e.g., {}, {1,2,3}, setmetatable({}, mt)).
 # Valid Luau contexts for '{': after '=', ',', '(', 'return', or at line start.
+# Flag `{` after C# control/declaration keywords. Three patterns:
+# 1. `if/for/while/catch(...)  {` — keyword with closing `)` then `{`
+# 2. `class/struct/interface/namespace/enum Name {` — declaration then `{`
+# 3. `if/else/try/finally expr {` — keyword without parens, `{` at end of line
+#    (but NOT when `{` follows `or`, `=`, `(`, `,` — those are Luau tables)
 _CSHARP_OPEN_BRACE = re.compile(
-    r"(?:(?:^|;)\s*(?:if|else\s*if|else|for|foreach|while|do|switch|try|catch|finally|class|struct|interface|namespace|enum)\b[^{\n]*)\{",
+    r"(?:"
+    r"(?:(?:^|;)\s*(?:if|else\s*if|for|foreach|while|switch|catch)\b[^{\n]*\))\s*\{"
+    r"|"
+    r"(?:(?:^|;)\s*(?:class|struct|interface|namespace|enum)\b[^{\n]*)\{"
+    r"|"
+    r"(?:(?:^|;)\s*(?:if|else|try|finally|do)\b(?![^{\n]*(?:or|=|,|\()\s*\{)[^{\n]*)\{"
+    r")",
     re.MULTILINE,
 )
 # Only flag closing braces followed by C# keywords (else/catch/finally).
@@ -183,7 +194,16 @@ def validate_luau(source: str, source_name: str = "<script>") -> ValidationResul
     stripped = _strip_comments_and_strings(source)
 
     # 1. Block keyword balance
+    #    Luau ternary expressions (`local x = if a then b else c`) use
+    #    `if...then` without a matching `end`.  Discount any `if...then`
+    #    that also has `else` on the same line but no `end` — that's a
+    #    ternary, not a block opener.
     openers = len(_BLOCK_OPENERS.findall(stripped))
+    for line in stripped.splitlines():
+        if (re.search(r"\bif\b.*\bthen\b", line)
+                and re.search(r"\belse\b", line)
+                and not re.search(r"\bend\b", line)):
+            openers -= 1  # ternary if, not a block
     ends = len(_END_KW.findall(stripped))
     untils = len(_UNTIL_KW.findall(stripped))
     closers = ends + untils
