@@ -41,6 +41,35 @@ class UploadResult:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     skipped: bool = False  # True when upload was not attempted (no API key)
+    error_type: str | None = None  # Structured error classification
+    suggestion: str | None = None  # Actionable suggestion for the caller
+
+
+def resolve_roblox_username(username: str) -> int | None:
+    """Resolve a Roblox username to numeric user ID. Returns None on failure."""
+    import urllib.request
+    import urllib.error
+
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = json.dumps({"usernames": [username]}).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = json.loads(resp.read().decode("utf-8"))
+        users = data.get("data", [])
+        if users:
+            return users[0].get("id")
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to resolve Roblox username %r", username)
+
+    return None
 
 
 def _validate_api_key(api_key: str) -> bool:
@@ -556,6 +585,15 @@ def _patch_rbxl_asset_ids(
             elif fstem in stem_to_url:
                 text = stem_to_url[fstem]
 
+        # (d) Replace bare filenames that match uploaded assets.
+        #     e.g. "BrickWall_color.png" → rbxassetid://12345
+        if "rbxassetid" not in text:
+            text_lower = text.strip().lower()
+            if text_lower in name_to_url:
+                text = name_to_url[text_lower]
+            elif text_lower in stem_to_url:
+                text = stem_to_url[text_lower]
+
         if text != original_text:
             elem.text = text
             changed = True
@@ -819,6 +857,13 @@ def upload_to_roblox(
             result.success = True
         except Exception as exc:  # noqa: BLE001
             result.errors.append(f"Place upload failed: {_describe_upload_error(exc)}")
+            # M9: classify HTTP 409 as place-not-published
+            import urllib.error
+            if isinstance(exc, urllib.error.HTTPError) and exc.code == 409:
+                result.error_type = "place_not_published"
+                result.suggestion = (
+                    "Open the place in Roblox Studio and publish an initial version first"
+                )
     else:
         result.warnings.append(
             "Place upload skipped: --universe-id and --place-id are required "
