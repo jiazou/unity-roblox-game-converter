@@ -195,10 +195,24 @@ def decimate_meshes(
         # ── Load stats ─────────────────────────────────────────────
         stats = _load_mesh_stats(mesh_path)
         if not stats.is_valid:
-            entry.skipped = True
-            entry.error = stats.error
-            result.skipped += 1
-            result.warnings.append(f"Skipped {mesh_path.name}: {stats.error}")
+            # Cannot analyse the mesh, but still copy it to the output
+            # directory so downstream stages (rbxl_writer, uploader) have
+            # a mesh file to work with.
+            try:
+                shutil.copy2(mesh_path, entry.output_path)
+                entry.was_copied = True
+                entry.final_faces = 0  # unknown
+                entry.reduction_ratio = 1.0
+                result.already_compliant += 1
+                result.warnings.append(
+                    f"{mesh_path.name}: {stats.error}. "
+                    f"Copied without analysis."
+                )
+            except OSError:
+                entry.skipped = True
+                entry.error = stats.error
+                result.skipped += 1
+                result.warnings.append(f"Skipped {mesh_path.name}: {stats.error}")
             result.entries.append(entry)
             continue
 

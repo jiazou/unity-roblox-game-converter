@@ -251,14 +251,14 @@ def convert(
                 script_type="ModuleScript",
             ))
 
-    # ── Mesh decimation (conservative) ─────────────────────────────
+    # ── Mesh processing (copy + optional decimation) ────────────────
     decimation_result = mesh_decimator.DecimationResult()
-    if decimate:
-        mesh_entries = manifest.by_kind.get("mesh", [])
-        mesh_paths = [e.path for e in mesh_entries]
-        if mesh_paths:
+    mesh_entries = manifest.by_kind.get("mesh", [])
+    mesh_paths = [e.path for e in mesh_entries]
+    if mesh_paths:
+        meshes_out = out_dir / "meshes"
+        if decimate:
             click.echo(f"🔺  Decimating meshes ({len(mesh_paths)} file(s)) …")
-            meshes_out = out_dir / "meshes"
             decimation_result = mesh_decimator.decimate_meshes(
                 mesh_paths=mesh_paths,
                 output_dir=meshes_out,
@@ -266,12 +266,20 @@ def convert(
                 quality_floor=config.MESH_QUALITY_FLOOR,
                 roblox_max_faces=config.MESH_ROBLOX_MAX_FACES,
             )
-            click.echo(f"    → {decimation_result.total_meshes} mesh(es): "
-                       f"{decimation_result.already_compliant} compliant, "
-                       f"{decimation_result.decimated} decimated, "
-                       f"{decimation_result.skipped} skipped")
-            for w in decimation_result.warnings:
-                click.echo(f"    ⚠ {w}")
+        else:
+            click.echo(f"🔺  Copying meshes ({len(mesh_paths)} file(s)) …")
+            # Copy all meshes without decimation (set max faces to infinity)
+            decimation_result = mesh_decimator.decimate_meshes(
+                mesh_paths=mesh_paths,
+                output_dir=meshes_out,
+                roblox_max_faces=2**31,
+            )
+        click.echo(f"    → {decimation_result.total_meshes} mesh(es): "
+                   f"{decimation_result.already_compliant} compliant, "
+                   f"{decimation_result.decimated} decimated, "
+                   f"{decimation_result.skipped} skipped")
+        for w in decimation_result.warnings:
+            click.echo(f"    ⚠ {w}")
 
     # ── Build mesh path remap (original → decimated) ─────────────
     mesh_path_remap: dict[str, str] | None = None
@@ -404,12 +412,14 @@ def convert(
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
     sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
     audio_dir = audio_out if audio_out.is_dir() else None
+    meshes_dir = out_dir / "meshes" if (out_dir / "meshes").is_dir() else None
     upload_result = call_with_retry(
         roblox_uploader.upload_to_roblox,
         rbxl_path=rbxl_path,
         textures_dir=textures_dir,
         sprites_dir=sprites_dir,
         audio_dir=audio_dir,
+        meshes_dir=meshes_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
