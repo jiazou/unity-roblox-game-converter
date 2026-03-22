@@ -536,7 +536,16 @@ def _upload_mesh_asset(
             f"(limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
         )
 
-    content_type = "application/octet-stream"
+    # Roblox requires specific content types for 3D files.
+    _mesh_content_types = {
+        ".fbx": "model/fbx",
+        ".obj": "model/obj",
+        ".gltf": "model/gltf+json",
+        ".glb": "model/gltf-binary",
+    }
+    content_type = _mesh_content_types.get(
+        mesh_path.suffix.lower(), "application/octet-stream",
+    )
 
     body_prefix = (
         f"--{boundary}\r\n"
