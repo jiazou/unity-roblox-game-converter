@@ -797,6 +797,187 @@ def _patch_rbxl_asset_ids_text(
     return False
 
 
+def _inject_mesh_loader(rbxl_path: Path, asset_ids: dict[str, int]) -> None:
+    """Inject a loader Script into the .rbxl that replaces MeshParts at runtime.
+
+    For each MeshPart whose MeshId is ``rbxassetid://<model_id>`` (a Model
+    asset, not a mesh content ID), we:
+      1. Add a ``ModelAssetId`` string attribute with the Model asset ID
+      2. Clear the MeshId (so Roblox doesn't try to load it as mesh content)
+      3. Inject a ServerScript that iterates all tagged MeshParts, calls
+         ``InsertService:LoadAsset()``, and swaps in the real geometry.
+    """
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(rbxl_path)
+    root = tree.getroot()
+
+    # Build set of Model asset IDs (meshes uploaded via Open Cloud)
+    mesh_asset_ids = set()
+    for name, aid in asset_ids.items():
+        if name.lower().endswith((".fbx", ".obj")):
+            mesh_asset_ids.add(str(aid))
+
+    if not mesh_asset_ids:
+        return
+
+    # Tag MeshParts and collect unique Model IDs that need loading
+    model_ids_needed: set[str] = set()
+    tagged = 0
+
+    for item in root.iter("Item"):
+        if item.get("class") != "MeshPart":
+            continue
+        props = item.find("Properties")
+        if props is None:
+            continue
+
+        mesh_id_elem = None
+        for p in props:
+            if p.get("name") == "MeshId":
+                mesh_id_elem = p
+                break
+        if mesh_id_elem is None or not mesh_id_elem.text:
+            continue
+
+        val = mesh_id_elem.text.strip()
+        if not val.startswith("rbxassetid://"):
+            continue
+
+        aid = val.replace("rbxassetid://", "")
+        if aid not in mesh_asset_ids:
+            continue
+
+        # Add ModelAssetId attribute
+        model_ids_needed.add(aid)
+        attr = ET.SubElement(props, "string")
+        attr.set("name", "ModelAssetId")
+        attr.text = aid
+
+        # Clear MeshId so Roblox doesn't try to load it as mesh content
+        mesh_id_elem.text = ""
+        tagged += 1
+
+    if not model_ids_needed:
+        return
+
+    # Generate the loader script source
+    loader_source = '''\
+-- MeshLoader.lua (auto-generated)
+-- Loads uploaded FBX Model assets via InsertService and replaces
+-- placeholder MeshParts with real mesh geometry.
+
+local InsertService = game:GetService("InsertService")
+local ServerStorage = game:GetService("ServerStorage")
+
+-- Cache loaded models to avoid re-downloading
+local meshCache = {}
+
+local function loadMeshModel(assetId)
+    if meshCache[assetId] then
+        return meshCache[assetId]
+    end
+    local ok, model = pcall(function()
+        return InsertService:LoadAsset(tonumber(assetId))
+    end)
+    if ok and model then
+        meshCache[assetId] = model
+        return model
+    else
+        warn("[MeshLoader] Failed to load asset " .. tostring(assetId))
+        return nil
+    end
+end
+
+local function replaceMeshPart(placeholder)
+    local assetId = placeholder:GetAttribute("ModelAssetId")
+    if not assetId then return end
+
+    local model = loadMeshModel(assetId)
+    if not model then return end
+
+    -- Find the MeshPart inside the loaded Model
+    local sourceMesh = nil
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc:IsA("MeshPart") then
+            sourceMesh = desc
+            break
+        end
+    end
+
+    if not sourceMesh then
+        warn("[MeshLoader] No MeshPart found in asset " .. tostring(assetId))
+        return
+    end
+
+    -- Clone and configure
+    local newMesh = sourceMesh:Clone()
+    newMesh.Name = placeholder.Name
+    newMesh.CFrame = placeholder.CFrame
+    newMesh.Size = placeholder.Size
+    newMesh.Anchored = placeholder.Anchored
+    newMesh.Parent = placeholder.Parent
+
+    -- Copy children (SurfaceAppearance, scripts, etc.)
+    for _, child in ipairs(placeholder:GetChildren()) do
+        child.Parent = newMesh
+    end
+
+    -- Copy custom attributes
+    for name, value in pairs(placeholder:GetAttributes()) do
+        if name ~= "ModelAssetId" then
+            newMesh:SetAttribute(name, value)
+        end
+    end
+
+    placeholder:Destroy()
+end
+
+-- Process all MeshParts in Workspace and ServerStorage
+local function processContainer(container)
+    for _, desc in ipairs(container:GetDescendants()) do
+        if desc:IsA("MeshPart") and desc:GetAttribute("ModelAssetId") then
+            task.spawn(replaceMeshPart, desc)
+        end
+    end
+end
+
+processContainer(game:GetService("Workspace"))
+processContainer(ServerStorage)
+
+print("[MeshLoader] Loaded " .. tostring(#meshCache) .. " unique mesh assets")
+'''
+
+    # Inject the loader script into ServerScriptService
+    sss = None
+    for item in root.findall("Item"):
+        if item.get("class") == "ServerScriptService":
+            sss = item
+            break
+
+    if sss is None:
+        sss = ET.SubElement(root, "Item")
+        sss.set("class", "ServerScriptService")
+        sss_props = ET.SubElement(sss, "Properties")
+        name_el = ET.SubElement(sss_props, "string")
+        name_el.set("name", "Name")
+        name_el.text = "ServerScriptService"
+
+    script_item = ET.SubElement(sss, "Item")
+    script_item.set("class", "Script")
+    script_props = ET.SubElement(script_item, "Properties")
+    sn = ET.SubElement(script_props, "string")
+    sn.set("name", "Name")
+    sn.text = "MeshLoader"
+    ss = ET.SubElement(script_props, "ProtectedString")
+    ss.set("name", "Source")
+    ss.text = loader_source
+
+    tree.write(str(rbxl_path), encoding="unicode", xml_declaration=True)
+    logger.info("Injected MeshLoader script: %d MeshParts tagged, %d unique models",
+                tagged, len(model_ids_needed))
+
+
 def upload_to_roblox(
     rbxl_path: Path,
     textures_dir: Path | None,
@@ -949,6 +1130,18 @@ def upload_to_roblox(
                 logger.info("Patched .rbxl with %d asset ID(s)", len(result.asset_ids))
         except Exception as exc:  # noqa: BLE001
             result.warnings.append(f"Failed to patch .rbxl with asset IDs: {exc}")
+
+    # ── Generate mesh loader script ─────────────────────────────────
+    # The Open Cloud API uploads FBX as Model (package) assets, not
+    # direct mesh content.  MeshPart.MeshId can't use Model asset IDs.
+    # Instead we: (1) tag each MeshPart with a "ModelAssetId" attribute,
+    # (2) inject a loader Script that uses InsertService:LoadAsset() to
+    # load the Model, extract the real MeshPart, and swap it in.
+    if rbxl_path.exists():
+        try:
+            _inject_mesh_loader(rbxl_path, result.asset_ids)
+        except Exception as exc:  # noqa: BLE001
+            result.warnings.append(f"Mesh loader injection failed: {exc}")
 
     # ── Convert XML to binary format (required by Roblox Open Cloud) ──
     upload_path = rbxl_path
