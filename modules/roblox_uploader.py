@@ -628,6 +628,10 @@ def _patch_rbxl_asset_ids(
 
         matched_url = None
 
+        # Clean part name: strip Unity instance suffixes like " (2)", " (13)"
+        import re as _re
+        clean_name = _re.sub(r"\s*\(\d+\)$", "", part_name).strip().lower()
+
         # Strategy 1: mesh_texture_map from assembly (mesh_id → texture filename).
         if mesh_texture_map and mesh_id:
             tex_filename = mesh_texture_map.get(mesh_id)
@@ -640,24 +644,35 @@ def _patch_rbxl_asset_ids(
                     matched_url = stem_to_url[stem_lower]
 
         # Strategy 2: Unity project mesh→material mapping.
+        # Try multiple name candidates since MeshId may be rbxassetid://
+        # (not a filename) after patching.
         if not matched_url and _unity_mesh_material_map:
-            mesh_stem = Path(mesh_id).stem.lower() if mesh_id else part_name.lower()
-            tex_fn = _unity_mesh_material_map.get(mesh_stem)
-            if tex_fn:
-                tex_lower = tex_fn.lower()
-                stem_lower = Path(tex_fn).stem.lower()
-                if tex_lower in name_to_url:
-                    matched_url = name_to_url[tex_lower]
-                elif stem_lower in stem_to_url:
-                    matched_url = stem_to_url[stem_lower]
+            # Try: clean part name, raw part name, mesh filename stem
+            name_candidates = [clean_name]
+            if mesh_id and not mesh_id.startswith("rbxassetid"):
+                name_candidates.append(Path(mesh_id).stem.lower())
+
+            for candidate in name_candidates:
+                tex_fn = _unity_mesh_material_map.get(candidate)
+                if tex_fn:
+                    tex_lower = tex_fn.lower()
+                    stem_lower = Path(tex_fn).stem.lower()
+                    if tex_lower in name_to_url:
+                        matched_url = name_to_url[tex_lower]
+                    elif stem_lower in stem_to_url:
+                        matched_url = stem_to_url[stem_lower]
+                    if matched_url:
+                        break
 
         # Strategy 3: name-based fallback.
         if not matched_url:
             candidates = [
+                f"{clean_name}_color",
                 f"{part_name.lower()}_color",
-                f"{Path(mesh_id).stem.lower()}_color" if mesh_id else "",
-                part_name.lower(),
+                clean_name,
             ]
+            if mesh_id and not mesh_id.startswith("rbxassetid"):
+                candidates.append(f"{Path(mesh_id).stem.lower()}_color")
             for candidate in candidates:
                 if candidate and candidate in texture_stem_to_url:
                     matched_url = texture_stem_to_url[candidate]
