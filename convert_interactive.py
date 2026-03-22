@@ -609,7 +609,10 @@ def validate(output_dir: str) -> None:
 @click.option("--decimate/--no-decimate", default=config.MESH_DECIMATION_ENABLED)
 @click.option("--emit-packages/--no-packages", default=config.EMIT_PACKAGES,
               help="Generate .rbxm package files for each prefab.")
-def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_packages: bool) -> None:
+@click.option("--preview-mode/--no-preview-mode", default=True,
+              help="Preview mode: copy prefabs to Workspace, disable scripts and UI.")
+def assemble(unity_project_path: str, output_dir: str, decimate: bool,
+             emit_packages: bool, preview_mode: bool) -> None:
     """Phase 4: Assemble the .rbxl file from all converted data."""
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
@@ -866,6 +869,79 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         screen_guis=rbx_screen_guis,
     )
 
+    # Preview mode: make the place viewable without working game scripts.
+    # - Copy prefabs from ServerStorage to Workspace so they render
+    # - Disable scripts that would interfere with viewing
+    # - Disable ScreenGuis that overlay the 3D view
+    preview_info: dict = {}
+    if preview_mode and rbxl_path.exists():
+        import copy as _copy
+        from xml.etree import ElementTree as _ET
+
+        _tree = _ET.parse(rbxl_path)
+        _root = _tree.getroot()
+        _changed = False
+
+        # Disable all ScreenGuis
+        gui_disabled = 0
+        for _item in _root.iter("Item"):
+            if _item.get("class") == "ScreenGui":
+                _props = _item.find("Properties")
+                if _props is not None:
+                    _en = None
+                    for _p in _props:
+                        if _p.get("name") == "Enabled":
+                            _en = _p
+                    if _en is None:
+                        _en = _ET.SubElement(_props, "bool")
+                        _en.set("name", "Enabled")
+                    _en.text = "false"
+                    gui_disabled += 1
+                    _changed = True
+
+        # Disable all Scripts and LocalScripts
+        scripts_disabled = 0
+        for _item in _root.iter("Item"):
+            if _item.get("class") in ("Script", "LocalScript"):
+                _props = _item.find("Properties")
+                if _props is not None:
+                    _dis = None
+                    for _p in _props:
+                        if _p.get("name") == "Disabled":
+                            _dis = _p
+                    if _dis is None:
+                        _dis = _ET.SubElement(_props, "bool")
+                        _dis.set("name", "Disabled")
+                    _dis.text = "true"
+                    scripts_disabled += 1
+                    _changed = True
+
+        # Copy prefab templates from ServerStorage to Workspace
+        prefabs_copied = 0
+        _workspace = None
+        _ss = None
+        for _item in _root.findall("Item"):
+            if _item.get("class") == "Workspace":
+                _workspace = _item
+            elif _item.get("class") == "ServerStorage":
+                _ss = _item
+        if _workspace is not None and _ss is not None:
+            for _model in _ss.findall("Item"):
+                if _model.get("class") == "Model":
+                    _workspace.append(_copy.deepcopy(_model))
+                    prefabs_copied += 1
+                    _changed = True
+
+        if _changed:
+            _tree.write(str(rbxl_path), encoding="unicode", xml_declaration=True)
+
+        preview_info = {
+            "preview_mode": True,
+            "scripts_disabled": scripts_disabled,
+            "guis_disabled": gui_disabled,
+            "prefabs_copied_to_workspace": prefabs_copied,
+        }
+
     # Store assembly info in state for the report phase
     state["assembly"] = {
         "rbxl_path": str(write_result.output_path),
@@ -894,6 +970,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool, emit_pack
         "decimation": decimation_info,
         "ui_translation": ui_info,
         "packages": package_info,
+        "preview": preview_info,
         "errors": errors,
     })
 

@@ -90,15 +90,16 @@ Report validation errors. The validator is context-aware — it only flags C#-st
 #### Step 5: Assembly — Build .rbxl
 
 ```bash
-python3 convert_interactive.py assemble <unity_project_path> <output_dir> 2>/dev/null
+python3 convert_interactive.py assemble <unity_project_path> <output_dir> [--preview-mode] [--no-preview-mode] 2>/dev/null
 ```
 
 The assembly phase:
 - Converts scene nodes to Roblox Parts/MeshParts
-- Generates prefab packages and embeds them in ServerStorage (enabled by default). This is critical for runtime-driven games where environment content (tracks, obstacles, pickups) is spawned by code rather than placed in the scene. Without this, only the scene's static objects (UI, camera, sky) would be included.
+- Generates prefab packages and embeds them in ServerStorage (enabled by default)
 - Builds a `mesh_texture_map` linking mesh IDs to texture filenames for the upload patcher
+- **Preview mode** (on by default): copies all prefabs from ServerStorage into Workspace, disables scripts and ScreenGuis. This makes the converted place immediately viewable in Roblox Studio without requiring working game logic. Use `--no-preview-mode` for production output where scripts manage the scene.
 
-Present: parts written, scripts embedded, packages generated, file size, warnings.
+Present: parts written, scripts embedded, packages generated, preview info, file size, warnings.
 
 **Decision point:** If mesh decimation was enabled and meshes were significantly reduced, ask about quality adjustment.
 
