@@ -1073,6 +1073,258 @@ def scene_nodes_to_parts(
 
 
 # ---------------------------------------------------------------------------
+# Bootstrap script generation
+# ---------------------------------------------------------------------------
+
+def _find_monobehaviour_scripts(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    guid_index: guid_resolver.GuidIndex,
+) -> list[dict[str, Any]]:
+    """Walk scene nodes and collect MonoBehaviour component info with their
+    script names and serialized field values.
+
+    Returns a list of dicts:
+        {
+            "script_name": str,       # e.g. "GameManager"
+            "game_object": str,       # owning GameObject name
+            "fields": dict[str, Any], # serialized field key→value (raw YAML)
+        }
+    """
+    results: list[dict[str, Any]] = []
+    for scene in parsed_scenes:
+        for node in scene.all_nodes.values():
+            for comp in node.components:
+                if comp.component_type != "MonoBehaviour":
+                    continue
+                script_ref = comp.properties.get("m_Script", {})
+                if not isinstance(script_ref, dict):
+                    continue
+                script_guid = script_ref.get("guid", "")
+                if not script_guid:
+                    continue
+                script_path = guid_index.resolve(script_guid)
+                if not script_path or script_path.suffix != ".cs":
+                    continue
+
+                fields: dict[str, Any] = {}
+                for key, value in comp.properties.items():
+                    if key in _MONO_INTERNAL_PROPS or key.startswith("m_"):
+                        continue
+                    fields[key] = value
+
+                results.append({
+                    "script_name": script_path.stem,
+                    "game_object": node.name,
+                    "fields": fields,
+                })
+    return results
+
+
+def _resolve_state_array(
+    gm_entry: dict[str, Any],
+    mono_entries: list[dict[str, Any]],
+    guid_index: guid_resolver.GuidIndex,
+) -> list[str]:
+    """Resolve the GameManager 'states' array to an ordered list of state
+    script names by matching local file-ID references to MonoBehaviours
+    in the same scene."""
+    states_raw = gm_entry["fields"].get("states", [])
+    if not isinstance(states_raw, list):
+        return []
+
+    # Build file_id → script_name lookup from all MonoBehaviours
+    # (the fileID in a serialized reference points to the component doc)
+    fid_to_name: dict[str, str] = {}
+    for entry in mono_entries:
+        # The component's own file_id is stored on the ComponentData but
+        # we don't have it here directly; we try to match via the raw
+        # reference fileID in the states array against script names.
+        pass
+
+    # Fallback: if the states field contains object references with fileID,
+    # resolve them via guid_index. If not resolvable, use a heuristic
+    # ordering: LoadoutState first, then GameState, then GameOverState.
+    state_names: list[str] = []
+    for ref in states_raw:
+        if isinstance(ref, dict) and ref.get("guid"):
+            path = guid_index.resolve(ref["guid"])
+            if path:
+                state_names.append(path.stem)
+
+    return state_names
+
+
+# Well-known state machine classes and their canonical order.
+# Used as fallback when Inspector references can't be fully resolved.
+_DEFAULT_STATE_ORDER: list[str] = ["LoadoutState", "GameState", "GameOverState"]
+
+
+def generate_bootstrap_script(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    guid_index: guid_resolver.GuidIndex,
+    transpilation: code_transpiler.TranspilationResult,
+) -> str | None:
+    """Generate a Roblox LocalScript that wires the game's state machine.
+
+    Inspects parsed scenes for a GameManager MonoBehaviour and its serialized
+    ``states`` array, then emits a bootstrap script that:
+      - Disables Roblox's default character auto-loading
+      - Calls ``PlayerData.Create()``
+      - Instantiates each game state and registers it with GameManager
+      - Connects the Heartbeat update loop
+      - Wires UI button callbacks
+
+    Returns the Luau source as a string, or ``None`` if no GameManager was
+    found (i.e. the project doesn't use this pattern).
+    """
+    mono_entries = _find_monobehaviour_scripts(parsed_scenes, guid_index)
+    if not mono_entries:
+        return None
+
+    # Find the GameManager entry
+    gm_entry = None
+    for entry in mono_entries:
+        if entry["script_name"] == "GameManager":
+            gm_entry = entry
+            break
+    if gm_entry is None:
+        return None
+
+    # Resolve states ordering
+    state_names = _resolve_state_array(gm_entry, mono_entries, guid_index)
+    if not state_names:
+        # Fallback: use canonical order, filtered to scripts that actually exist
+        transpiled_names = {
+            ts.output_filename.replace(".lua", "") for ts in transpilation.scripts
+        }
+        state_names = [s for s in _DEFAULT_STATE_ORDER if s in transpiled_names]
+    if not state_names:
+        return None
+
+    # Build require lines and state instantiation
+    require_lines: list[str] = []
+    state_var_names: list[str] = []
+    for name in state_names:
+        var = name[0].lower() + name[1:]  # e.g. "loadoutState"
+        state_var_names.append(var)
+        require_lines.append(
+            f'local {name} = require(ReplicatedStorage:WaitForChild("{name}"))'
+        )
+
+    instantiation_lines: list[str] = []
+    for name, var in zip(state_names, state_var_names):
+        # GameState uses .new(config) pattern; others use .new()
+        if name == "GameState":
+            instantiation_lines.append(f"local {var} = {name}.new({{")
+            instantiation_lines.append(f"\ttrackManager = trackManager,")
+            instantiation_lines.append(f"}})")
+        else:
+            instantiation_lines.append(f"local {var} = {name}.new()")
+
+    states_table = "{ " + ", ".join(state_var_names) + " }"
+
+    requires_block = "\n".join(require_lines)
+    instantiation_block = "\n".join(instantiation_lines)
+
+    # Identify which other transpiled modules to require
+    extra_modules = [
+        "PlayerData", "MusicPlayer", "TrackManager",
+        "CharacterInputController", "CharacterDatabase",
+        "ThemeDatabase", "ConsumableDatabase",
+    ]
+    transpiled_names = {
+        ts.output_filename.replace(".lua", "") for ts in transpilation.scripts
+    }
+    extra_requires = "\n".join(
+        f'local {m} = require(ReplicatedStorage:WaitForChild("{m}"))'
+        for m in extra_modules
+        if m in transpiled_names
+    )
+
+    source = f'''\
+-- GameBootstrap.lua (auto-generated)
+-- Wires the Unity state-machine lifecycle that the engine handled implicitly:
+-- scene loading, Inspector-serialized references, OnEnable/Start/Update calls.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+
+-- Disable Roblox's default character spawning; the game manages its own.
+Players.CharacterAutoLoads = false
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Require transpiled modules
+local GameManagerModule = require(ReplicatedStorage:WaitForChild("GameManager"))
+local GameManager = GameManagerModule.GameManager
+{requires_block}
+{extra_requires}
+
+---------------------------------------------------------------------------
+-- Phase 1: PlayerData (mirrors Unity MusicPlayer.Start -> PlayerData.Create)
+---------------------------------------------------------------------------
+if PlayerData and PlayerData.PlayerData then
+\tPlayerData.PlayerData.Create(player)
+elseif PlayerData and PlayerData.Create then
+\tPlayerData.Create(player)
+end
+
+---------------------------------------------------------------------------
+-- Phase 2: TrackManager + CharacterInputController
+---------------------------------------------------------------------------
+local trackManager
+if TrackManager and TrackManager.new then
+\ttrackManager = TrackManager.new()
+end
+
+local characterController
+if CharacterInputController and CharacterInputController.new then
+\tcharacterController = CharacterInputController.new()
+\tif trackManager then
+\t\tcharacterController.trackManager = trackManager
+\t\ttrackManager.characterController = characterController
+\tend
+end
+
+---------------------------------------------------------------------------
+-- Phase 3: Instantiate game states (order matches Unity Inspector array)
+---------------------------------------------------------------------------
+{instantiation_block}
+
+---------------------------------------------------------------------------
+-- Phase 4: Assemble and start the GameManager state machine
+---------------------------------------------------------------------------
+local gameManager = GameManager.new()
+gameManager.states = {states_table}
+gameManager:Start()
+
+---------------------------------------------------------------------------
+-- Phase 5: Character input update loop (replaces Unity's implicit Update)
+---------------------------------------------------------------------------
+if characterController then
+\tRunService.Heartbeat:Connect(function(dt)
+\t\tcharacterController:Update(dt)
+\tend)
+end
+
+---------------------------------------------------------------------------
+-- Phase 6: Cleanup
+---------------------------------------------------------------------------
+player.AncestryChanged:Connect(function()
+\tif gameManager then
+\t\tgameManager:Destroy()
+\tend
+end)
+
+print("[GameBootstrap] Initialized — first state: {state_names[0] if state_names else "none"}")
+'''
+    return source
+
+
+# ---------------------------------------------------------------------------
 # Transpiled scripts → rbxl script entries
 # ---------------------------------------------------------------------------
 

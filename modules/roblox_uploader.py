@@ -1131,18 +1131,6 @@ def upload_to_roblox(
         except Exception as exc:  # noqa: BLE001
             result.warnings.append(f"Failed to patch .rbxl with asset IDs: {exc}")
 
-    # ── Generate mesh loader script ─────────────────────────────────
-    # The Open Cloud API uploads FBX as Model (package) assets, not
-    # direct mesh content.  MeshPart.MeshId can't use Model asset IDs.
-    # Instead we: (1) tag each MeshPart with a "ModelAssetId" attribute,
-    # (2) inject a loader Script that uses InsertService:LoadAsset() to
-    # load the Model, extract the real MeshPart, and swap it in.
-    if rbxl_path.exists():
-        try:
-            _inject_mesh_loader(rbxl_path, result.asset_ids)
-        except Exception as exc:  # noqa: BLE001
-            result.warnings.append(f"Mesh loader injection failed: {exc}")
-
     # ── Convert XML to binary format (required by Roblox Open Cloud) ──
     upload_path = rbxl_path
     if rbxl_path.exists():

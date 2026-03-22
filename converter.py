@@ -10,6 +10,7 @@ Phases:
   1. Discovery    — scene_parser + prefab_parser
   2. Inventory    — asset_extractor + guid_resolver
   3. Processing   — material_mapper + code_transpiler + mesh_decimator
+  3b. Bootstrap   — generate_bootstrap_script (wires state machine lifecycle)
   4. Assembly     — rbxl_writer
   5. Upload       — roblox_uploader + report_generator
 
@@ -44,6 +45,7 @@ from modules.conversion_helpers import (
     resolve_prefab_instances as _resolve_prefab_instances,
     extract_serialized_field_refs as _extract_serialized_field_refs,
     generate_prefab_packages as _generate_prefab_packages,
+    generate_bootstrap_script as _generate_bootstrap_script,
     scene_nodes_to_parts as _scene_nodes_to_parts,
     transpiled_to_rbx_scripts as _transpiled_to_rbx_scripts,
     build_report as _build_report,
@@ -251,6 +253,23 @@ def convert(
                 script_type="ModuleScript",
             ))
 
+    # ── Bootstrap script generation ──────────────────────────────────
+    click.echo("🎬  Generating bootstrap script …")
+    bootstrap_source = _generate_bootstrap_script(parsed_scenes, guid_index, transpilation)
+    if bootstrap_source:
+        transpilation.scripts.append(code_transpiler.TranspiledScript(
+            source_path=Path("(generated)"),
+            output_filename="GameBootstrap.lua",
+            csharp_source="",
+            luau_source=bootstrap_source,
+            strategy="generated",
+            confidence=1.0,
+            script_type="LocalScript",
+        ))
+        click.echo("    → GameBootstrap.lua added (LocalScript in StarterPlayerScripts)")
+    else:
+        click.echo("    → No GameManager found, skipping bootstrap generation")
+
     # ── Mesh decimation (conservative) ─────────────────────────────
     decimation_result = mesh_decimator.DecimationResult()
     if decimate:
@@ -404,15 +423,24 @@ def convert(
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
     sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
     audio_dir = audio_out if audio_out.is_dir() else None
+    meshes_dir = out_dir / "meshes" if (out_dir / "meshes").is_dir() else None
+
+    # Build mesh→texture map so the uploader can pair mesh assets with their
+    # textures when patching the .rbxl.
+    mesh_texture_map = roblox_uploader._build_mesh_material_map(unity_path) if meshes_dir else None
+
     upload_result = call_with_retry(
         roblox_uploader.upload_to_roblox,
         rbxl_path=rbxl_path,
         textures_dir=textures_dir,
         sprites_dir=sprites_dir,
         audio_dir=audio_dir,
+        meshes_dir=meshes_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
+        mesh_texture_map=mesh_texture_map,
+        unity_project_path=unity_path,
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,
