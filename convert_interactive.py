@@ -904,12 +904,19 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                     gui_disabled += 1
                     _changed = True
 
-        # Disable all Scripts and LocalScripts
+        # Disable all Scripts and LocalScripts (except MeshLoader)
         scripts_disabled = 0
+        _keep_scripts = {"MeshLoader", "GameBootstrap"}
         for _item in _root.iter("Item"):
             if _item.get("class") in ("Script", "LocalScript"):
                 _props = _item.find("Properties")
                 if _props is not None:
+                    _script_name = ""
+                    for _p in _props:
+                        if _p.get("name") == "Name":
+                            _script_name = _p.text or ""
+                    if _script_name in _keep_scripts:
+                        continue
                     _dis = None
                     for _p in _props:
                         if _p.get("name") == "Disabled":
