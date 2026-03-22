@@ -1037,7 +1037,14 @@ def scene_nodes_to_parts(
     directional_lights: list[dict] = []
     for parsed in parsed_scenes:
         for node in parsed.roots:
-            if _is_ui_subtree(node) or _is_system_node(node):
+            if _is_ui_subtree(node):
+                continue
+            if _is_system_node(node):
+                # Still extract directional light data from skipped system nodes.
+                convert_light_components(
+                    rbxl_writer.RbxPartEntry(name=node.name),
+                    node.components, directional_lights,
+                )
                 continue
             parts.append(node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
