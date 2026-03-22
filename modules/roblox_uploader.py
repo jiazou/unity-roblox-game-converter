@@ -495,6 +495,86 @@ def _build_mesh_material_map(unity_project_path: Path | None) -> dict[str, str]:
     return mesh_to_texture
 
 
+def _upload_mesh_asset(
+    mesh_path: Path,
+    api_key: str,
+    display_name: str,
+    description: str = "Uploaded by unity-roblox-game-converter",
+    creator_id: int | None = None,
+    creator_type: str = "User",
+) -> dict[str, Any]:
+    """Upload a mesh file as a Roblox Model asset via Open Cloud Assets API.
+
+    Roblox accepts .fbx and .obj files for ``assetType: "Model"``.
+    Uses the same multipart POST as image/audio uploads.
+    """
+    import urllib.request
+
+    url = "https://apis.roblox.com/assets/v1/assets"
+    boundary = f"----UnityRobloxConverter{int(time.time() * 1000)}"
+
+    request_body = json.dumps({
+        "assetType": "Model",
+        "displayName": display_name[:50],
+        "description": description,
+        "creationContext": {
+            "creator": {
+                "userId": str(creator_id),
+            } if creator_type == "User" and creator_id else (
+                {
+                    "groupId": str(creator_id),
+                } if creator_type == "Group" and creator_id else {}
+            ),
+            "expectedPrice": 0,
+        },
+    })
+
+    mesh_bytes = mesh_path.read_bytes()
+    if len(mesh_bytes) > ASSET_MAX_BYTES:
+        raise ValueError(
+            f"Mesh file too large: {len(mesh_bytes) / 1_048_576:.1f} MB "
+            f"(limit: {ASSET_MAX_BYTES // 1_048_576} MB)"
+        )
+
+    content_type = "application/octet-stream"
+
+    body_prefix = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="request"\r\n'
+        f"Content-Type: application/json\r\n\r\n"
+        f"{request_body}\r\n"
+    ).encode("utf-8")
+
+    file_header = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="fileContent"; filename="{mesh_path.name}"\r\n'
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode("utf-8")
+    file_footer = f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    full_body = body_prefix + file_header + mesh_bytes + file_footer
+
+    req = urllib.request.Request(
+        url,
+        data=full_body,
+        method="POST",
+        headers={
+            "x-api-key": api_key,
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+    )
+
+    resp = urllib.request.urlopen(req, timeout=120)
+    _check_rate_limit_headers(resp)
+    data = json.loads(resp.read().decode("utf-8"))
+
+    op_id = data.get("operationId")
+    if op_id and not data.get("done", True):
+        data = _poll_operation(api_key, op_id)
+
+    return data
+
+
 def _patch_rbxl_asset_ids(
     rbxl_path: Path,
     asset_ids: dict[str, int],
@@ -716,6 +796,7 @@ def upload_to_roblox(
     place_id: int | None = None,
     sprites_dir: Path | None = None,
     audio_dir: Path | None = None,
+    meshes_dir: Path | None = None,
     creator_id: int | None = None,
     creator_type: str = "User",
     mesh_texture_map: dict[str, str] | None = None,
@@ -819,6 +900,33 @@ def upload_to_roblox(
             except Exception as exc:  # noqa: BLE001
                 result.warnings.append(
                     f"Audio upload failed ({audio_path.name}): "
+                    f"{_describe_upload_error(exc)}"
+                )
+
+    # ── Upload meshes ───────────────────────────────────────────────────
+    if meshes_dir and meshes_dir.is_dir():
+        mesh_exts = {".fbx", ".obj"}
+        for mesh_path in sorted(meshes_dir.iterdir()):
+            if mesh_path.suffix.lower() not in mesh_exts:
+                continue
+            if mesh_path.stat().st_size < 200:
+                continue  # skip stub/empty files
+            try:
+                resp = _upload_mesh_asset(
+                    mesh_path, api_key,
+                    display_name=mesh_path.stem,
+                    creator_id=creator_id,
+                    creator_type=creator_type,
+                )
+                asset_id = resp.get("assetId") or resp.get("id")
+                if asset_id:
+                    # Key by full path so the patcher can match MeshId references
+                    result.asset_ids[str(mesh_path)] = int(asset_id)
+                    # Also key by filename for fallback matching
+                    result.asset_ids[mesh_path.name] = int(asset_id)
+            except Exception as exc:  # noqa: BLE001
+                result.warnings.append(
+                    f"Mesh upload failed ({mesh_path.name}): "
                     f"{_describe_upload_error(exc)}"
                 )
 

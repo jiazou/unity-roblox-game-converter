@@ -945,6 +945,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
     sprites_dir = out_dir / "sprites" if (out_dir / "sprites").is_dir() else None
     audio_dir = out_dir / "audio" if (out_dir / "audio").is_dir() else None
+    meshes_dir = out_dir / "meshes" if (out_dir / "meshes").is_dir() else None
 
     # Load mesh→texture mapping from state (stored during assembly).
     mesh_texture_map = state.get("mesh_texture_map")
@@ -956,6 +957,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         textures_dir=textures_dir,
         sprites_dir=sprites_dir,
         audio_dir=audio_dir,
+        meshes_dir=meshes_dir,
         api_key=roblox_api_key,
         universe_id=universe_id,
         place_id=place_id,
