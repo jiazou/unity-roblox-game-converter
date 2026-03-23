@@ -21,6 +21,7 @@ The bridge is NOT a full Unity emulator. It provides the 20% of Unity APIs that 
 | `Physics` | Raycast, CheckSphere, OnTriggerEnter | workspace:Raycast, GetTouchingParts, Touched event |
 | `Coroutine` | StartCoroutine, yield, WaitForSeconds | task.spawn, task.wait |
 | `Time` | deltaTime, time, timeScale | RunService.Heartbeat delta, os.clock |
+| `StateMachine` | GameManager + AState (stack-based state machine) | Enter/Exit/Tick lifecycle, PushState/PopState/SwitchState |
 | `Random` | Range, InitState | Random.new, math.random |
 | `Addressables` | InstantiateAsync, LoadAssetAsync | InsertService:LoadAsset (with asset ID manifest) |
 | `PlayerPrefs` | GetInt, SetInt, Save | DataStoreService or player:SetAttribute |
@@ -76,21 +77,47 @@ Unity C# Scripts
 | AST-based transpiler | `modules/code_transpiler.py: _ast_transpile()` | tree-sitter, partial |
 | AI-assisted transpiler | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality but syntax-only |
 
-**Gap**: No bridge Luau modules exist yet. The API mappings in `api_mappings.py` are used by the transpiler for text substitution but aren't runtime modules. The bootstrap script generator handles one specific pattern (GameManager state machine) but isn't general-purpose.
+**Status**: Bridge Luau modules exist in `bridge/` (Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the transpiler for text substitution; the bridge modules are the runtime counterpart.
+
+**Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below.
 
 ## Implementation plan
 
-### Phase 1: Bridge modules (reusable)
-Write the Luau modules listed above. Test with Trash Dash but design for any Unity game.
+### Phase 1: Bridge modules (reusable) — DONE
+Luau modules in `bridge/`. Designed for any Unity game.
 
-### Phase 2: LLM rewrite skill
-Create a skill that reads a C# script, the bridge API, and the scene context (what GameObjects exist, what components they have) and produces a working Luau rewrite.
+### Phase 2: LLM rewrite skill — DONE
+The `/convert-unity` skill's Step 4.5 (Game Logic Porting) uses a three-phase approach:
+1. **Architectural analysis** — map state machines, component ownership, timing models from original C#
+2. **Module-per-component rewrite** — one Luau module per Unity class, preserving the same separation
+3. **Bootstrap wiring** — a single entry-point script that creates and cross-references all modules
 
-### Phase 3: Integration
-- Assembly phase injects bridge modules into ReplicatedStorage
-- LLM rewrites each script during the transpile phase (alongside or instead of regex/AST)
+The skill explicitly prevents the "monolithic flattening" anti-pattern where all game systems get merged into one script. Game-specific output scripts are written to `<output_dir>/scripts/`.
+
+### Phase 3: Assembly integration — TODO
+- Assembly phase injects bridge modules from `bridge/` into `ReplicatedStorage/UnityBridge/` in the .rbxl
+- `rbxl_writer.py` needs folder creation logic for the UnityBridge subfolder
+- LLM-rewritten scripts are placed in `<output_dir>/scripts/` and assembled normally
 - Bootstrap script wires everything together
-- MeshLoader handles asset loading at runtime
+
+### Where game-specific scripts live
+
+Game-specific scripts (e.g., GameBootstrap, CharacterController) are **not** part of this converter repo. They are LLM-generated output that lives in the game's output directory (`<output_dir>/scripts/`). The converter repo only contains:
+- `bridge/` — reusable Unity API shims (injected into every conversion)
+- `modules/` — Python pipeline code
+- `.claude/skills/` — skills that orchestrate the LLM rewriting
+
+## Lessons learned (Trash Dash port)
+
+1. **Don't flatten the architecture.** The first attempt merged GameManager (state machine), TrackManager (world movement), and CharacterInputController (input/physics) into a single 282-line GameBootstrap.lua. This made the code unreadable and impossible to maintain. The fix: one Luau module per Unity class, with a thin bootstrap that wires them together.
+
+2. **Preserve the timing model.** Unity's Trash Dash uses world-distance-based jump/slide timing (`worldDistance - jumpStart`) / `correctJumpLength`), NOT time-based. Jump/slide lengths scale by `(1 + speedRatio)` so they feel consistent at all speeds. Simplifying this to time-based (`jumpTime / jumpDuration`) changes gameplay feel.
+
+3. **The state machine is reusable.** Unity's GameManager (stack-based state machine with Enter/Exit/Tick and PushState/PopState/SwitchState) appears in many Unity games. This became the `StateMachine` bridge module.
+
+4. **Component ownership graphs matter.** In Unity: `GameState` → `TrackManager` → `CharacterInputController` → `Character`. The Roblox port must wire the same references during bootstrap. Inspector-assigned references become constructor wiring.
+
+5. **Game-specific scripts don't belong in this repo.** They're LLM-generated output artifacts that go to `<output_dir>/scripts/`.
 
 ## Key design decisions
 
