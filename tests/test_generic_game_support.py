@@ -11,6 +11,7 @@ import pytest
 from modules.prefab_parser import PrefabNode, PrefabTemplate, _parse_single_prefab
 from modules.code_transpiler import (
     _rule_based_transpile,
+    _post_process_luau,
     _is_editor_or_test_path,
     transpile_scripts,
 )
@@ -399,3 +400,74 @@ class TestAssetExtensions:
     def test_aiff_audio_recognised(self) -> None:
         assert ".aiff" in config.ASSET_EXT_TO_KIND
         assert config.ASSET_EXT_TO_KIND[".aiff"] == "audio"
+
+
+# ---------------------------------------------------------------------------
+# _post_process_luau standalone tests
+# ---------------------------------------------------------------------------
+
+
+class TestPostProcessLuau:
+    """Tests for the _post_process_luau post-processing function."""
+
+    def test_textmeshpro_set_text(self) -> None:
+        result = _post_process_luau('tmpText.SetText("Hello World")')
+        assert result == 'tmpText.Text = "Hello World"'
+
+    def test_dotween_domove(self) -> None:
+        result = _post_process_luau("transform.DOMove(target, duration)")
+        assert "TweenService:Create" in result
+        assert "Position = target" in result
+        assert ":Play()" in result
+
+    def test_task_delay_with_await(self) -> None:
+        result = _post_process_luau("await Task.Delay(2000)")
+        assert "task.wait(2.0)" in result
+
+    def test_task_delay_without_await(self) -> None:
+        result = _post_process_luau("Task.Delay(500)")
+        assert "task.wait(0.5)" in result
+
+    def test_invoke_to_task_delay(self) -> None:
+        result = _post_process_luau('Invoke("DoAction", 2)')
+        assert "task.delay(2, DoAction)" in result
+
+    def test_passthrough_unrelated_code(self) -> None:
+        code = "local x = 42\nprint(x)"
+        assert _post_process_luau(code) == code
+
+    def test_multiple_patterns_in_same_source(self) -> None:
+        code = 'tmpText.SetText("Hi")\nInvoke("Reset", 5)'
+        result = _post_process_luau(code)
+        assert 'tmpText.Text = "Hi"' in result
+        assert "task.delay(5, Reset)" in result
+
+
+# ---------------------------------------------------------------------------
+# Bridge module file existence
+# ---------------------------------------------------------------------------
+
+
+class TestBridgeModules:
+    """Verify that bridge Luau modules exist and are structurally sound."""
+
+    def test_state_machine_exists(self) -> None:
+        sm = Path(__file__).resolve().parent.parent / "bridge" / "StateMachine.lua"
+        assert sm.exists(), "bridge/StateMachine.lua should exist"
+
+    def test_state_machine_returns_module(self) -> None:
+        sm = Path(__file__).resolve().parent.parent / "bridge" / "StateMachine.lua"
+        content = sm.read_text()
+        assert "return StateMachine" in content
+
+    def test_state_machine_has_lifecycle_methods(self) -> None:
+        sm = Path(__file__).resolve().parent.parent / "bridge" / "StateMachine.lua"
+        content = sm.read_text()
+        for method in ("AddState", "Start", "Stop", "SwitchState", "PushState", "PopState"):
+            assert f"function StateMachine:{method}" in content, f"Missing {method}"
+
+    def test_state_machine_has_stack(self) -> None:
+        sm = Path(__file__).resolve().parent.parent / "bridge" / "StateMachine.lua"
+        content = sm.read_text()
+        assert "_stack" in content
+        assert "_states" in content

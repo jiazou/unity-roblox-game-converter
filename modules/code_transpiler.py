@@ -1060,17 +1060,28 @@ class _LuauEmitter:
         return f"{self._ind()}error()"
 
     def _emit_try_statement(self, node: Any) -> str:
-        # Approximate: extract try body, wrap in pcall-style comment
+        # try/catch → pcall wrapping
         parts: list[str] = []
+        catch_var = "err"
         for child in node.children:
             if child.type == "block":
-                parts.append(f"{self._ind()}-- try")
-                parts.append(self._emit_block_body(child))
+                body_text = self._emit_block_body(child)
+                parts.append(f"{self._ind()}local ok, {catch_var} = pcall(function()")
+                parts.append(body_text)
+                parts.append(f"{self._ind()}end)")
             elif child.type == "catch_clause":
+                # Extract the exception variable name if present
+                decl = next((c for c in child.children if c.type == "catch_declaration"), None)
+                if decl:
+                    name_node = decl.child_by_field_name("name")
+                    if name_node:
+                        catch_var = self._text(name_node)
                 body = next((c for c in child.children if c.type == "block"), None)
                 if body:
-                    parts.append(f"{self._ind()}-- catch")
+                    parts.append(f"{self._ind()}if not ok then")
+                    parts.append(f"{self._ind()}\tlocal {catch_var} = {catch_var}")
                     parts.append(self._emit_block_body(body))
+                    parts.append(f"{self._ind()}end")
             elif child.type == "finally_clause":
                 body = next((c for c in child.children if c.type == "block"), None)
                 if body:
@@ -1086,7 +1097,7 @@ class _LuauEmitter:
             (c for c in node.children if c.type == "switch_body"), None
         )
         cond = self.emit(cond_node) if cond_node else "value"
-        parts = [f"{self._ind()}-- switch {cond}"]
+        parts = [f"{self._ind()}-- switch on {cond}"]
         if body:
             for section in body.children:
                 if section.type == "switch_section":
@@ -1501,6 +1512,46 @@ def _apply_api_mappings(source: str) -> tuple[str, int]:
     return result, total_subs
 
 
+def _post_process_luau(luau: str) -> str:
+    """Apply post-processing regex rules to transpiled Luau output.
+
+    These handle Unity-specific APIs that both the AST emitter and the regex
+    fallback may leave behind: TextMeshPro, DOTween, async/await, and
+    MonoBehaviour.Invoke.
+    """
+    import re as _re
+
+    # TextMeshPro: .SetText("...") → .Text = "..."
+    luau = _re.sub(
+        r'(\w+)\.SetText\((".*?")\)',
+        r'\1.Text = \2',
+        luau,
+    )
+
+    # DOTween: .DOMove(target, duration) → TweenService:Create(...)
+    luau = _re.sub(
+        r'(\w+)\.DOMove\((\w+),\s*(\w+)\)',
+        r'TweenService:Create(\1, TweenInfo.new(\3), {Position = \2}):Play()',
+        luau,
+    )
+
+    # async/await Task.Delay(ms) → task.wait(s)
+    luau = _re.sub(
+        r'(?:await\s+)?Task\.Delay\((\d+)\)',
+        lambda m: f'task.wait({int(m.group(1)) / 1000})',
+        luau,
+    )
+
+    # MonoBehaviour.Invoke("Method", delay) → task.delay(delay, Method)
+    luau = _re.sub(
+        r'Invoke\("(\w+)",\s*(\w+)\)',
+        r'task.delay(\2, \1)',
+        luau,
+    )
+
+    return luau
+
+
 def _rule_based_transpile(
     csharp: str,
     serialized_refs: dict[str, str] | None = None,
@@ -1526,7 +1577,9 @@ def _rule_based_transpile(
     # --- AST path (preferred) ---
     ast_result = _ast_transpile_luau(csharp, serialized_refs)
     if ast_result is not None:
-        return ast_result
+        luau_src, confidence, warnings = ast_result
+        luau_src = _post_process_luau(luau_src)
+        return (luau_src, confidence, warnings)
 
     # --- Regex fallback (for snippets / missing tree-sitter) ---
     luau = csharp
@@ -1893,6 +1946,8 @@ def _rule_based_transpile(
                 f"APIs requiring manual work: {', '.join(unmapped[:5])}"
                 + (f" (+{len(unmapped)-5} more)" if len(unmapped) > 5 else "")
             )
+
+    luau = _post_process_luau(luau)
 
     confidence = _compute_confidence(
         csharp, luau, warnings,
