@@ -1038,10 +1038,9 @@ def _inject_mesh_loader_v2(rbxl_path: Path, mesh_asset_ids: dict[str, int]) -> N
     loader_source = f'''\
 -- MeshLoader.lua (auto-generated)
 -- Loads uploaded mesh Model assets via InsertService:LoadAsset()
--- and stores them in ServerStorage as templates for runtime Clone().
+-- and places them directly into Workspace.
 
 local InsertService = game:GetService("InsertService")
-local ServerStorage = game:GetService("ServerStorage")
 
 local meshAssets = {{
 {assets_table}
@@ -1059,10 +1058,12 @@ for _, asset in ipairs(meshAssets) do
             local child = model:GetChildren()[1]
             if child then
                 child.Name = asset.name
-                child.Parent = ServerStorage
+                child.Parent = workspace
                 -- Scale from centimeters to studs (Unity default FBX scale)
                 if child:IsA("Model") then
                     pcall(function() child:ScaleTo(0.01) end)
+                elseif child:IsA("MeshPart") then
+                    child.Size = child.Size * 0.01
                 end
             end
             model:Destroy()
@@ -1079,7 +1080,7 @@ while loaded + failed < #meshAssets do
     task.wait(0.1)
 end
 
-print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ServerStorage")
+print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into Workspace")
 '''
 
     # Find or create ServerScriptService
