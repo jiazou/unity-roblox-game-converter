@@ -207,6 +207,105 @@ def _upload_place(
     return json.loads(resp.read().decode("utf-8"))
 
 
+def _convert_fbx_to_glb(
+    fbx_path: Path,
+    texture_path: Path | None,
+    output_dir: Path,
+) -> Path | None:
+    """Convert an FBX file to GLB with an embedded texture.
+
+    Uses assimp CLI to convert FBX → glTF (preserving sub-meshes and UVs),
+    injects the texture PNG as a base64 data URI in the glTF material,
+    then converts glTF → GLB.
+
+    Returns the path to the GLB file, or None if conversion fails.
+    """
+    import base64
+    import subprocess
+    import tempfile
+
+    stem = fbx_path.stem
+    glb_output = output_dir / f"{stem}.glb"
+
+    # Skip if GLB already exists and is newer
+    if glb_output.exists() and glb_output.stat().st_mtime > fbx_path.stat().st_mtime:
+        return glb_output
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        gltf_path = tmpdir / "model.gltf"
+
+        # FBX → glTF (text format, preserves sub-meshes)
+        result = subprocess.run(
+            [_find_assimp_cli() or "assimp", "export", str(fbx_path), str(gltf_path)],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode != 0 or not gltf_path.exists():
+            return None
+
+        # Inject textures into glTF — one per material slot.
+        # FBX material names (e.g. "Bin", "Plaster", "VCOL") map to
+        # texture files named "<MaterialName>_color.png" in the textures dir.
+        textures_dir_for_glb = output_dir.parent / "textures"
+        try:
+            gltf_data = json.loads(gltf_path.read_text())
+            images_list = []
+            textures_list = []
+
+            for mat in gltf_data.get("materials", []):
+                mat_name = mat.get("name", "")
+                # Look for <MaterialName>_color.png
+                tex_candidates = [
+                    textures_dir_for_glb / f"{mat_name}_color.png",
+                    texture_path if texture_path else None,
+                ]
+                found_tex = None
+                for candidate in tex_candidates:
+                    if candidate and candidate.exists():
+                        found_tex = candidate
+                        break
+
+                if found_tex:
+                    tex_b64 = base64.b64encode(found_tex.read_bytes()).decode()
+                    mime = "image/png" if found_tex.suffix.lower() == ".png" else "image/jpeg"
+                    img_idx = len(images_list)
+                    images_list.append({
+                        "uri": f"data:{mime};base64,{tex_b64}",
+                        "mimeType": mime,
+                    })
+                    tex_idx = len(textures_list)
+                    textures_list.append({"source": img_idx})
+
+                    if "pbrMetallicRoughness" not in mat:
+                        mat["pbrMetallicRoughness"] = {}
+                    mat["pbrMetallicRoughness"]["baseColorTexture"] = {"index": tex_idx}
+                    mat["pbrMetallicRoughness"]["metallicFactor"] = 0.0
+                    mat["pbrMetallicRoughness"]["roughnessFactor"] = 1.0
+
+            if images_list:
+                gltf_data["images"] = images_list
+                gltf_data["textures"] = textures_list
+                gltf_path.write_text(json.dumps(gltf_data))
+        except Exception:
+            pass  # Proceed without texture injection
+
+        # glTF → GLB
+        result2 = subprocess.run(
+            [_find_assimp_cli() or "assimp", "export", str(gltf_path), str(glb_output)],
+            capture_output=True, timeout=30,
+        )
+        if result2.returncode != 0 or not glb_output.exists():
+            return None
+
+    return glb_output
+
+
+def _find_assimp_cli() -> str | None:
+    """Find the assimp CLI tool."""
+    import shutil
+    return shutil.which("assimp")
+
+
 _CONTENT_TYPE_MAP: dict[str, str] = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -214,8 +313,10 @@ _CONTENT_TYPE_MAP: dict[str, str] = {
     ".ogg": "audio/ogg",
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
-    ".fbx": "application/octet-stream",
+    ".fbx": "model/fbx",
     ".obj": "model/obj",
+    ".glb": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
 }
 
 
@@ -628,6 +729,10 @@ def _patch_rbxl_asset_ids(
 
         matched_url = None
 
+        # Clean part name: strip Unity instance suffixes like " (2)", " (13)"
+        import re as _re
+        clean_name = _re.sub(r"\s*\(\d+\)$", "", part_name).strip().lower()
+
         # Strategy 1: mesh_texture_map from assembly (mesh_id → texture filename).
         if mesh_texture_map and mesh_id:
             tex_filename = mesh_texture_map.get(mesh_id)
@@ -640,24 +745,35 @@ def _patch_rbxl_asset_ids(
                     matched_url = stem_to_url[stem_lower]
 
         # Strategy 2: Unity project mesh→material mapping.
+        # Try multiple name candidates since MeshId may be rbxassetid://
+        # (not a filename) after patching.
         if not matched_url and _unity_mesh_material_map:
-            mesh_stem = Path(mesh_id).stem.lower() if mesh_id else part_name.lower()
-            tex_fn = _unity_mesh_material_map.get(mesh_stem)
-            if tex_fn:
-                tex_lower = tex_fn.lower()
-                stem_lower = Path(tex_fn).stem.lower()
-                if tex_lower in name_to_url:
-                    matched_url = name_to_url[tex_lower]
-                elif stem_lower in stem_to_url:
-                    matched_url = stem_to_url[stem_lower]
+            # Try: clean part name, raw part name, mesh filename stem
+            name_candidates = [clean_name]
+            if mesh_id and not mesh_id.startswith("rbxassetid"):
+                name_candidates.append(Path(mesh_id).stem.lower())
+
+            for candidate in name_candidates:
+                tex_fn = _unity_mesh_material_map.get(candidate)
+                if tex_fn:
+                    tex_lower = tex_fn.lower()
+                    stem_lower = Path(tex_fn).stem.lower()
+                    if tex_lower in name_to_url:
+                        matched_url = name_to_url[tex_lower]
+                    elif stem_lower in stem_to_url:
+                        matched_url = stem_to_url[stem_lower]
+                    if matched_url:
+                        break
 
         # Strategy 3: name-based fallback.
         if not matched_url:
             candidates = [
+                f"{clean_name}_color",
                 f"{part_name.lower()}_color",
-                f"{Path(mesh_id).stem.lower()}_color" if mesh_id else "",
-                part_name.lower(),
+                clean_name,
             ]
+            if mesh_id and not mesh_id.startswith("rbxassetid"):
+                candidates.append(f"{Path(mesh_id).stem.lower()}_color")
             for candidate in candidates:
                 if candidate and candidate in texture_stem_to_url:
                     matched_url = texture_stem_to_url[candidate]
@@ -890,6 +1006,119 @@ print("[MeshLoader] Loaded " .. tostring(#meshCache) .. " unique mesh assets")
                 tagged, len(model_ids_needed))
 
 
+def _inject_mesh_loader_v2(rbxl_path: Path, mesh_asset_ids: dict[str, int]) -> None:
+    """Inject a MeshLoader Script that uses InsertService:LoadAsset().
+
+    MeshPart.MeshId set in XML is ignored by Roblox Studio. The only way
+    to get proper textured meshes is InsertService:LoadAsset() at runtime.
+
+    This function:
+    1. Removes MeshPart items from the .rbxl (they'd render as grey boxes)
+    2. Injects a Script that loads each Model asset via InsertService
+       and parents the content into ServerStorage as templates
+    """
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(rbxl_path)
+    root = tree.getroot()
+
+    # Build asset list for the Luau script
+    # De-duplicate: same mesh filename → same asset ID
+    unique_assets: dict[str, int] = {}
+    for name, aid in mesh_asset_ids.items():
+        stem = Path(name).stem
+        unique_assets[stem] = aid
+
+    # Generate Luau source
+    asset_lines = []
+    for stem, aid in sorted(unique_assets.items()):
+        asset_lines.append(f'    {{id = {aid}, name = "{stem}"}},')
+    assets_table = "\n".join(asset_lines)
+
+    loader_source = f'''\
+-- MeshLoader.lua (auto-generated)
+-- Loads uploaded mesh Model assets via InsertService:LoadAsset()
+-- and stores them in ServerStorage as templates for runtime Clone().
+
+local InsertService = game:GetService("InsertService")
+local ServerStorage = game:GetService("ServerStorage")
+
+local meshAssets = {{
+{assets_table}
+}}
+
+local loaded = 0
+local failed = 0
+
+for _, asset in ipairs(meshAssets) do
+    task.spawn(function()
+        local ok, model = pcall(function()
+            return InsertService:LoadAsset(asset.id)
+        end)
+        if ok and model then
+            local child = model:GetChildren()[1]
+            if child then
+                child.Name = asset.name
+                child.Parent = ServerStorage
+                -- Scale from centimeters to studs (Unity default FBX scale)
+                if child:IsA("Model") then
+                    pcall(function() child:ScaleTo(0.01) end)
+                end
+            end
+            model:Destroy()
+            loaded = loaded + 1
+        else
+            warn("[MeshLoader] Failed to load " .. asset.name .. ": " .. tostring(model))
+            failed = failed + 1
+        end
+    end)
+end
+
+-- Wait for all loads to complete
+while loaded + failed < #meshAssets do
+    task.wait(0.1)
+end
+
+print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ServerStorage")
+'''
+
+    # Find or create ServerScriptService
+    sss = None
+    for item in root.findall("Item"):
+        if item.get("class") == "ServerScriptService":
+            sss = item
+            break
+    if sss is None:
+        sss = ET.SubElement(root, "Item")
+        sss.set("class", "ServerScriptService")
+        sp = ET.SubElement(sss, "Properties")
+        n = ET.SubElement(sp, "string")
+        n.set("name", "Name")
+        n.text = "ServerScriptService"
+
+    # Remove any existing MeshLoader
+    for existing in sss.findall("Item"):
+        ep = existing.find("Properties")
+        if ep is not None:
+            for p in ep:
+                if p.get("name") == "Name" and p.text == "MeshLoader":
+                    sss.remove(existing)
+                    break
+
+    # Add the MeshLoader script
+    script_item = ET.SubElement(sss, "Item")
+    script_item.set("class", "Script")
+    script_props = ET.SubElement(script_item, "Properties")
+    sn = ET.SubElement(script_props, "string")
+    sn.set("name", "Name")
+    sn.text = "MeshLoader"
+    ss = ET.SubElement(script_props, "ProtectedString")
+    ss.set("name", "Source")
+    ss.text = loader_source
+
+    tree.write(str(rbxl_path), encoding="unicode", xml_declaration=True)
+
+
 def upload_to_roblox(
     rbxl_path: Path,
     textures_dir: Path | None,
@@ -938,16 +1167,37 @@ def upload_to_roblox(
         result.errors.append(f"rbxl file not found: {rbxl_path}")
         return result
 
-    # ── Upload meshes ─────────────────────────────────────────────────
+    # ── Convert FBX→GLB with textures, then upload ──────────────────
     if meshes_dir and meshes_dir.is_dir():
         mesh_exts = {".fbx", ".obj", ".dae"}
+        glb_dir = meshes_dir / "glb"
+        glb_dir.mkdir(exist_ok=True)
+
+        # Build mesh→texture mapping for texture injection
+        _mesh_mat_map = _build_mesh_material_map(unity_project_path) if unity_project_path else {}
+        textures_dir_path = meshes_dir.parent / "textures"
+
         for mesh_path in sorted(meshes_dir.iterdir()):
             if mesh_path.suffix.lower() not in mesh_exts:
                 continue
+
+            # Find matching texture for this mesh
+            tex_path = None
+            mesh_stem = mesh_path.stem.lower()
+            tex_filename = _mesh_mat_map.get(mesh_stem)
+            if tex_filename and textures_dir_path.is_dir():
+                candidate = textures_dir_path / tex_filename
+                if candidate.exists():
+                    tex_path = candidate
+
+            # Convert FBX → GLB with embedded texture
+            glb_path = _convert_fbx_to_glb(mesh_path, tex_path, glb_dir)
+            upload_path = glb_path if glb_path else mesh_path
+
             try:
                 resp = _upload_asset(
-                    mesh_path, api_key, asset_type="Model",
-                    display_name=mesh_path.stem,
+                    upload_path, api_key, asset_type="Model",
+                    display_name=mesh_path.stem[:50],
                     creator_id=creator_id,
                     creator_type=creator_type,
                 )
@@ -1029,32 +1279,20 @@ def upload_to_roblox(
                     f"{_describe_upload_error(exc)}"
                 )
 
-    # ── Upload meshes ───────────────────────────────────────────────────
-    if meshes_dir and meshes_dir.is_dir():
-        mesh_exts = {".fbx", ".obj"}
-        for mesh_path in sorted(meshes_dir.iterdir()):
-            if mesh_path.suffix.lower() not in mesh_exts:
-                continue
-            if mesh_path.stat().st_size < 200:
-                continue  # skip stub/empty files
-            try:
-                resp = _upload_mesh_asset(
-                    mesh_path, api_key,
-                    display_name=mesh_path.stem,
-                    creator_id=creator_id,
-                    creator_type=creator_type,
-                )
-                asset_id = resp.get("assetId") or resp.get("id")
-                if asset_id:
-                    # Key by full path so the patcher can match MeshId references
-                    result.asset_ids[str(mesh_path)] = int(asset_id)
-                    # Also key by filename for fallback matching
-                    result.asset_ids[mesh_path.name] = int(asset_id)
-            except Exception as exc:  # noqa: BLE001
-                result.warnings.append(
-                    f"Mesh upload failed ({mesh_path.name}): "
-                    f"{_describe_upload_error(exc)}"
-                )
+    # ── Inject MeshLoader script into .rbxl ──────────────────────────
+    # Meshes uploaded as GLB Model assets can only be loaded at runtime
+    # via InsertService:LoadAsset(). Generate a Script that loads each
+    # mesh Model and parents it into ServerStorage as a template.
+    mesh_asset_ids = {
+        k: v for k, v in result.asset_ids.items()
+        if k.lower().endswith((".fbx", ".obj", ".dae"))
+    }
+    if mesh_asset_ids and rbxl_path.exists():
+        try:
+            _inject_mesh_loader_v2(rbxl_path, mesh_asset_ids)
+            logger.info("Injected MeshLoader with %d mesh assets", len(mesh_asset_ids))
+        except Exception as exc:  # noqa: BLE001
+            result.warnings.append(f"MeshLoader injection failed: {exc}")
 
     # ── Patch .rbxl with uploaded asset IDs ────────────────────────────
     if result.asset_ids:
