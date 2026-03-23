@@ -136,7 +136,7 @@ def _load_mesh_stats(mesh_path: Path) -> MeshStats:
     except ImportError:
         pass
     except NotImplementedError:
-        # trimesh doesn't support this format (e.g. FBX) — try pyassimp.
+        # trimesh doesn't support this format (e.g. FBX) — try assimp CLI.
         if mesh_path.suffix.lower() in (".fbx",):
             try:
                 mesh = _load_fbx_as_trimesh(mesh_path)
@@ -149,7 +149,7 @@ def _load_mesh_stats(mesh_path: Path) -> MeshStats:
                 return stats
             except Exception as exc:  # noqa: BLE001
                 stats.is_valid = False
-                stats.error = f"pyassimp FBX load failed: {exc}"
+                stats.error = f"assimp CLI FBX load failed: {exc}"
                 return stats
     except Exception as exc:  # noqa: BLE001
         stats.is_valid = False
@@ -197,7 +197,7 @@ def _decimate_mesh(
     try:
         mesh = trimesh.load(str(mesh_path), force="mesh", process=False)
     except NotImplementedError:
-        # FBX not supported by trimesh — fall back to pyassimp
+        # FBX not supported by trimesh — fall back to assimp CLI
         mesh = _load_fbx_as_trimesh(mesh_path)
         if mesh is None:
             raise ValueError(f"Could not load {mesh_path}")
