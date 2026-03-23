@@ -243,34 +243,51 @@ def _convert_fbx_to_glb(
         if result.returncode != 0 or not gltf_path.exists():
             return None
 
-        # Inject texture into glTF if available
-        if texture_path and texture_path.exists():
-            try:
-                gltf_data = json.loads(gltf_path.read_text())
+        # Inject textures into glTF — one per material slot.
+        # FBX material names (e.g. "Bin", "Plaster", "VCOL") map to
+        # texture files named "<MaterialName>_color.png" in the textures dir.
+        textures_dir_for_glb = output_dir.parent / "textures"
+        try:
+            gltf_data = json.loads(gltf_path.read_text())
+            images_list = []
+            textures_list = []
 
-                tex_b64 = base64.b64encode(texture_path.read_bytes()).decode()
-                mime = "image/png" if texture_path.suffix.lower() == ".png" else "image/jpeg"
+            for mat in gltf_data.get("materials", []):
+                mat_name = mat.get("name", "")
+                # Look for <MaterialName>_color.png
+                tex_candidates = [
+                    textures_dir_for_glb / f"{mat_name}_color.png",
+                    texture_path if texture_path else None,
+                ]
+                found_tex = None
+                for candidate in tex_candidates:
+                    if candidate and candidate.exists():
+                        found_tex = candidate
+                        break
 
-                # Add/replace image
-                gltf_data["images"] = [{
-                    "uri": f"data:{mime};base64,{tex_b64}",
-                    "mimeType": mime,
-                }]
+                if found_tex:
+                    tex_b64 = base64.b64encode(found_tex.read_bytes()).decode()
+                    mime = "image/png" if found_tex.suffix.lower() == ".png" else "image/jpeg"
+                    img_idx = len(images_list)
+                    images_list.append({
+                        "uri": f"data:{mime};base64,{tex_b64}",
+                        "mimeType": mime,
+                    })
+                    tex_idx = len(textures_list)
+                    textures_list.append({"source": img_idx})
 
-                # Add/replace texture referencing the image
-                gltf_data["textures"] = [{"source": 0}]
-
-                # Set baseColorTexture on all materials
-                for mat in gltf_data.get("materials", []):
                     if "pbrMetallicRoughness" not in mat:
                         mat["pbrMetallicRoughness"] = {}
-                    mat["pbrMetallicRoughness"]["baseColorTexture"] = {"index": 0}
+                    mat["pbrMetallicRoughness"]["baseColorTexture"] = {"index": tex_idx}
                     mat["pbrMetallicRoughness"]["metallicFactor"] = 0.0
                     mat["pbrMetallicRoughness"]["roughnessFactor"] = 1.0
 
+            if images_list:
+                gltf_data["images"] = images_list
+                gltf_data["textures"] = textures_list
                 gltf_path.write_text(json.dumps(gltf_data))
-            except Exception:
-                pass  # Proceed without texture injection
+        except Exception:
+            pass  # Proceed without texture injection
 
         # glTF → GLB
         result2 = subprocess.run(
