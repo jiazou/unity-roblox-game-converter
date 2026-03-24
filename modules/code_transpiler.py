@@ -505,19 +505,25 @@ def _ai_transpile(
                 f"```csharp\n{csharp}\n```"
             )
 
-        message = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        # Retry with doubled max_tokens on truncation (up to one retry)
+        current_max = max_tokens
+        for attempt in range(2):
+            message = client.messages.create(
+                model=model,
+                max_tokens=current_max,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            if message.stop_reason != "max_tokens" or attempt == 1:
+                break
+            current_max = min(current_max * 2, 65536)
+
         luau = message.content[0].text.strip()
-        # Strip markdown fences if present
         luau = re.sub(r"^```(?:lua|luau)?\n?", "", luau)
         luau = re.sub(r"\n?```$", "", luau)
         warnings: list[str] = []
         confidence = 0.9
         if message.stop_reason == "max_tokens":
-            warnings.append("Output truncated — max_tokens reached. Script may be incomplete.")
+            warnings.append("Output truncated after retry — script may be incomplete.")
             confidence = 0.3
         return luau, confidence, warnings
 
