@@ -46,6 +46,35 @@ class UploadResult:
     suggestion: str | None = None  # Actionable suggestion for the caller
 
 
+# ---------------------------------------------------------------------------
+# Asset upload cache — persists asset IDs across runs to avoid re-uploading
+# ---------------------------------------------------------------------------
+
+def _load_asset_cache(cache_path: Path) -> dict[str, dict]:
+    """Load cached asset IDs from a JSON file. Returns {name: {asset_id, type}}.
+
+    Supports both stem-keyed (legacy: ``"Invincible"``) and filename-keyed
+    (``"Invincible.ogg"``) formats. Both are checked during lookups.
+    """
+    if cache_path.exists():
+        try:
+            return json.loads(cache_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Could not read asset cache at %s, starting fresh", cache_path)
+    return {}
+
+
+def _is_cached(name: str, cache: dict[str, dict]) -> int | None:
+    """Check if an asset is in the cache by filename or stem. Returns asset_id or None."""
+    entry = cache.get(name) or cache.get(Path(name).stem)
+    return entry["asset_id"] if entry else None
+
+
+def _save_asset_cache(cache_path: Path, cache: dict[str, dict]) -> None:
+    """Persist the asset ID cache to disk."""
+    cache_path.write_text(json.dumps(cache, indent=2))
+
+
 def resolve_roblox_username(username: str) -> int | None:
     """Resolve a Roblox username to numeric user ID. Returns None on failure."""
     import urllib.request
@@ -602,10 +631,13 @@ def _patch_rbxl_asset_ids(
         #     e.g. "BrickWall_color.png" → rbxassetid://12345
         if "rbxassetid" not in text:
             text_lower = text.strip().lower()
+            text_stem = Path(text_lower).stem
             if text_lower in name_to_url:
                 text = name_to_url[text_lower]
             elif text_lower in stem_to_url:
                 text = stem_to_url[text_lower]
+            elif text_stem in stem_to_url:
+                text = stem_to_url[text_stem]
 
         if text != original_text:
             elem.text = text
@@ -768,9 +800,11 @@ def _inject_mesh_loader(rbxl_path: Path, mesh_asset_ids: dict[str, int]) -> None
     loader_source = f'''\
 -- MeshLoader.lua (auto-generated)
 -- Loads uploaded mesh Model assets via InsertService:LoadAsset()
--- and places them directly into Workspace.
+-- and parents them into ServerStorage as templates for runtime use.
 
 local InsertService = game:GetService("InsertService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local meshAssets = {{
 {assets_table}
@@ -788,13 +822,13 @@ for _, asset in ipairs(meshAssets) do
             local child = model:GetChildren()[1]
             if child then
                 child.Name = asset.name
-                child.Parent = workspace
                 -- Scale from centimeters to studs (Unity default FBX scale)
                 if child:IsA("Model") then
                     pcall(function() child:ScaleTo(0.01) end)
                 elseif child:IsA("MeshPart") then
                     child.Size = child.Size * 0.01
                 end
+                child.Parent = ServerStorage
             end
             model:Destroy()
             loaded = loaded + 1
@@ -810,7 +844,12 @@ while loaded + failed < #meshAssets do
     task.wait(0.1)
 end
 
-print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into Workspace")
+print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ServerStorage")
+
+-- Signal completion so game scripts can proceed
+local done = Instance.new("BoolValue")
+done.Name = "MeshLoaderDone"
+done.Parent = ReplicatedStorage
 '''
 
     # Find or create ServerScriptService
@@ -863,6 +902,7 @@ def upload_to_roblox(
     creator_type: str = "User",
     mesh_texture_map: dict[str, str] | None = None,
     unity_project_path: Path | None = None,
+    asset_cache_path: Path | None = None,
 ) -> UploadResult:
     """
     Upload a converted .rbxl place file (and optionally textures, sprites,
@@ -898,6 +938,16 @@ def upload_to_roblox(
         result.errors.append(f"rbxl file not found: {rbxl_path}")
         return result
 
+    # ── Load asset cache from previous runs ───────────────────────────
+    asset_cache: dict[str, dict] = {}
+    if asset_cache_path:
+        asset_cache = _load_asset_cache(asset_cache_path)
+        # Pre-populate result.asset_ids with cached entries so patching works
+        for name, entry in asset_cache.items():
+            result.asset_ids[name] = entry["asset_id"]
+        if asset_cache:
+            logger.info("Loaded %d cached asset IDs — will skip re-upload for these", len(asset_cache))
+
     # ── Convert FBX→GLB with textures, then upload ──────────────────
     if meshes_dir and meshes_dir.is_dir():
         mesh_exts = {".fbx", ".obj", ".dae"}
@@ -910,6 +960,11 @@ def upload_to_roblox(
 
         for mesh_path in sorted(meshes_dir.iterdir()):
             if mesh_path.suffix.lower() not in mesh_exts:
+                continue
+
+            # Skip if already cached from a previous run
+            if _is_cached(mesh_path.name, asset_cache):
+                logger.debug("Skipping cached mesh: %s", mesh_path.name)
                 continue
 
             # Find matching texture for this mesh
@@ -948,6 +1003,9 @@ def upload_to_roblox(
         for img_path in sorted(textures_dir.iterdir()):
             if img_path.suffix.lower() not in image_exts:
                 continue
+            if _is_cached(img_path.name, asset_cache):
+                logger.debug("Skipping cached texture: %s", img_path.name)
+                continue
             try:
                 resp = _upload_asset(
                     img_path, api_key, asset_type="Decal",
@@ -969,6 +1027,9 @@ def upload_to_roblox(
         image_exts = {".png", ".jpg", ".jpeg"}
         for img_path in sorted(sprites_dir.iterdir()):
             if img_path.suffix.lower() not in image_exts:
+                continue
+            if _is_cached(img_path.name, asset_cache):
+                logger.debug("Skipping cached sprite: %s", img_path.name)
                 continue
             try:
                 resp = _upload_asset(
@@ -993,6 +1054,9 @@ def upload_to_roblox(
         for audio_path in sorted(audio_dir.iterdir()):
             if audio_path.suffix.lower() not in audio_exts:
                 continue
+            if _is_cached(audio_path.name, asset_cache):
+                logger.debug("Skipping cached audio: %s", audio_path.name)
+                continue
             try:
                 resp = _upload_asset(
                     audio_path, api_key, asset_type="Audio",
@@ -1010,14 +1074,36 @@ def upload_to_roblox(
                     f"{_describe_upload_error(exc)}"
                 )
 
+    # ── Save asset cache with newly uploaded assets ─────────────────
+    if asset_cache_path:
+        # Merge new uploads into the cache (type is inferred from extension)
+        _TYPE_BY_EXT: dict[str, str] = {
+            ".fbx": "MODEL", ".obj": "MODEL", ".dae": "MODEL",
+            ".png": "DECAL", ".jpg": "DECAL", ".jpeg": "DECAL",
+            ".ogg": "AUDIO", ".mp3": "AUDIO", ".wav": "AUDIO",
+        }
+        for name, aid in result.asset_ids.items():
+            if name not in asset_cache:
+                ext = Path(name).suffix.lower()
+                asset_cache[name] = {
+                    "asset_id": aid,
+                    "type": _TYPE_BY_EXT.get(ext, "UNKNOWN"),
+                }
+        _save_asset_cache(asset_cache_path, asset_cache)
+        logger.info("Saved asset cache with %d entries to %s", len(asset_cache), asset_cache_path)
+
     # ── Inject MeshLoader script into .rbxl ──────────────────────────
     # Meshes uploaded as GLB Model assets can only be loaded at runtime
     # via InsertService:LoadAsset(). Generate a Script that loads each
     # mesh Model and parents it into ServerStorage as a template.
-    mesh_asset_ids = {
-        k: v for k, v in result.asset_ids.items()
-        if k.lower().endswith((".fbx", ".obj", ".dae"))
-    }
+    # Identify mesh assets by extension OR by cache type metadata
+    mesh_exts = {".fbx", ".obj", ".dae"}
+    mesh_asset_ids = {}
+    for k, v in result.asset_ids.items():
+        if Path(k).suffix.lower() in mesh_exts:
+            mesh_asset_ids[k] = v
+        elif asset_cache.get(k, {}).get("type") == "MODEL":
+            mesh_asset_ids[k] = v
     if mesh_asset_ids and rbxl_path.exists():
         try:
             _inject_mesh_loader(rbxl_path, mesh_asset_ids)

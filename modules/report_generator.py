@@ -48,6 +48,15 @@ class MaterialSummary:
 
 
 @dataclass
+class ComponentSummary:
+    total_encountered: int = 0
+    converted: int = 0
+    dropped: int = 0
+    dropped_by_type: dict[str, int] = field(default_factory=dict)
+    dropped_details: list[dict[str, str]] = field(default_factory=list)
+
+
+@dataclass
 class SceneSummary:
     scenes_parsed: int = 0
     total_game_objects: int = 0
@@ -89,6 +98,7 @@ class ConversionReport:
     materials: MaterialSummary = field(default_factory=MaterialSummary)
     scripts: ScriptSummary = field(default_factory=ScriptSummary)
     scene: SceneSummary = field(default_factory=SceneSummary)
+    components: ComponentSummary = field(default_factory=ComponentSummary)
     output: OutputSummary = field(default_factory=OutputSummary)
 
 
@@ -153,6 +163,16 @@ def generate_report(
             f"{report.scene.meshes_decimated} decimated",
             f"  Parts in .rbxl: {report.output.parts_written}",
         ]
+        if report.components.dropped > 0:
+            lines.append(
+                f"  Components   : {report.components.converted} converted, "
+                f"{report.components.dropped} dropped"
+            )
+            for ctype, count in sorted(
+                report.components.dropped_by_type.items(),
+                key=lambda x: -x[1],
+            ):
+                lines.append(f"    ⚠ {ctype}: {count} instance(s) not converted")
         if report.output.packages.total_packages:
             lines.append(f"  Packages     : {report.output.packages.total_packages} .rbxm file(s)")
         if report.warnings:

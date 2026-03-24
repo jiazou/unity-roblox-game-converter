@@ -49,6 +49,7 @@ from modules import (
     ui_translator,
 )
 from modules.conversion_helpers import (
+    ComponentWarning as _ComponentWarning,
     resolve_prefab_instances as _resolve_prefab_instances,
     extract_serialized_field_refs as _extract_serialized_field_refs,
     generate_prefab_packages as _generate_prefab_packages,
@@ -485,10 +486,18 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
         # Save transpiled scripts to output dir for later assembly
         scripts_out = out_dir / "scripts"
         scripts_out.mkdir(parents=True, exist_ok=True)
+        script_meta: dict[str, dict] = {}
         for ts in transpilation.scripts:
             (scripts_out / ts.output_filename).write_text(
                 ts.luau_source, encoding="utf-8"
             )
+            script_meta[ts.output_filename] = {
+                "script_type": ts.script_type,
+            }
+        # Save metadata so assemble can reconstruct script_type for on-disk scripts
+        (scripts_out / "_meta.json").write_text(
+            json.dumps(script_meta, indent=2), encoding="utf-8"
+        )
 
         result_info = {
             "total": transpilation.total,
@@ -564,7 +573,9 @@ def validate(output_dir: str) -> None:
     total_errors = 0
     total_warnings = 0
 
-    for lua_file in sorted(scripts_dir.glob("*.lua")):
+    for lua_file in sorted(
+        [*scripts_dir.glob("*.lua"), *scripts_dir.glob("*.luau")]
+    ):
         source = lua_file.read_text(encoding="utf-8")
         vr = code_validator.validate_luau(source, lua_file.name)
         issues = []
@@ -803,7 +814,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         ]
 
     # Build parts from scene nodes
-    parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
+    parts, lighting_config, camera_config, skybox_config, comp_warnings = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
         guid_to_companion_scripts=guid_to_companion,
@@ -855,6 +866,48 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                             audio_copied += 1
 
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
+
+    # Overlay scripts from <output_dir>/scripts/ — these may have been
+    # hand-edited (e.g. GameBootstrap.lua rewritten during Step 4.5).
+    # Scripts on disk take precedence over freshly transpiled output.
+    scripts_dir = out_dir / "scripts"
+    if scripts_dir.is_dir():
+        meta_path = scripts_dir / "_meta.json"
+        script_meta: dict[str, dict] = {}
+        if meta_path.is_file():
+            script_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+        existing_names = {s.name for s in rbx_scripts}
+        for lua_file in sorted(
+            [*scripts_dir.glob("*.lua"), *scripts_dir.glob("*.luau")]
+        ):
+            disk_source = lua_file.read_text(encoding="utf-8")
+            meta = script_meta.get(lua_file.name, {})
+            script_name = meta.get("name", lua_file.stem)
+            script_type = meta.get("script_type", "Script")
+            original_name = lua_file.stem  # name before meta rename
+
+            if script_name in existing_names:
+                # Replace: disk version wins over transpiler output
+                for i, s in enumerate(rbx_scripts):
+                    if s.name == script_name:
+                        rbx_scripts[i] = rbxl_writer.RbxScriptEntry(
+                            name=script_name,
+                            luau_source=disk_source,
+                            script_type=script_type,
+                        )
+                        break
+            else:
+                # New script (or renamed via meta). Remove the original
+                # transpiled version if it exists under the pre-rename name.
+                if original_name != script_name and original_name in existing_names:
+                    rbx_scripts = [s for s in rbx_scripts if s.name != original_name]
+                rbx_scripts.append(rbxl_writer.RbxScriptEntry(
+                    name=script_name,
+                    luau_source=disk_source,
+                    script_type=script_type,
+                ))
+
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
     # Collect ServerStorage templates if packages were generated
@@ -960,6 +1013,10 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "parts_written": write_result.parts_written,
         "scripts_written": write_result.scripts_written,
         "prefab_instances_resolved": resolved_count,
+        "component_warnings": [
+            {"game_object": w.game_object, "component_type": w.component_type, "suggestion": w.suggestion}
+            for w in comp_warnings
+        ],
     }
     state["errors"].extend(errors)
     if "assemble" not in state["completed_phases"]:
@@ -970,6 +1027,11 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
     if rbxl_path.exists():
         rbxl_size_mb = round(rbxl_path.stat().st_size / 1_048_576, 2)
 
+    # Summarise dropped components for the user
+    comp_warning_summary: dict[str, int] = {}
+    for w in comp_warnings:
+        comp_warning_summary[w.component_type] = comp_warning_summary.get(w.component_type, 0) + 1
+
     _emit({
         "phase": "assemble",
         "success": len(errors) == 0,
@@ -979,6 +1041,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "scripts_written": write_result.scripts_written,
         "audio_files_staged": audio_copied,
         "warnings": write_result.warnings,
+        "dropped_components": comp_warning_summary,
         "decimation": decimation_info,
         "ui_translation": ui_info,
         "packages": package_info,
@@ -1054,6 +1117,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         creator_type=creator_type,
         mesh_texture_map=mesh_texture_map,
         unity_project_path=unity_project_path if unity_project_path.is_dir() else None,
+        asset_cache_path=out_dir / "asset_id_map.json",
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,
@@ -1164,10 +1228,22 @@ def report(unity_project_path: str, output_dir: str, verbose: bool) -> None:
     resolved_count = assembly.get("prefab_instances_resolved", 0)
     duration = time.monotonic() - t_start
 
+    # Restore component warnings from assembly phase
+    raw_warnings = assembly.get("component_warnings", [])
+    comp_warnings = [
+        _ComponentWarning(
+            game_object=w["game_object"],
+            component_type=w["component_type"],
+            suggestion=w["suggestion"],
+        )
+        for w in raw_warnings
+    ]
+
     rpt = _build_report(
         unity_path, out_dir, manifest, mat_result, parsed_scenes,
         prefabs, transpilation, write_result, decimation_result,
         resolved_count, duration, errors,
+        component_warnings=comp_warnings,
     )
 
     report_path = out_dir / config.REPORT_FILENAME

@@ -362,7 +362,7 @@ def convert(
         ]
 
     click.echo("🏗   Writing .rbxl …")
-    parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
+    parts, lighting_config, camera_config, skybox_config, comp_warnings = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
         guid_to_companion_scripts=guid_to_companion,
@@ -447,6 +447,7 @@ def convert(
         place_id=place_id,
         mesh_texture_map=mesh_texture_map,
         unity_project_path=unity_path,
+        asset_cache_path=out_dir / "asset_id_map.json",
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,
@@ -472,6 +473,7 @@ def convert(
         prefabs, transpilation, write_result, decimation_result,
         resolved_count, duration, errors,
         package_result=package_result if emit_packages else None,
+        component_warnings=comp_warnings,
     )
 
     report_path = out_dir / config.REPORT_FILENAME

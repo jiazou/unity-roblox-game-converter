@@ -87,13 +87,30 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
    - **World-distance-based**: e.g., jump/slide measured by `worldDistance` traveled, not elapsed time. This is critical — many endless runners scale jump/slide length by `(1 + speedRatio)` so they feel consistent at all speeds. The Roblox port MUST preserve this.
    - **Coroutine-based**: `StartCoroutine` + `yield return` for sequenced events (map to `task.spawn` + `task.wait`)
 
-4. **Movement model** — How does the character move?
-   - Does the world move and the character stays still? (common in endless runners)
-   - Does the character move through a static world?
-   - Does the TrackManager compute position from track segment curves?
-   - Lane changes: smooth interpolation via `MoveTowards` or lerp?
+4. **Platform divergence analysis** — This is the most critical step. Unity is a blank canvas: no default character, camera, input, or physics. You build everything from scratch. Roblox is the opposite: every player spawns with a fully working character, camera, input system, and physics body. The port must decide, for each of these four pillars, whether the Unity game's approach matches Roblox's defaults or conflicts with them.
 
-**Decision point:** Present the architecture map to the user. Ask: "Does this match your understanding of the game? Any systems I'm missing or misreading?"
+   For each pillar, read the Unity C# code and answer: **"Does the Unity game do this itself, or would it rely on an engine default?"** Then decide: **"Does Roblox's default do the same thing, or do we need to override it?"**
+
+   | Pillar | What Unity provides (nothing) | What Roblox provides by default | Override needed when... |
+   |--------|------------------------------|--------------------------------|------------------------|
+   | **Character** | No character exists until you Instantiate one and attach scripts | Player gets a Humanoid rig with health, collision, animation | The game uses a custom character controller, non-humanoid avatar, or no visible character |
+   | **Camera** | No camera behavior until you write a script or attach a component | Third-person follow camera that orbits the character | The game uses fixed camera, rail camera, top-down, isometric, or any non-orbit view |
+   | **Input → Movement** | No movement until you write `Update()` + `transform.Translate()` or a CharacterController | WASD/mobile stick moves the character, Space jumps, Humanoid handles it all | The game uses custom movement (auto-run, on-rails, grid-based, turn-based, vehicle, etc.) |
+   | **Physics** | Rigidbody is opt-in, gravity/collision configured per-object | All parts have physics, character has Humanoid physics with WalkSpeed/JumpPower | The game positions objects directly via CFrame/Transform rather than through physics forces |
+   | **Object visibility** | Scene graphs contain many non-visual objects: trigger volumes (`isTrigger`), disabled GameObjects (`m_IsActive=false`), disabled renderers (`m_Enabled=0`), collider-only objects, nested UI canvases. These are invisible by design. | Every Part is visible by default — there is no concept of a "renderer component" separate from the object | Always. The pipeline handles this automatically (transparency=1 for triggers/disabled/collider-only objects, UI subtree filtering). If opaque rectangles block the view in the converted game, check for missed non-visual object categories. |
+
+   For each pillar where the Unity game diverges from Roblox's default:
+   - Identify exactly what the Unity code does (e.g., "TrackManager sets character position each frame from a spline curve")
+   - Decide how to override the Roblox default (e.g., "Anchor HumanoidRootPart, set WalkSpeed=0, drive CFrame from script")
+   - If the Unity system is too complex to port fully, design a simpler approximation that preserves the gameplay feel
+
+   **This is a design decision, not a checklist.** Present the divergence table to the user and ask which approach they want for each pillar.
+
+5. **Scale conversion** — Unity uses 1 unit ≈ 1 meter. Roblox characters are ~5.5 studs tall vs Unity's ~1.8 units. Determine the scale relationship between the imported scene geometry and Roblox's defaults, and decide whether to scale the world up, scale the character down, or apply a conversion factor to gameplay values. Present the tradeoffs to the user.
+
+6. **Implementability check** — For each Unity system, assess whether it can be ported as-is or needs simplification. A working simple version beats a broken complex one. If a system (e.g., procedural track segments, spline evaluation) cannot be ported, implement an approximation and document what's missing so it can be improved later.
+
+**Decision point:** Present the architecture map (items 1–6) to the user. Include the platform divergence table. Ask: "Does this match your understanding of the game? For each pillar where Unity and Roblox diverge, which approach do you want?"
 
 #### Phase B: Module-per-Component Rewrite
 
@@ -127,24 +144,7 @@ Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
 - Starts the state machine with the initial state
 - Does NOT contain game logic — it's pure wiring
 
-Example pattern:
-```lua
-local SM = require(ReplicatedStorage.UnityBridge.StateMachine)
-local manager = SM.new()
-
--- Create components (mirrors Unity Inspector wiring)
-local trackManager = TrackManager.new(trackConfig)
-local charController = CharacterController.new(charConfig)
-charController.trackManager = trackManager
-trackManager.characterController = charController
-
--- Register states (mirrors GameManager.states array)
-manager:AddState("Loadout", LoadoutState.new(trackManager))
-manager:AddState("Game", GameState.new(trackManager, charController, ui))
-manager:AddState("GameOver", GameOverState.new(trackManager))
-
-manager:Start("Loadout")
-```
+**Implement the platform divergence decisions from Phase A, item 4.** For each pillar where the Unity game diverges from Roblox's defaults, the bootstrap must apply the appropriate override. Apply the scale conversion decision from Phase A, item 5.
 
 #### Output location
 
@@ -164,7 +164,10 @@ Present each rewritten module to the user for review. Show:
 
 #### Key principles
 
+- **Faithful port over workarounds** — if Unity generates content at runtime (procedural levels, spawned obstacles, dynamic UI), the Roblox port must generate it at runtime too. Never substitute a Unity runtime system with a static Roblox-side workaround (e.g., don't replace procedural track generation with a hand-placed baseplate). The game should work the same way — if there's no static ground in Unity, there should be no static ground in Roblox.
 - **Architecture preservation over code translation** — the goal is a Roblox game that is wired the same way the Unity game was, not a line-by-line translation
+- **Port the system, not the symptom** — when something is missing or broken, trace back to what Unity system produces it and port that system. A missing floor means the track spawner needs porting, not that a floor needs adding.
+- **Preserve visibility semantics** — Unity separates "exists in scene" from "is visible" (renderers can be disabled, objects can be inactive, colliders can be trigger-only). Roblox conflates existence with visibility. The converter must bridge this gap so non-visual Unity objects stay non-visual in Roblox, rather than appearing as opaque default-colored parts.
 - Bridge modules (`bridge/`) are reusable — never modify them for one game
 - Game-specific scripts are output artifacts — they live in `<output_dir>/scripts/`, not in this repo
 - Focus on the 3-5 scripts that define the core game loop; leave utility scripts as-is from transpilation

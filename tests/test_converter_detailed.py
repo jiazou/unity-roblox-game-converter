@@ -128,10 +128,16 @@ class TestNodeToPartMaterialWiring:
         assert part.surface_appearance is None
 
     def test_inactive_node_converted(self) -> None:
-        """Inactive nodes should still be converted (Roblox doesn't skip them)."""
-        node = _snode(name="Inactive", active=False)
+        """Inactive nodes are invisible but remain in hierarchy with children."""
+        child = _snode(name="Child", file_id="200")
+        node = _snode(name="Inactive", active=False, children=[child])
         part = _node_to_part(node, None, None, None)
         assert part.name == "Inactive"
+        assert part.transparency == 1.0
+        assert part.can_collide is False
+        # Children must be preserved for runtime re-activation
+        assert len(part.children) == 1
+        assert part.children[0].name == "Child"
 
     def test_node_with_scale(self) -> None:
         node = _snode(name="Scaled", scale=(3.0, 4.0, 5.0))

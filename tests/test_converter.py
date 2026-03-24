@@ -233,11 +233,12 @@ class TestSceneNodesToParts:
     """Tests for _scene_nodes_to_parts."""
 
     def test_empty_scenes(self) -> None:
-        parts, lighting, cam, sky = _scene_nodes_to_parts([])
+        parts, lighting, cam, sky, comp_warnings = _scene_nodes_to_parts([])
         assert parts == []
         assert lighting is None
         assert cam is None
         assert sky is None
+        assert comp_warnings == []
 
     def test_single_root_node(self) -> None:
         node = _snode(name="Root")
@@ -264,6 +265,30 @@ class TestSceneNodesToParts:
         parts, *_ = _scene_nodes_to_parts([scene])
         assert len(parts[0].children) == 1
         assert parts[0].children[0].name == "Child"
+
+    def test_unconverted_components_produce_warnings(self) -> None:
+        node = _snode(name="Enemy", components=[
+            scene_parser.ComponentData("Animator", "1", {}),
+            scene_parser.ComponentData("NavMeshAgent", "2", {}),
+            scene_parser.ComponentData("MeshRenderer", "3", {}),
+        ])
+        scene = scene_parser.ParsedScene(scene_path=Path("/s.unity"), roots=[node])
+        parts, _, _, _, comp_warnings = _scene_nodes_to_parts([scene])
+        assert len(parts) == 1
+        warning_types = {w.component_type for w in comp_warnings}
+        assert "Animator" in warning_types
+        assert "NavMeshAgent" in warning_types
+        assert "MeshRenderer" not in warning_types  # converted, not warned
+
+    def test_no_warnings_for_converted_components(self) -> None:
+        node = _snode(name="Cube", components=[
+            scene_parser.ComponentData("MeshFilter", "1", {}),
+            scene_parser.ComponentData("MeshRenderer", "2", {}),
+            scene_parser.ComponentData("BoxCollider", "3", {}),
+        ])
+        scene = scene_parser.ParsedScene(scene_path=Path("/s.unity"), roots=[node])
+        _, _, _, _, comp_warnings = _scene_nodes_to_parts([scene])
+        assert comp_warnings == []
 
 
 class TestTranspiledToRbxScripts:

@@ -50,6 +50,96 @@ class TranspilationResult:
 
 
 # ---------------------------------------------------------------------------
+# Structural C# analysis — detect patterns the transpiler can't handle
+# ---------------------------------------------------------------------------
+
+# Standard Unity base classes that are expected (not custom inheritance)
+_UNITY_BASE_CLASSES: frozenset[str] = frozenset({
+    "MonoBehaviour", "ScriptableObject", "Editor", "EditorWindow",
+    "PropertyDrawer", "StateMachineBehaviour", "NetworkBehaviour",
+})
+
+# LINQ methods that produce broken output in rule-based transpilation
+_LINQ_METHODS = re.compile(
+    r"\.\s*(?:Where|Select|SelectMany|FirstOrDefault|First|Last|LastOrDefault|"
+    r"Any|All|Count|Sum|Average|Min|Max|Aggregate|OrderBy|OrderByDescending|"
+    r"ThenBy|GroupBy|Distinct|Skip|Take|ToList|ToArray|ToDictionary|"
+    r"OfType|Cast|Zip|Concat)\s*\("
+)
+
+# Networking attributes
+_NETWORK_ATTRS = re.compile(
+    r"\[\s*(?:Command|ClientRpc|ServerRpc|SyncVar|TargetRpc|"
+    r"ClientCallback|Server|Client)\s*[(\]]"
+)
+
+# Complex generic types (beyond simple GetComponent<T>)
+_COMPLEX_GENERICS = re.compile(
+    r"(?:Dictionary|List|HashSet|Queue|Stack|IEnumerable|IReadOnlyList)"
+    r"\s*<\s*\w+\s*(?:<[^>]+>|,\s*\w+(?:<[^>]+>)?)\s*>"
+)
+
+
+def _analyze_csharp_patterns(source: str) -> list[str]:
+    """Detect C# patterns that the transpiler handles poorly or not at all.
+
+    Returns a list of warning strings for patterns found.
+    """
+    warnings: list[str] = []
+
+    # Custom inheritance — base class methods won't be included
+    class_decl = re.findall(
+        r"class\s+(\w+)\s*:\s*([\w.<>,\s]+?)(?:\s*\{|\s*where\b)", source
+    )
+    for class_name, bases in class_decl:
+        base_list = [b.strip() for b in bases.split(",")]
+        custom_bases = [
+            b for b in base_list
+            if b and b not in _UNITY_BASE_CLASSES
+            and not b.startswith("I")  # interfaces (IDisposable, etc.)
+        ]
+        if custom_bases:
+            warnings.append(
+                f"'{class_name}' extends custom base class '{custom_bases[0]}' "
+                f"— inherited methods are not included in transpilation"
+            )
+
+    # LINQ
+    linq_matches = _LINQ_METHODS.findall(source)
+    if linq_matches:
+        count = len(linq_matches)
+        warnings.append(
+            f"LINQ detected ({count} call{'s' if count > 1 else ''}) "
+            f"— rewrite as explicit loops in Luau"
+        )
+
+    # Networking attributes
+    net_matches = _NETWORK_ATTRS.findall(source)
+    if net_matches:
+        count = len(net_matches)
+        warnings.append(
+            f"Networking attributes detected ({count}) "
+            f"— convert to RemoteEvent/RemoteFunction manually"
+        )
+
+    # Complex generic types
+    generic_matches = _COMPLEX_GENERICS.findall(source)
+    if generic_matches:
+        warnings.append(
+            f"Complex generic types detected ({len(generic_matches)}) "
+            f"— Luau uses untyped tables, verify data structure conversion"
+        )
+
+    # async/await (beyond simple coroutine patterns)
+    if re.search(r"\basync\s+Task", source):
+        warnings.append(
+            "async Task methods detected — convert to coroutine (task.spawn) patterns"
+        )
+
+    return warnings
+
+
+# ---------------------------------------------------------------------------
 # Tree-sitter C# parser (optional — falls back to regex if unavailable)
 # ---------------------------------------------------------------------------
 
@@ -2083,6 +2173,10 @@ def transpile_scripts(
                     csharp_source, script_refs,
                 )
                 strategy = "rule_based"
+
+        # Detect structural patterns the transpiler can't fully handle
+        structural_warnings = _analyze_csharp_patterns(csharp_source)
+        warnings.extend(structural_warnings)
 
         # Classify script type based on Unity API usage
         script_type = _classify_script_type(csharp_source, ast_info)
