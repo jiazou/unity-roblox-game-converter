@@ -61,10 +61,8 @@ from modules.retry import call_with_retry
 @click.command()
 @click.argument("unity_project_path", type=click.Path(exists=True, file_okay=False))
 @click.argument("output_dir", type=click.Path())
-@click.option("--use-ai/--no-ai", default=config.USE_AI_TRANSPILATION,
-              help="Use Claude for C# → Luau transpilation.")
 @click.option("--api-key", default=config.ANTHROPIC_API_KEY, envvar="ANTHROPIC_API_KEY",
-              help="Anthropic API key (or set ANTHROPIC_API_KEY env var).")
+              help="Anthropic API key for C# → Luau transpilation (required, or set ANTHROPIC_API_KEY env var).")
 @click.option("--verbose/--no-verbose", default=config.REPORT_VERBOSE,
               help="Include per-script detail in the report.")
 @click.option("--roblox-api-key", default=config.ROBLOX_API_KEY, envvar="ROBLOX_API_KEY",
@@ -80,7 +78,6 @@ from modules.retry import call_with_retry
 def convert(
     unity_project_path: str,
     output_dir: str,
-    use_ai: bool,
     api_key: str,
     verbose: bool,
     roblox_api_key: str,
@@ -100,6 +97,12 @@ def convert(
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not api_key or api_key.startswith("sk-ant-PLACEHOLDER"):
+        raise click.UsageError(
+            "An Anthropic API key is required for C# → Luau transpilation. "
+            "Set --api-key or the ANTHROPIC_API_KEY environment variable."
+        )
 
     errors: list[str] = []
     t_start = time.monotonic()
@@ -204,14 +207,15 @@ def convert(
 
     click.echo("📝  Transpiling C# scripts …")
     try:
+        scripts_cache = out_dir / "scripts"
         transpilation = code_transpiler.transpile_scripts(
             unity_path,
-            use_ai=use_ai,
             api_key=api_key,
             model=config.ANTHROPIC_MODEL,
             max_tokens=config.ANTHROPIC_MAX_TOKENS,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
             serialized_refs=serialized_refs or None,
+            transpile_cache_dir=scripts_cache if scripts_cache.is_dir() else None,
         )
         click.echo(f"    → {transpilation.total} script(s): "
                    f"{transpilation.succeeded} OK, {transpilation.flagged} flagged")
@@ -248,7 +252,7 @@ def convert(
                 output_filename=ca.asset_name + "_Data.lua",
                 csharp_source="",
                 luau_source=ca.luau_source,
-                strategy="rule_based",
+                strategy="ai",
                 confidence=1.0,
                 script_type="ModuleScript",
             ))
@@ -262,7 +266,7 @@ def convert(
             output_filename="GameBootstrap.lua",
             csharp_source="",
             luau_source=bootstrap_source,
-            strategy="generated",
+            strategy="ai",
             confidence=1.0,
             script_type="LocalScript",
         ))

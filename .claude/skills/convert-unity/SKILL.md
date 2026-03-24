@@ -53,10 +53,10 @@ python3 convert_interactive.py materials <unity_project_path> <output_dir> 2>/de
 ### Step 4: Code Transpilation
 
 ```bash
-python3 convert_interactive.py transpile <unity_project_path> <output_dir> [--use-ai --api-key <key>] [--no-ai] 2>/dev/null
+python3 convert_interactive.py transpile <unity_project_path> <output_dir> --api-key <key> 2>/dev/null
 ```
 
-Handle structured errors: `"insufficient_credits"` / `"auth_failure"` — don't retry, offer `--no-ai`. If `"batch_review_suggested": true`, offer batch options.
+Handle structured errors: `"insufficient_credits"` / `"auth_failure"` — don't retry, ask user to check their API key. If `"batch_review_suggested": true`, offer batch options.
 
 **Decision point:** For each flagged script, show C# and Luau side-by-side. Ask: Accept, Retry with AI, Edit manually, or Skip?
 
@@ -64,7 +64,7 @@ After review, validate: `python3 convert_interactive.py validate <output_dir> 2>
 
 ### Step 4.5: Game Logic Porting (LLM Rewrite)
 
-After transpilation, the rule-based output is syntactically correct but architecturally wrong — it translates line-by-line without understanding game patterns. This step uses the LLM (you) to produce game-specific scripts that preserve the original Unity game's architecture.
+The AI transpiler converts each file independently. This step provides cross-file architectural awareness — ensuring state machines, component wiring, and platform-specific adaptations are coherent across the full game.
 
 **Do NOT flatten the game into a monolithic script.** The Roblox port must mirror the original Unity project's component separation, state machine structure, and timing models.
 
@@ -97,7 +97,7 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
    | **Camera** | No camera behavior until you write a script or attach a component | Third-person follow camera that orbits the character | The game uses fixed camera, rail camera, top-down, isometric, or any non-orbit view |
    | **Input → Movement** | No movement until you write `Update()` + `transform.Translate()` or a CharacterController | WASD/mobile stick moves the character, Space jumps, Humanoid handles it all | The game uses custom movement (auto-run, on-rails, grid-based, turn-based, vehicle, etc.) |
    | **Physics** | Rigidbody is opt-in, gravity/collision configured per-object | All parts have physics, character has Humanoid physics with WalkSpeed/JumpPower | The game positions objects directly via CFrame/Transform rather than through physics forces |
-   | **Object visibility** | Scene graphs contain many non-visual objects: trigger volumes (`isTrigger`), disabled GameObjects (`m_IsActive=false`), disabled renderers (`m_Enabled=0`), collider-only objects, nested UI canvases. These are invisible by design. | Every Part is visible by default — there is no concept of a "renderer component" separate from the object | Always. The pipeline handles this automatically (transparency=1 for triggers/disabled/collider-only objects, UI subtree filtering). If opaque rectangles block the view in the converted game, check for missed non-visual object categories. |
+   | **Object visibility** | In Unity, only GameObjects with a MeshRenderer, SkinnedMeshRenderer, or SpriteRenderer are visible. Everything else — script containers, empty transforms, trigger volumes, collider-only objects, disabled GameObjects, disabled renderers — is invisible by design. A Unity scene typically has far more invisible objects than visible ones. | Every Part is visible by default. There is no concept of a "renderer component" separate from the object. A Part with no mesh and no special properties still renders as a gray block. | **Always.** The pipeline sets `Transparency=1` on any object without a renderer component. This is the single most important visibility rule: **no renderer = invisible**. Additionally: trigger colliders (`isTrigger`), inactive GameObjects (`m_IsActive=0`), disabled renderers (`m_Enabled=0`), and UI subtrees (Canvas hierarchies) are all handled. If opaque gray rectangles block the view in the converted game, the root cause is almost always a non-visual Unity object that was not marked transparent. |
 
    For each pillar where the Unity game diverges from Roblox's default:
    - Identify exactly what the Unity code does (e.g., "TrackManager sets character position each frame from a spline curve")
@@ -106,7 +106,9 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
 
    **This is a design decision, not a checklist.** Present the divergence table to the user and ask which approach they want for each pillar.
 
-5. **Scale conversion** — Unity uses 1 unit ≈ 1 meter. Roblox characters are ~5.5 studs tall vs Unity's ~1.8 units. Determine the scale relationship between the imported scene geometry and Roblox's defaults, and decide whether to scale the world up, scale the character down, or apply a conversion factor to gameplay values. Present the tradeoffs to the user.
+5. **Scale & positioning** — Unity uses 1 unit ≈ 1 meter. Roblox characters are ~5.5 studs tall vs Unity's ~1.8 units. Determine the scale relationship between the imported scene geometry and Roblox's defaults, and decide whether to scale the world up, scale the character down, or apply a conversion factor to gameplay values. Present the tradeoffs to the user.
+
+   **Important pipeline detail:** Unity stores all transforms as local-space (relative to parent). The converter automatically computes world-space positions for Roblox CFrames by recursively applying `world_pos = parent_pos + parent_rot * local_pos`. If objects appear clustered at the origin in the converted game, the world-space transform computation may have a bug — check `conversion_helpers.py:_compute_world_transform()` and the recursive `node_to_part()` calls.
 
 6. **Implementability check** — For each Unity system, assess whether it can be ported as-is or needs simplification. A working simple version beats a broken complex one. If a system (e.g., procedural track segments, spline evaluation) cannot be ported, implement an approximation and document what's missing so it can be improved later.
 
@@ -162,12 +164,30 @@ Present each rewritten module to the user for review. Show:
 - Any timing model decisions (world-distance vs time-based)
 - Ask: Accept, Edit, or Regenerate?
 
+#### CRITICAL: Unity→Roblox Visibility Rule
+
+**No renderer = invisible. This is non-negotiable.**
+
+Unity and Roblox have opposite defaults for object visibility:
+- **Unity:** Objects are invisible unless they have a renderer component (MeshRenderer, SkinnedMeshRenderer, SpriteRenderer). A typical Unity scene has dozens of invisible objects — script containers, empty transforms, trigger volumes, audio sources, managers — and they are never seen by the player.
+- **Roblox:** Every Part is visible by default. A Part with no mesh renders as an opaque gray block.
+
+The pipeline MUST set `Transparency = 1` on every converted Part that lacks a renderer component. Without this, the Roblox game will be filled with opaque gray rectangles that block the player's view. This is the #1 visual correctness issue in Unity→Roblox conversion.
+
+The full visibility rules (all enforced in `conversion_helpers.py:node_to_part()`):
+1. **No renderer and no mesh** → `Transparency = 1, CanCollide = false` (script containers, empty transforms, manager objects)
+2. **Trigger colliders** (`isTrigger = true`) → `Transparency = 1` (invisible collision volumes)
+3. **Inactive GameObjects** (`m_IsActive = 0`) → `Transparency = 1, CanCollide = false`
+4. **Disabled renderers** (`m_Enabled = 0` on MeshRenderer) → `Transparency = 1`
+5. **UI subtrees** (Canvas hierarchies) → filtered out of 3D hierarchy entirely, converted to ScreenGui
+
+If opaque gray blocks appear in the converted game, check which Unity object they came from and verify it falls into one of these categories.
+
 #### Key principles
 
 - **Faithful port over workarounds** — if Unity generates content at runtime (procedural levels, spawned obstacles, dynamic UI), the Roblox port must generate it at runtime too. Never substitute a Unity runtime system with a static Roblox-side workaround (e.g., don't replace procedural track generation with a hand-placed baseplate). The game should work the same way — if there's no static ground in Unity, there should be no static ground in Roblox.
 - **Architecture preservation over code translation** — the goal is a Roblox game that is wired the same way the Unity game was, not a line-by-line translation
 - **Port the system, not the symptom** — when something is missing or broken, trace back to what Unity system produces it and port that system. A missing floor means the track spawner needs porting, not that a floor needs adding.
-- **Preserve visibility semantics** — Unity separates "exists in scene" from "is visible" (renderers can be disabled, objects can be inactive, colliders can be trigger-only). Roblox conflates existence with visibility. The converter must bridge this gap so non-visual Unity objects stay non-visual in Roblox, rather than appearing as opaque default-colored parts.
 - Bridge modules (`bridge/`) are reusable — never modify them for one game
 - Game-specific scripts are output artifacts — they live in `<output_dir>/scripts/`, not in this repo
 - Focus on the 3-5 scripts that define the core game loop; leave utility scripts as-is from transpilation

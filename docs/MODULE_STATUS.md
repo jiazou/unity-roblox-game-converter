@@ -13,7 +13,7 @@
 | [1](#1-scene-parsing) | Scene Parsing | Fully implemented (15 component types, per-doc error recovery) |
 | [2](#2-asset-discovery--guid-resolution) | Asset Discovery & GUID Resolution | Fully implemented (1 low-severity gap: divergent extension maps) |
 | [3](#3-material-mapping) | Material Mapping | Fully implemented (5 remaining gaps: multi-mat, UV >4x, Shader Graph, FBX vertex colors, terrain) |
-| [4](#4-code-transpilation) | Code Transpilation | Fully implemented (AST-driven + regex fallback + AI mode; 5 low/medium gaps) |
+| [4](#4-code-transpilation) | Code Transpilation | Fully implemented (AI transpilation via Claude; 5 low/medium gaps) |
 | [5](#5-mesh-processing) | Mesh Processing | Fully implemented (no remaining gaps) |
 | [6](#6-ui-translation) | UI Translation | Fully implemented (3 remaining gaps: sprite pipeline, GUID detection, font map) |
 | [7](#7-rbxl-output) | RBXL Output | Fully implemented (3 low/medium gaps) |
@@ -213,27 +213,21 @@ mapping specification), `docs/smartdown_template.md` (UNCONVERTED.md template st
 
 **Files**: `modules/code_transpiler.py`, `modules/code_validator.py`, `modules/api_mappings.py`
 
-**What it does**: Converts Unity C# scripts to Roblox Luau. Three modes: AST-driven
-(tree-sitter, default), regex fallback, and AI mode (Claude API). Validates output Luau
+**What it does**: Converts Unity C# scripts to Roblox Luau using Claude AI. Validates output Luau
 for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based on API usage.
 
 ### Status: Fully Implemented
 
-**AST-driven mode** (default when tree-sitter available):
-- Full `_LuauEmitter` class walking the tree-sitter C# syntax tree
-- All variable declarations → `local`, lifecycle methods → Roblox equivalents
-- Control flow: `if/else if/else`, `for`, `foreach`, `while`, `do...while` → correct blocks
-- Operators: `!=`→`~=`, `&&`→`and`, `||`→`or`, `!`→`not`, `null`→`nil`
-- `Instantiate(prefab)` → `prefab:Clone()`, `Destroy(obj)` → `obj:Destroy()` (structural rewrites)
-- `GetComponent<T>()` → `:FindFirstChildOfClass("RobloxType")` (type argument mapped)
-- Properties → getter/setter pairs, `try/catch` → commented pcall, `switch` → if/elseif
-- Coroutines: `yield return` → `task.wait()`, IEnumerator methods → `task.spawn(function() ... end)`
+**AI transpilation** (Claude API):
+- Each C# script is sent to Claude with the Unity Bridge API reference as context
+- Handles architectural adaptation: MonoBehaviour → Luau module, lifecycle hooks, component queries
+- Coroutines: `IEnumerator`/`yield return` → `task.spawn` / `task.wait`
 - Event subscriptions: `+=`/`-=` on delegates → `:Connect(handler)`
-- String interpolation: `$"text {expr}"` → `string.format("text %s", tostring(expr))`
-- Lambda/anonymous delegates → `function(...) ... end`
-- 50+ Unity API → Roblox mappings, automatic service imports
+- String interpolation, lambda/anonymous delegates, LINQ expressions
+- 50+ Unity API → Roblox mappings (informed by `api_mappings.py`), automatic service imports
 - Script classification: Input/Camera/GUI → LocalScript, Command/SyncVar → Script, utility → ModuleScript
 - `[SerializeField]` fields with prefab refs → `ServerStorage:WaitForChild()`
+- Inheritance, interfaces, complex generics handled correctly
 
 **Code validator**:
 - Block keyword balance (`function/if/for/while/repeat` vs `end/until`)
@@ -241,23 +235,18 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 - Level-N long string support (`[=[...]=]`)
 - Comments and strings stripped before analysis
 
-**AI mode**: Sends C# to Claude API, receives Luau. Recommended for production.
-
 ### Remaining Gaps
 
 | Gap | Severity | Notes |
 |-----|----------|-------|
-| Inheritance / interfaces | MEDIUM | Class structure stripped, not restructured into ModuleScript patterns |
-| LINQ expressions | LOW | Not transpiled; AI mode handles these |
-| Complex generics beyond `GetComponent<T>` | LOW | AI mode handles these |
 | Networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`) | MEDIUM | Detected for classification but not converted to RemoteEvent/RemoteFunction patterns |
 | Object pooling patterns | LOW | Individual API calls transpile but structural pool management needs manual refactoring |
 
 ### ~~Fragile Areas~~ — All Resolved (2026-03-04)
 
-#### ~~4a. Regex Fallback Pipeline~~
+#### ~~4a. Non-AI Fallback Pipeline~~ — REMOVED
 
-**Resolution**: Restructured fallback chain to AST → AI → regex. When tree-sitter fails but an API key is available, the transpiler now escalates to AI rather than falling through to the fragile regex pipeline. Regex is now a last resort only when both tree-sitter and AI are unavailable.
+**Resolution**: Rule-based and AST transpilers have been removed. All transpilation now uses Claude AI exclusively.
 
 #### ~~4b. Script Type Classification~~
 
@@ -289,7 +278,7 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 
 | Issue | Resolution |
 |-------|------------|
-| 73+ sequential regex substitutions (brittle) — commit `8494bdd` | AST-driven tree-sitter `_LuauEmitter` class; regex preserved as fallback |
+| 73+ sequential regex substitutions (brittle) — commit `8494bdd` | Replaced by AI transpilation via Claude API |
 | Coroutines not handled — commit `2fcfe3a` | `_emit_yield_statement` + `task.spawn` wrapping for IEnumerator methods |
 | Event subscriptions not handled — commit `2fcfe3a` | `_emit_assignment_expression` detects event-like targets, emits `:Connect()` |
 | String interpolation not handled — commit `2fcfe3a` | `_emit_interpolated_string_expression` → `string.format()` |
@@ -588,7 +577,7 @@ Features not yet implemented, tracked for future work:
 | `test_scene_parser.py` | Scene YAML parsing, hierarchy building |
 | `test_prefab_parser.py` | Prefab YAML parsing |
 | `test_material_mapper.py` | Shader property mapping, pipeline detection |
-| `test_code_transpiler.py` | C# → Luau rule-based transpilation |
+| `test_code_transpiler.py` | C# → Luau AI transpilation |
 | `test_api_mappings.py` | API call/type/lifecycle mapping tables |
 | `test_llm_cache.py` | LLM response caching, TTL, eviction |
 | `test_retry.py` | Retry logic, backoff, exception handling |

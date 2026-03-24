@@ -187,7 +187,12 @@ class RbxPackageResult:
 
 def _make_property(parent: ET.Element, prop_type: str, name: str, value: Any) -> ET.Element:
     el = ET.SubElement(parent, prop_type, name=name)
-    el.text = str(value)
+    if prop_type == "Content":
+        # Roblox XML expects Content values inside a <url> sub-element
+        url_el = ET.SubElement(el, "url")
+        url_el.text = str(value)
+    else:
+        el.text = str(value)
     return el
 
 
@@ -380,8 +385,8 @@ def _make_sound(
     item = ET.SubElement(parent, "Item", **{"class": "Sound"})
     props = ET.SubElement(item, "Properties")
     _make_property(props, "string", "Name", name)
-    # SoundId will need to be an uploaded asset URL; for now store the path as a comment
-    _make_property(props, "Content", "SoundId", f"-- TODO: upload {sound_path}")
+    sound_filename = Path(sound_path).name if sound_path else ""
+    _make_property(props, "Content", "SoundId", sound_filename)
     _make_property(props, "float", "Volume", f"{volume:.4f}")
     _make_property(props, "bool", "Looped", str(looped).lower())
     _make_property(props, "float", "PlaybackSpeed", f"{playback_speed:.4f}")
@@ -486,9 +491,6 @@ def _is_grouping_node(part: RbxPartEntry) -> bool:
 
 
 def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
-    # Use Model for pure grouping containers (children but no geometry).
-    # Use MeshPart when a mesh asset is available (required for SurfaceAppearance),
-    # otherwise fall back to a plain Part (box primitive).
     if _is_grouping_node(part):
         item = ET.SubElement(workspace, "Item", **{"class": "Model"})
         props = ET.SubElement(item, "Properties")
@@ -512,8 +514,6 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
 
-    # Write CFrame (position + rotation). When rotation is identity, just set Position
-    # for cleaner output. Otherwise, write a full CoordinateFrame with rotation matrix.
     if _is_identity_quat(part.rotation):
         _make_vector3(props, "Position", part.position)
     else:
@@ -539,23 +539,13 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     if part.material_enum:
         _make_property(props, "token", "Material", part.material_enum)
 
-    # SurfaceAppearance child (only meaningful on MeshPart)
     if part.surface_appearance and use_mesh:
         _make_surface_appearance(item, part.surface_appearance)
-    elif part.surface_appearance and not use_mesh:
-        # No mesh — SurfaceAppearance won't render on a plain Part.
-        # Apply what we can: color/transparency are already set via BasePart properties.
-        pass
 
-    # Light children (PointLight, SpotLight)
     for lc in part.light_children:
         _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
-
-    # Sound children
     for sc in part.sound_children:
         _make_sound(item, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7])
-
-    # ParticleEmitter children
     for pc in part.particle_children:
         _make_particle_emitter(item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7], pc[8], pc[9], pc[10])
 
@@ -697,17 +687,7 @@ def write_rbxl(
     # Count all parts including children for accurate reporting
     parts_written = _count_parts(parts)
 
-    # ServerStorage — prefab templates for runtime Clone()
-    if server_storage_templates:
-        ss_item = ET.SubElement(root, "Item", **{"class": "ServerStorage"})
-        ss_props = ET.SubElement(ss_item, "Properties")
-        _make_property(ss_props, "string", "Name", "ServerStorage")
-
-        for model_name, root_part in server_storage_templates:
-            model_item = ET.SubElement(ss_item, "Item", **{"class": "Model"})
-            mp = ET.SubElement(model_item, "Properties")
-            _make_property(mp, "string", "Name", model_name)
-            _make_part(model_item, root_part)
+    templates_folder_item: ET.Element | None = None
 
     # Partition scripts by type into appropriate Roblox containers:
     #   Script       → ServerScriptService
@@ -747,8 +727,8 @@ def write_rbxl(
             _make_property(sp, "ProtectedString", "Source", script.luau_source)
             scripts_written += 1
 
-    # ReplicatedStorage — ModuleScripts (accessible to both client and server)
-    if module_scripts:
+    # ReplicatedStorage — ModuleScripts + prefab templates (client-accessible)
+    if module_scripts or server_storage_templates:
         rs_item = ET.SubElement(root, "Item", **{"class": "ReplicatedStorage"})
         rs_props = ET.SubElement(rs_item, "Properties")
         _make_property(rs_props, "string", "Name", "ReplicatedStorage")
@@ -759,6 +739,18 @@ def write_rbxl(
             _make_property(sp, "string", "Name", script.name)
             _make_property(sp, "ProtectedString", "Source", script.luau_source)
             scripts_written += 1
+
+        # Prefab templates in a "Templates" folder for runtime Clone()
+        if server_storage_templates:
+            templates_folder_item = ET.SubElement(rs_item, "Item", **{"class": "Folder"})
+            tf_props = ET.SubElement(templates_folder_item, "Properties")
+            _make_property(tf_props, "string", "Name", "Templates")
+
+            for model_name, root_part in server_storage_templates:
+                model_item = ET.SubElement(templates_folder_item, "Item", **{"class": "Model"})
+                mp = ET.SubElement(model_item, "Properties")
+                _make_property(mp, "string", "Name", model_name)
+                _make_part(model_item, root_part)
 
     # StarterGui — ScreenGui elements from Unity Canvas / RectTransform UI
     ui_elements_written = 0

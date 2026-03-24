@@ -48,7 +48,7 @@ don't need to review intermediate results.
 | `scene_parser` | `parse_scene(scene_path)` | Parses a `.unity` scene YAML file into a tree of `SceneNode` objects. |
 | `prefab_parser` | `parse_prefabs(unity_project_path)` | Finds and parses all `.prefab` files; returns a `PrefabLibrary`. |
 | `material_mapper` | `map_materials(unity_path, out_dir)` | Parses Unity `.mat` files, resolves shaders/textures, produces Roblox materials. |
-| `code_transpiler` | `transpile_scripts(unity_project_path, ...)` | Converts C# scripts to Luau via rule-based transforms or Claude AI. |
+| `code_transpiler` | `transpile_scripts(unity_project_path, ...)` | Converts C# scripts to Luau via Claude AI (requires Anthropic API key). |
 | `mesh_decimator` | `decimate_meshes(mesh_paths, output_dir)` | Conservative mesh decimation — only reduces faces when above the Roblox 10k limit. |
 | `roblox_uploader` | `upload_to_roblox(rbxl_path, ...)` | Uploads `.rbxl` and textures to Roblox via Open Cloud API. Requires a Roblox API key. |
 | `rbxl_writer` | `write_rbxl(parts, scripts, output_path)` | Serialises geometry and scripts into a valid `.rbxl` XML place file. |
@@ -92,8 +92,7 @@ project path and output directory, then guides you through each phase:
 8. **Report** — generates the final conversion summary
 
 Each phase can be re-run independently if you change your mind or want to
-try different settings (e.g., re-transpile with AI after reviewing rule-based
-results).
+try different settings.
 
 ### Option B: Batch CLI (`converter.py`)
 
@@ -115,8 +114,7 @@ when you're confident the defaults are fine.
 
 | Flag | Default | Description |
 |---|---|---|
-| `--use-ai` / `--no-ai` | from `config.py` | Use Claude (Anthropic) for C# → Luau transpilation |
-| `--api-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic API key |
+| `--api-key KEY` | `$ANTHROPIC_API_KEY` | Anthropic API key (**required** for C# → Luau transpilation) |
 | `--verbose` / `--no-verbose` | `True` | Include per-script detail in the JSON report |
 | `--roblox-api-key KEY` | `$ROBLOX_API_KEY` | Roblox Open Cloud API key (**required** for portal upload) |
 | `--universe-id ID` | — | Roblox universe (experience) ID for upload |
@@ -126,14 +124,11 @@ when you're confident the defaults are fine.
 ### Examples
 
 ```bash
-# Rule-based transpilation (no API key needed)
-python converter.py ./MyUnityProject ./roblox_output --no-ai
-
-# AI-assisted transpilation with Claude
-ANTHROPIC_API_KEY=sk-ant-... python converter.py ./MyUnityProject ./roblox_output --use-ai
+# Using environment variable
+ANTHROPIC_API_KEY=sk-ant-... python converter.py ./MyUnityProject ./roblox_output
 
 # Specify API key inline
-python converter.py ./MyUnityProject ./roblox_output --use-ai --api-key sk-ant-...
+python converter.py ./MyUnityProject ./roblox_output --api-key sk-ant-...
 
 # Upload to Roblox (requires Open Cloud API key)
 python converter.py ./MyUnityProject ./roblox_output \

@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from modules.prefab_parser import PrefabNode, PrefabTemplate, _parse_single_prefab
+from unittest.mock import patch
+
 from modules.code_transpiler import (
-    _rule_based_transpile,
-    _post_process_luau,
     _is_editor_or_test_path,
     transpile_scripts,
 )
@@ -211,81 +211,15 @@ class TestEditorScriptFiltering:
             encoding="utf-8",
         )
 
-        result = transpile_scripts(project, use_ai=False)
+        _MOCK_LUAU = "-- mock\nlocal module = {}\nreturn module\n"
+
+        def _fake_ai(csharp, api_key, model, max_tokens, **kwargs):
+            return _MOCK_LUAU, 0.9, []
+
+        with patch("modules.code_transpiler._ai_transpile", side_effect=_fake_ai):
+            result = transpile_scripts(project, api_key="test-key")
         assert result.total == 1  # Only Player.cs, not MyTool.cs
         assert result.scripts[0].source_path.name == "Player.cs"
-
-
-# ---------------------------------------------------------------------------
-# Transpiler pattern tests (new C# patterns)
-# ---------------------------------------------------------------------------
-
-class TestTranspilerNewPatterns:
-    """Test transpilation of additional C# patterns."""
-
-    def test_switch_case_converted(self) -> None:
-        code = 'switch (state) {\n  case 0: DoA(); break;\n  case 1: DoB(); break;\n  default: DoC(); break;\n}'
-        luau, _, _ = _rule_based_transpile(code)
-        assert "switch on state" in luau
-
-    def test_try_catch_converted(self) -> None:
-        code = 'try {\n  DoSomething();\n} catch (Exception e) {\n  Debug.Log(e);\n}'
-        luau, _, _ = _rule_based_transpile(code)
-        assert "pcall" in luau
-        assert "not ok" in luau
-
-    def test_enum_converted(self) -> None:
-        code = "public enum GameState { Menu, Playing, Paused }"
-        luau, _, _ = _rule_based_transpile(code)
-        assert "GameState" in luau
-        assert "Menu" in luau
-        assert "Playing" in luau
-
-    def test_lambda_converted(self) -> None:
-        code = "var callback = (x) => x * 2;"
-        luau, _, _ = _rule_based_transpile(code)
-        assert "function" in luau
-
-    def test_auto_property_converted(self) -> None:
-        code = "public int Health { get; set; }"
-        luau, _, _ = _rule_based_transpile(code)
-        assert "Health" in luau
-        assert "nil" in luau or "local" in luau
-
-    def test_textmeshpro_mapped(self) -> None:
-        code = 'tmpText.SetText("Hello");'
-        luau, _, _ = _rule_based_transpile(code)
-        assert ".Text =" in luau
-
-    def test_dotween_mapped(self) -> None:
-        code = 'transform.DOMove(target, 1f);'
-        luau, _, _ = _rule_based_transpile(code)
-        assert "TweenService" in luau
-
-    def test_linq_where_commented(self) -> None:
-        code = "items.Where(x => x > 0);"
-        luau, _, _ = _rule_based_transpile(code)
-        assert "Where" in luau  # Should have a comment about manual loop
-
-    def test_navmesh_mapped(self) -> None:
-        code = "NavMesh.CalculatePath(start, end, path);"
-        luau, _, _ = _rule_based_transpile(code)
-        assert "PathfindingService" in luau or "CreatePath" in luau
-
-    def test_async_await_handled(self) -> None:
-        code = "await Task.Delay(1000);"
-        luau, _, _ = _rule_based_transpile(code)
-        assert "task.wait" in luau
-
-    def test_invoke_mapped(self) -> None:
-        code = 'Invoke("DoAction", 2f);'
-        luau, _, _ = _rule_based_transpile(code)
-        assert "task.delay" in luau
-
-    def test_resources_load_mapped(self) -> None:
-        code = 'Resources.Load("Prefabs/Enemy");'
-        luau, _, _ = _rule_based_transpile(code)
-        assert "ReplicatedStorage" in luau or "FindFirstChild" in luau
 
 
 # ---------------------------------------------------------------------------
@@ -400,47 +334,6 @@ class TestAssetExtensions:
     def test_aiff_audio_recognised(self) -> None:
         assert ".aiff" in config.ASSET_EXT_TO_KIND
         assert config.ASSET_EXT_TO_KIND[".aiff"] == "audio"
-
-
-# ---------------------------------------------------------------------------
-# _post_process_luau standalone tests
-# ---------------------------------------------------------------------------
-
-
-class TestPostProcessLuau:
-    """Tests for the _post_process_luau post-processing function."""
-
-    def test_textmeshpro_set_text(self) -> None:
-        result = _post_process_luau('tmpText.SetText("Hello World")')
-        assert result == 'tmpText.Text = "Hello World"'
-
-    def test_dotween_domove(self) -> None:
-        result = _post_process_luau("transform.DOMove(target, duration)")
-        assert "TweenService:Create" in result
-        assert "Position = target" in result
-        assert ":Play()" in result
-
-    def test_task_delay_with_await(self) -> None:
-        result = _post_process_luau("await Task.Delay(2000)")
-        assert "task.wait(2.0)" in result
-
-    def test_task_delay_without_await(self) -> None:
-        result = _post_process_luau("Task.Delay(500)")
-        assert "task.wait(0.5)" in result
-
-    def test_invoke_to_task_delay(self) -> None:
-        result = _post_process_luau('Invoke("DoAction", 2)')
-        assert "task.delay(2, DoAction)" in result
-
-    def test_passthrough_unrelated_code(self) -> None:
-        code = "local x = 42\nprint(x)"
-        assert _post_process_luau(code) == code
-
-    def test_multiple_patterns_in_same_source(self) -> None:
-        code = 'tmpText.SetText("Hi")\nInvoke("Reset", 5)'
-        result = _post_process_luau(code)
-        assert 'tmpText.Text = "Hi"' in result
-        assert "task.delay(5, Reset)" in result
 
 
 # ---------------------------------------------------------------------------

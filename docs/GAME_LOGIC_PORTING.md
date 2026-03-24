@@ -61,7 +61,7 @@ Unity C# Scripts
 
 ## Related docs
 
-- `.claude/skills/review-csharp-lua-conversion/` — AST-driven transpilation approach using tree-sitter (syntax translation, complements this doc's architectural adaptation)
+- `.claude/skills/review-csharp-lua-conversion/` — archived skill (rule-based and AST transpilers removed; all transpilation now uses Claude AI)
 - `docs/FUTURE_IMPROVEMENTS.md` — caching, module splitting, serializer improvements
 - `docs/MODULE_STATUS.md` — status of all pipeline modules
 - `docs/UNSUPPORTED.md` — platform limitations catalog
@@ -73,11 +73,9 @@ Unity C# Scripts
 | API mapping tables | `modules/api_mappings.py` | 130+ mappings, comprehensive |
 | Lifecycle hook mapping | `api_mappings.py: LIFECYCLE_MAP` | 15 hooks mapped |
 | Bootstrap script generator | `modules/conversion_helpers.py: generate_bootstrap_script()` | GameManager state machine wiring |
-| Rule-based transpiler | `modules/code_transpiler.py` | 73+ regex rules, ~70% accuracy |
-| AST-based transpiler | `modules/code_transpiler.py: _ast_transpile()` | tree-sitter, partial |
-| AI-assisted transpiler | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality but syntax-only |
+| AI transpiler (Claude) | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality |
 
-**Status**: Bridge Luau modules exist in `bridge/` (Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the transpiler for text substitution; the bridge modules are the runtime counterpart.
+**Status**: Bridge Luau modules exist in `bridge/` (Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
 
 **Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below.
 
@@ -121,7 +119,7 @@ Game-specific scripts (e.g., GameBootstrap, CharacterController) are **not** par
 
 ## Key design decisions
 
-1. **Bridge modules are runtime Luau, not transpiler rules.** The transpiler produces code that calls bridge APIs. This separates "what Unity API does" from "how to translate syntax."
+1. **Bridge modules are runtime Luau, not transpiler rules.** The AI transpiler produces code that calls bridge APIs. This separates "what Unity API does" from "how to translate syntax."
 
 2. **LLM rewrite is per-script, not per-line.** The LLM sees the full script context and produces an architecturally adapted version, not a line-by-line translation.
 

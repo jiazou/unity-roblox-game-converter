@@ -308,31 +308,31 @@ class TestGeneratePrefabPackages:
 
 
 # ---------------------------------------------------------------------------
-# write_rbxl ServerStorage embedding tests
+# write_rbxl template embedding tests (ReplicatedStorage/Templates)
 # ---------------------------------------------------------------------------
 
-class TestServerStorageInRbxl:
-    """Tests for prefab templates embedded in ServerStorage inside .rbxl files."""
+class TestTemplatesInRbxl:
+    """Tests for prefab templates embedded in ReplicatedStorage/Templates inside .rbxl files."""
 
-    def test_server_storage_not_present_without_templates(self, tmp_path: Path) -> None:
+    def test_templates_not_present_without_templates(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         write_rbxl([], [], rbxl)
         content = rbxl.read_text(encoding="utf-8")
-        assert "ServerStorage" not in content
+        assert "Templates" not in content
 
-    def test_server_storage_present_with_templates(self, tmp_path: Path) -> None:
+    def test_templates_in_replicated_storage(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         templates = [("Enemy", RbxPartEntry(name="EnemyRoot"))]
         write_rbxl([], [], rbxl, server_storage_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
-        assert "ServerStorage" in content
+        assert "ReplicatedStorage" in content
+        assert "Templates" in content
 
     def test_model_wraps_template(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         templates = [("Coin", RbxPartEntry(name="CoinGeometry"))]
         write_rbxl([], [], rbxl, server_storage_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
-        # Should have a Model with name "Coin" inside ServerStorage
         assert 'class="Model"' in content
         assert "Coin" in content
         assert "CoinGeometry" in content
@@ -360,30 +360,32 @@ class TestServerStorageInRbxl:
         assert "CarBody" in content
         assert "Wheel" in content
 
-    def test_server_storage_valid_xml(self, tmp_path: Path) -> None:
+    def test_templates_folder_valid_xml(self, tmp_path: Path) -> None:
         templates = [("Box", RbxPartEntry(name="BoxPart"))]
         rbxl = tmp_path / "test.rbxl"
         write_rbxl([], [], rbxl, server_storage_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         root = ET.fromstring(content.replace('<?xml version="1.0" ?>', "").strip())
-        ss_items = root.findall(".//Item[@class='ServerStorage']")
-        assert len(ss_items) == 1
-        model_items = ss_items[0].findall("Item[@class='Model']")
+        rs_items = root.findall(".//Item[@class='ReplicatedStorage']")
+        assert len(rs_items) == 1
+        folder_items = rs_items[0].findall("Item[@class='Folder']")
+        assert len(folder_items) == 1
+        model_items = folder_items[0].findall("Item[@class='Model']")
         assert len(model_items) == 1
 
     def test_workspace_still_present_with_templates(self, tmp_path: Path) -> None:
-        """ServerStorage should coexist with Workspace and other services."""
+        """Templates in ReplicatedStorage should coexist with Workspace."""
         templates = [("Tree", RbxPartEntry(name="Trunk"))]
         scene_parts = [RbxPartEntry(name="Ground")]
         rbxl = tmp_path / "test.rbxl"
         write_rbxl(scene_parts, [], rbxl, server_storage_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert "Workspace" in content
-        assert "ServerStorage" in content
+        assert "ReplicatedStorage" in content
         assert "Ground" in content
         assert "Trunk" in content
 
-    def test_template_mesh_part_in_server_storage(self, tmp_path: Path) -> None:
+    def test_template_mesh_part(self, tmp_path: Path) -> None:
         templates = [("Weapon", RbxPartEntry(name="Sword", mesh_id="rbxassetid://999"))]
         rbxl = tmp_path / "test.rbxl"
         write_rbxl([], [], rbxl, server_storage_templates=templates)

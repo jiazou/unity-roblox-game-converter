@@ -262,8 +262,7 @@ API_CALL_MAP: dict[str, str] = {
 
     # --- Collections ---
     # NOTE: .Length, .Count, .Add(), .Remove(), .Contains() are handled by
-    # explicit regex patterns in _rule_based_transpile() which properly
-    # restructure the syntax (e.g., "items.Length" → "#items").
+    # the AI transpiler which restructures the syntax appropriately.
     "List<": "-- List<T>: use Luau table {}",
     "Dictionary<": "-- Dictionary<K,V>: use Luau table {}",
     ".Clear()": "table.clear",

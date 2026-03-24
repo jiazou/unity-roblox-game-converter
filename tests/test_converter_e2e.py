@@ -12,11 +12,35 @@ import struct
 import textwrap
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
 from converter import convert
+
+
+_MOCK_LUAU = (
+    "-- mock transpiled output\n"
+    "local RunService = game:GetService('RunService')\n"
+    "local GameManager = {}\n"
+    "function GameManager.new()\n"
+    "    local self = setmetatable({}, GameManager)\n"
+    "    self.speed = 3.0\n"
+    "    return self\n"
+    "end\n"
+    "return GameManager\n"
+)
+
+
+def _fake_ai_transpile(csharp, api_key, model, max_tokens, **kwargs):
+    return _MOCK_LUAU, 0.9, []
+
+
+@pytest.fixture(autouse=True)
+def _mock_ai():
+    with patch("modules.code_transpiler._ai_transpile", side_effect=_fake_ai_transpile):
+        yield
 
 
 def _make_1px_png(r: int, g: int, b: int) -> bytes:
@@ -195,32 +219,26 @@ class TestEndToEnd:
     """Full pipeline integration tests."""
 
     def test_full_conversion_produces_rbxl(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """Run the full pipeline and verify the .rbxl file is written."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
-
-        # Pipeline should complete without crashing
         assert result.exit_code == 0, f"CLI failed:\n{result.output}"
-
-        # .rbxl file must exist
         rbxl = output_dir / "converted_place.rbxl"
         assert rbxl.exists(), f"No .rbxl file found. Output:\n{result.output}"
         assert rbxl.stat().st_size > 0
 
     def test_report_json_is_valid(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """Conversion report should be valid JSON with expected fields."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0, f"CLI failed:\n{result.output}"
@@ -238,13 +256,12 @@ class TestEndToEnd:
         assert report["scene"]["scenes_parsed"] >= 1
 
     def test_scripts_transpiled(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """C# scripts should be transpiled (rule-based when --no-ai)."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0
@@ -253,13 +270,12 @@ class TestEndToEnd:
         assert report["scripts"]["total"] >= 1
 
     def test_materials_mapped(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """Materials should be processed and mapped."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0
@@ -268,13 +284,12 @@ class TestEndToEnd:
         assert report["materials"]["total"] >= 1
 
     def test_rbxl_contains_parts(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """The .rbxl XML should contain Workspace items."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0
@@ -284,42 +299,37 @@ class TestEndToEnd:
         assert "FloorObject" in rbxl_content
 
     def test_scriptable_objects_converted(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """ScriptableObject .asset files should be converted to ModuleScripts."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0
-        # Check the output mentions ScriptableObject conversion
         assert "ScriptableObject" in result.output or "asset" in result.output.lower()
 
     def test_unconverted_md_generated(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """UNCONVERTED.md should be generated."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0
-
         unconverted = output_dir / "UNCONVERTED.md"
         assert unconverted.exists()
 
     def test_no_errors_in_report(self, full_unity_project: Path, tmp_path: Path) -> None:
-        """A clean project should produce no errors."""
         output_dir = tmp_path / "output"
         runner = CliRunner()
         result = runner.invoke(convert, [
             str(full_unity_project),
             str(output_dir),
-            "--no-ai",
+            "--api-key", "test-key",
             "--no-decimate",
         ])
         assert result.exit_code == 0
@@ -327,3 +337,16 @@ class TestEndToEnd:
         report = json.loads((output_dir / "conversion_report.json").read_text())
         assert report["success"] is True
         assert report["errors"] == []
+
+    def test_missing_api_key_fails(self, full_unity_project: Path, tmp_path: Path) -> None:
+        """Converter should fail when no API key is provided."""
+        output_dir = tmp_path / "output"
+        runner = CliRunner(env={"ANTHROPIC_API_KEY": ""})
+        result = runner.invoke(convert, [
+            str(full_unity_project),
+            str(output_dir),
+            "--api-key", "",
+            "--no-decimate",
+        ])
+        assert result.exit_code != 0
+        assert "API key" in result.output

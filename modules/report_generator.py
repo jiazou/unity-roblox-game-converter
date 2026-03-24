@@ -33,7 +33,6 @@ class ScriptSummary:
     flagged_for_review: int = 0
     skipped: int = 0
     ai_transpiled: int = 0
-    rule_based: int = 0
     flagged_scripts: list[str] = field(default_factory=list)   # filenames
 
 
