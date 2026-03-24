@@ -14,15 +14,13 @@
 
 **Files affected:** `modules/conversion_helpers.py` (collect warnings during `node_to_part`), `modules/report_generator.py` (format report), `convert_interactive.py` / `converter.py` (surface report)
 
-### QW-2. Transpiler warnings for inheritance chains and LINQ (high impact)
+### QW-2. Transpiler warnings for networking attributes and object pooling (high impact)
 
-**Problem:** When a C# class inherits from a custom base class, only the child class methods are transpiled — base class methods are silently lost. LINQ expressions (`Where`, `Select`, `FirstOrDefault`) produce broken Luau. Users don't know these patterns failed.
+**Problem:** Networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`) are detected for script classification but not converted to RemoteEvent/RemoteFunction patterns. Object pooling structures require manual refactoring. Users don't know these patterns need follow-up work.
 
-**Fix:** During transpilation, detect and flag:
-- Classes that extend anything other than MonoBehaviour/ScriptableObject — warn that base class logic is not included
-- LINQ method chains — warn that these need manual rewriting
-- Complex generic types beyond `GetComponent<T>` — warn about unsupported generics
-- Networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`) — warn that multiplayer logic is not converted
+**Fix:** During AI transpilation post-processing, detect and flag:
+- Networking attributes — warn that multiplayer logic needs RemoteEvent/RemoteFunction wiring
+- Object pooling patterns — warn that structural pool management needs manual review
 
 **Files affected:** `modules/code_transpiler.py` (detection + warning collection), transpilation result struct (add warnings field)
 
@@ -153,12 +151,6 @@
 
 **Why low priority:** Since meshes load via InsertService, the serializer only writes the place shell. For that use case it works fine. Replacing with rbxmk adds a Go binary dependency for marginal benefit.
 
-### IP-5. Replace rule-based C# transpiler with roblox-cs (medium priority)
+### ~~IP-5. Replace rule-based C# transpiler~~ — DONE
 
-**Problem:** Our rule-based transpiler produces ~30% error rate on complex scripts. The research identifies roblox-cs as "the most prominent attempt" — an AST-based transpiler using Roslyn that handles classes, inheritance, properties, and basic Unity API mapping.
-
-**Current workaround:** AI-assisted transpilation via Claude API produces much better results (0% flagged rate). Rule-based is only used when AI is unavailable.
-
-**If we do it:** Integrate roblox-cs as a .NET dependency. Run it as a subprocess for each .cs file. Fall back to our rule-based transpiler for files roblox-cs can't handle. Keep AI mode as the premium option.
-
-**Note:** roblox-cs translates syntax but not Unity engine semantics. The architectural gap (MonoBehaviour lifecycle, component queries, Addressables) still requires manual redesign regardless of transpiler quality.
+**Resolution:** Rule-based and AST transpilers have been removed. All C# → Luau transpilation now uses Claude AI exclusively. The architectural gap (MonoBehaviour lifecycle, component queries, Addressables) is handled by the AI using the Unity Bridge API as vocabulary context.

@@ -4,8 +4,32 @@
 
 The assembly phase:
 - Converts scene nodes to Roblox Parts/MeshParts
-- Generates prefab packages and embeds them in ServerStorage (enabled by default). This is critical for runtime-driven games where environment content (tracks, obstacles, pickups) is spawned by code rather than placed in the scene. Without this, only the scene's static objects (UI, camera, sky) would be included.
+- Generates prefab packages and embeds them in ReplicatedStorage/Templates (enabled by default). This is critical for runtime-driven games where environment content (tracks, obstacles, pickups) is spawned by code rather than placed in the scene. Without this, only the scene's static objects (UI, camera, sky) would be included.
 - Builds a `mesh_texture_map` linking mesh IDs to texture filenames for the upload patcher
+
+### Local-to-World Transform Computation (Critical)
+
+Unity stores all transforms as **local-space** (relative to parent). Roblox Parts use **world-space CFrame** (absolute position and orientation). The converter MUST compute world transforms when flattening Unity's hierarchy into Roblox Parts.
+
+The formula applied recursively through the scene tree:
+```
+world_position = parent_world_position + parent_world_rotation * local_position
+world_rotation = parent_world_rotation * local_rotation
+```
+
+Without this, every child object ends up at its local offset from the world origin (0,0,0) instead of from its parent — causing all nested objects to collapse to the origin. This is implemented in `conversion_helpers.py` via `_compute_world_transform()`, `_quat_multiply()`, and `_quat_rotate()`, with parent transforms passed recursively through `node_to_part()`.
+
+Root-level scene nodes use the default parent of position=(0,0,0) and identity rotation=(0,0,0,1).
+
+### Content Property XML Format
+
+Roblox .rbxl XML requires Content-type properties (MeshId, TextureId, SoundId, ColorMap) to use a `<url>` sub-element:
+```xml
+<Content name="MeshId">
+  <url>rbxassetid://12345</url>
+</Content>
+```
+Writing the value directly as text content (`<Content name="MeshId">rbxassetid://12345</Content>`) causes Roblox Studio to ignore the value, resulting in missing textures/meshes.
 
 ## Upload Patching Strategies
 

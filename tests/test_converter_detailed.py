@@ -288,7 +288,7 @@ class TestTranspiledToRbxScriptsDetailed:
                 output_filename=f"{name}.lua",
                 csharp_source="void Start() {}",
                 luau_source=f"-- {name}",
-                strategy="rule_based",
+                strategy="ai",
                 confidence=0.8,
             )
             for name in ("Alpha", "Beta", "Gamma")
@@ -307,7 +307,7 @@ class TestTranspiledToRbxScriptsDetailed:
             output_filename="Bad.lua",
             csharp_source="???",
             luau_source="-- flagged",
-            strategy="rule_based",
+            strategy="ai",
             confidence=0.1,
             flagged_for_review=True,
         )
@@ -376,7 +376,7 @@ class TestBuildReportDetailed:
             output_filename="X.lua",
             csharp_source="",
             luau_source="",
-            strategy="rule_based",
+            strategy="ai",
             confidence=0.5,
             flagged_for_review=True,
         )

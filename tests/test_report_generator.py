@@ -101,8 +101,7 @@ class TestGenerateReport:
             succeeded=3,
             flagged_for_review=1,
             skipped=1,
-            ai_transpiled=2,
-            rule_based=3,
+            ai_transpiled=5,
             flagged_scripts=["BadScript.cs"],
         )
         path = generate_report(report, tmp_path / "report.json", print_summary=False)

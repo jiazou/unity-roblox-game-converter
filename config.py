@@ -97,7 +97,6 @@ MAX_SCENE_DEPTH: int = 64
 # Code transpilation options
 # ---------------------------------------------------------------------------
 
-USE_AI_TRANSPILATION: bool = True
 TRANSPILATION_CONFIDENCE_THRESHOLD: float = 0.7
 
 # ---------------------------------------------------------------------------

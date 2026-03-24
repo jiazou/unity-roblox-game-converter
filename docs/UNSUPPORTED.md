@@ -35,7 +35,7 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Particle systems | High | Converted to `ParticleEmitter` with rate, lifetime, speed, color |
 | Prefab instantiation in scenes | High | Resolved from `PrefabLibrary`, inserted into scene tree |
 | Prefab property modifications | High | `m_Modifications` applied to resolved prefab nodes |
-| C# → Luau transpilation (AI mode) | Medium | Requires Claude API key |
+| C# → Luau transpilation (AI) | Medium | Requires Claude API key |
 | .rbxl XML generation | High | Valid Roblox Studio format |
 | Roblox Open Cloud upload | High | Place + texture upload |
 | Mesh decimation (>10K faces) | High | Conservative reduction via trimesh |
@@ -65,7 +65,6 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Unlit game detection | Medium | Auto-adjusts Lighting when >70% unlit shaders |
 | Skybox material → Sky object | Medium | 6-sided skybox textures in Lighting |
 | Mesh bounding box → Part size | Medium | trimesh AABB used as base size for MeshParts |
-| Rule-based transpiler (improved) | Medium | Braces→end, if/while/for/foreach, Mathf, types, semicolons |
 | Collider → Part sizing | High | Box, Sphere, Capsule colliders set part size |
 | Rigidbody kinematic detection | High | `m_IsKinematic` → `Anchored` property |
 
@@ -370,62 +369,21 @@ See Recently Fixed.
 
 ### C# to Luau Transpilation Quality
 
-**Severity**: LOW (rule-based mode) / NEGLIGIBLE (AI mode)
-**Status**: AST-driven transpiler (tree-sitter) handles most patterns; regex fallback for edge cases; AI mode recommended for production
+**Severity**: NEGLIGIBLE
+**Status**: All transpilation uses Claude AI (requires Claude API key)
 
-**AST-driven mode** (default when tree-sitter is available):
-
-The transpiler uses tree-sitter to parse the full C# syntax tree and emit Luau
-structurally. This is context-aware — string literals and comments are never
-transformed, control-flow blocks produce correct `end` placement, and expressions
-like `Instantiate(prefab)` are structurally rewritten.
-
-**What AST mode handles**:
-- All variable declarations → `local`
-- `Debug.Log/LogWarning/LogError` → `print/warn`
-- Method declarations → `local function name(params) ... end`
-- Unity lifecycle methods: `Start/Awake` → top-level code, `Update` → `Heartbeat:Connect`, `FixedUpdate` → `Stepped:Connect`, etc.
-- `this.` → `self.` (context-aware — only on actual `this` expressions)
-- `using` directives, `namespace` wrappers, class declarations → stripped/unwrapped
-- Access modifiers, return type annotations, type casts → stripped
-- Control flow: `if/else if/else`, `for`, `foreach`, `while`, `do...while` → correct `then/do...end` blocks
-- Operators: `!=` → `~=`, `&&` → `and`, `||` → `or`, `!` → `not`
-- `null` → `nil`, ternary `? :` → `if then else`
-- `.Length/.Count` → `#table`, `.Add/.Remove/.Contains` → `table.insert/remove/find`
-- `.ToString()` → `tostring()`, `.SetActive(val)` → `.Visible = val`
-- `Mathf.*` → `math.*`, `Time.deltaTime` → `dt`
-- `new Vector3/Vector2/Color()` → `.new()` constructors
-- `new List<T>()/Dictionary<T>()` → `{}`
-- String concatenation `+` → `..` (only when string operands detected)
-- `Instantiate(prefab)` → `prefab:Clone()` (structurally rewritten — see below)
-- `Destroy(obj)` → `obj:Destroy()` (structurally rewritten)
-- `GetComponent<T>()` → `:FindFirstChildOfClass("RobloxType")` (type argument mapped)
-- Properties → getter/setter function pairs
-- `try/catch` → commented pcall-style blocks
-- `switch` → commented if/elseif chain
-- `do...while` → `repeat...until`
-- `break`, `continue`, `throw` → Luau equivalents
-- Comments → converted to `--` / `--[[ ]]` syntax (content preserved, never transformed)
-- String literals → preserved unchanged (never transformed)
-- Comprehensive API mapping table (50+ Unity API → Roblox equivalents)
-- `[SerializeField]` fields with prefab refs → `ServerStorage:WaitForChild()`
+The transpiler sends each C# script to Claude along with the Unity Bridge API
+reference and receives Roblox-native Luau in return. Claude handles architectural
+adaptation, not just syntax translation:
+- MonoBehaviour class → Luau module with lifecycle hooks
+- Inspector-serialized fields → config table or attributes
+- Inheritance / interfaces → restructured ModuleScript patterns
+- LINQ expressions → idiomatic Luau equivalents
+- Coroutines (`IEnumerator`, `yield return`) → `task.spawn` / `task.wait`
+- Complex generics, event subscriptions, delegates → correctly rewritten
+- 50+ Unity API → Roblox equivalents (informed by `api_mappings.py`)
 - Script client/server/module classification based on API usage
 - Automatic Roblox service imports based on detected API usage
-
-**Regex fallback** (used when tree-sitter unavailable or source has parse errors):
-
-Falls back to the original regex pipeline (73+ sequential substitutions). This is
-less reliable but still handles common patterns.
-
-**What neither mode handles well**:
-- Inheritance / interfaces (class structure stripped, not restructured)
-- LINQ expressions
-- Coroutines (`IEnumerator`, `yield return`) — APIs mapped but not structurally rewritten
-- Complex generic types beyond `GetComponent<T>`
-- Event subscriptions / delegates (simple `+=` patterns not rewritten)
-
-**AI mode** (requires Claude API key): Produces the best results —
-handles all of the above correctly. Recommended for production.
 
 **Post-transpilation validation**: `code_validator.py` checks generated Luau for
 block keyword balance, residual C# syntax, curly braces, trailing semicolons, and
@@ -433,26 +391,19 @@ bracket balance. Scripts with validation errors are flagged for review.
 
 ---
 
-### ~~`Instantiate()` → `Clone()` Is a Naive Text Substitution~~
+### ~~`Instantiate()` → `Clone()` Is a Naive Text Substitution~~ — RESOLVED
 
 **Severity**: ~~MEDIUM~~ → RESOLVED
-**Status**: Fixed by AST-driven transpiler
 
-~~The API mapping `Instantiate` → `.Clone` was a simple text substitution that
-produced broken output.~~
+The AI transpiler structurally rewrites `Instantiate()` calls:
 
-The AST-driven transpiler now structurally rewrites `Instantiate()` calls:
-
-| Unity C# | What the transpiler now produces |
+| Unity C# | What the transpiler produces |
 |---|---|
 | `Instantiate(prefab)` | `prefab:Clone()` |
 | `var x = Instantiate(prefab, pos, rot)` | `local x = prefab:Clone() --[[ TODO: set CFrame from pos, rot ]]` |
 
 Position/rotation/parent arguments are flagged with TODO comments for manual
 assignment, since the Roblox API requires separate property assignments.
-
-**Note**: The regex fallback (used when tree-sitter is unavailable) still produces
-the old broken `.Clone(prefab)` output. Ensure tree-sitter-c-sharp is installed.
 
 ---
 
@@ -541,7 +492,7 @@ only processed materials, not all `.mat` files found.
 9. ~~Normal map scale baking~~ — Done
 10. ~~Unlit game detection + Lighting configuration~~ — Done
 11. ~~Skybox/Atmosphere generation~~ — Done
-12. ~~Improved rule-based transpiler~~ — Done (braces→end, if/while/for, types, Mathf, ternary, semicolons)
+12. ~~C# transpiler~~ — Done (AI transpilation via Claude API)
 13. ~~Camera → `Workspace.CurrentCamera` mapping~~ — Done
 14. ~~Mesh bounding box → Part size for MeshParts~~ — Done
 
@@ -567,7 +518,7 @@ only processed materials, not all `.mat` files found.
 - `test_scene_parser.py` — Scene YAML parsing, hierarchy building
 - `test_prefab_parser.py` — Prefab YAML parsing
 - `test_material_mapper.py` — Shader property mapping, pipeline detection
-- `test_code_transpiler.py` — C# → Luau rule-based transpilation
+- `test_code_transpiler.py` — C# → Luau AI transpilation
 - `test_api_mappings.py` — API call/type/lifecycle mapping tables
 - `test_llm_cache.py` — LLM response caching, TTL, eviction
 - `test_retry.py` — Retry logic, backoff, exception handling

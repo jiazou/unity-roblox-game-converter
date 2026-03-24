@@ -79,8 +79,6 @@ The error count is not propagated to the report. Users could get a "successful" 
 
 The `assemble` phase re-runs `code_transpiler.transpile_scripts()` from the original C# source (line 573), completely ignoring the Luau scripts saved to `<output_dir>/scripts/` during the `transpile` phase. If a user or the skill edited a flagged script between `transpile` and `assemble`, those edits are lost.
 
-The `use_ai=False` override (line 575) also means assembly always uses rule-based transpilation, even if the user chose AI transpilation in the `transpile` phase.
-
 ### 2.3 Audio File Discovery via `rglob` is Fragile
 
 **Severity: MEDIUM** | **Files: `converter.py:373`, `convert_interactive.py:727`**
@@ -112,17 +110,17 @@ The GUID-to-material-def mapping iterates `guid_index.guid_to_entry.items()` (al
 
 **Severity: MEDIUM**
 
-Script type (Script vs LocalScript vs ModuleScript) is classified purely by which API calls appear in the source. A script that only uses `print()` defaults to `Script` (server-side), which would fail silently if the script was meant to be client-side. The classification also doesn't consider Unity's execution context (Editor scripts, ScriptableObjects, etc.).
+Script type (Script vs LocalScript vs ModuleScript) is classified by the AI based on which API calls appear in the C# source. A script that only uses `print()` defaults to `Script` (server-side), which would fail silently if the script was meant to be client-side. The classification also doesn't consider Unity's execution context (Editor scripts, ScriptableObjects, etc.).
 
 ### 3.2 `code_transpiler.py` — AI Transpilation Has No Token Budget Guard
 
 **Severity: MEDIUM** — **VERIFIED.** Grep for `stop_reason` and `finish_reason` in `code_transpiler.py` returns zero matches. The code does not check whether Claude's response was truncated. With `max_tokens=4096` (from config), a large C# file's Luau output could be silently cut off mid-function.
 
-### 3.3 `code_transpiler.py` — Tree-sitter Error Recovery is Silent
+### 3.3 `code_transpiler.py` — Malformed C# Input Not Flagged
 
 **Severity: LOW**
 
-If tree-sitter parsing produces an AST with `ERROR` nodes (partial parse), the `_LuauEmitter` doesn't detect or report these. Malformed C# syntax silently produces malformed Luau.
+If the input C# has severe syntax errors, the AI may produce malformed Luau without indicating the source was unparseable. The code validator catches most output issues, but the root cause (bad input) is not surfaced to the user.
 
 ### 3.4 `material_mapper.py` — No Texture Operation Rollback
 

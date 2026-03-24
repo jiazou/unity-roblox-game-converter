@@ -305,7 +305,7 @@ class TestTranspiledToRbxScripts:
             output_filename="Test.lua",
             csharp_source="void Start() {}",
             luau_source="-- test",
-            strategy="rule_based",
+            strategy="ai",
             confidence=0.8,
         )
         result = code_transpiler.TranspilationResult(scripts=[ts], total=1, succeeded=1)
@@ -320,7 +320,7 @@ class TestTranspiledToRbxScripts:
             output_filename="Foo.lua",
             csharp_source="",
             luau_source="",
-            strategy="rule_based",
+            strategy="ai",
             confidence=0.5,
         )
         result = code_transpiler.TranspilationResult(scripts=[ts])

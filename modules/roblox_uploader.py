@@ -65,9 +65,14 @@ def _load_asset_cache(cache_path: Path) -> dict[str, dict]:
 
 
 def _is_cached(name: str, cache: dict[str, dict]) -> int | None:
-    """Check if an asset is in the cache by filename or stem. Returns asset_id or None."""
-    entry = cache.get(name) or cache.get(Path(name).stem)
-    return entry["asset_id"] if entry else None
+    """Return cached asset_id for name (case-insensitive, matches stem or full name)."""
+    name_lower = name.lower()
+    stem_lower = Path(name).stem.lower()
+    for key, entry in cache.items():
+        k = key.lower()
+        if k == name_lower or k == stem_lower or Path(key).stem.lower() == stem_lower:
+            return entry["asset_id"]
+    return None
 
 
 def _save_asset_cache(cache_path: Path, cache: dict[str, dict]) -> None:

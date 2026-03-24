@@ -45,4 +45,4 @@ The `/convert-unity` skill (`.claude/skills/convert-unity.md`) provides an inter
 See `docs/UNSUPPORTED.md` for the full list. Key ones:
 - No vertex color support (Roblox platform limitation)
 - One material per MeshPart (multi-material meshes need splitting)
-- Rule-based transpiler produces rough output; AI mode recommended for production
+- C# → Luau transpilation requires an Anthropic API key (Claude)

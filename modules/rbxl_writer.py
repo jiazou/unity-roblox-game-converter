@@ -187,7 +187,12 @@ class RbxPackageResult:
 
 def _make_property(parent: ET.Element, prop_type: str, name: str, value: Any) -> ET.Element:
     el = ET.SubElement(parent, prop_type, name=name)
-    el.text = str(value)
+    if prop_type == "Content":
+        # Roblox XML expects Content values inside a <url> sub-element
+        url_el = ET.SubElement(el, "url")
+        url_el.text = str(value)
+    else:
+        el.text = str(value)
     return el
 
 
@@ -380,8 +385,8 @@ def _make_sound(
     item = ET.SubElement(parent, "Item", **{"class": "Sound"})
     props = ET.SubElement(item, "Properties")
     _make_property(props, "string", "Name", name)
-    # SoundId will need to be an uploaded asset URL; for now store the path as a comment
-    _make_property(props, "Content", "SoundId", f"-- TODO: upload {sound_path}")
+    sound_filename = Path(sound_path).name if sound_path else ""
+    _make_property(props, "Content", "SoundId", sound_filename)
     _make_property(props, "float", "Volume", f"{volume:.4f}")
     _make_property(props, "bool", "Looped", str(looped).lower())
     _make_property(props, "float", "PlaybackSpeed", f"{playback_speed:.4f}")
@@ -697,17 +702,7 @@ def write_rbxl(
     # Count all parts including children for accurate reporting
     parts_written = _count_parts(parts)
 
-    # ServerStorage — prefab templates for runtime Clone()
-    if server_storage_templates:
-        ss_item = ET.SubElement(root, "Item", **{"class": "ServerStorage"})
-        ss_props = ET.SubElement(ss_item, "Properties")
-        _make_property(ss_props, "string", "Name", "ServerStorage")
-
-        for model_name, root_part in server_storage_templates:
-            model_item = ET.SubElement(ss_item, "Item", **{"class": "Model"})
-            mp = ET.SubElement(model_item, "Properties")
-            _make_property(mp, "string", "Name", model_name)
-            _make_part(model_item, root_part)
+    templates_folder_item: ET.Element | None = None
 
     # Partition scripts by type into appropriate Roblox containers:
     #   Script       → ServerScriptService
@@ -747,8 +742,8 @@ def write_rbxl(
             _make_property(sp, "ProtectedString", "Source", script.luau_source)
             scripts_written += 1
 
-    # ReplicatedStorage — ModuleScripts (accessible to both client and server)
-    if module_scripts:
+    # ReplicatedStorage — ModuleScripts + prefab templates (client-accessible)
+    if module_scripts or server_storage_templates:
         rs_item = ET.SubElement(root, "Item", **{"class": "ReplicatedStorage"})
         rs_props = ET.SubElement(rs_item, "Properties")
         _make_property(rs_props, "string", "Name", "ReplicatedStorage")
@@ -759,6 +754,18 @@ def write_rbxl(
             _make_property(sp, "string", "Name", script.name)
             _make_property(sp, "ProtectedString", "Source", script.luau_source)
             scripts_written += 1
+
+        # Prefab templates in a "Templates" folder for runtime Clone()
+        if server_storage_templates:
+            templates_folder_item = ET.SubElement(rs_item, "Item", **{"class": "Folder"})
+            tf_props = ET.SubElement(templates_folder_item, "Properties")
+            _make_property(tf_props, "string", "Name", "Templates")
+
+            for model_name, root_part in server_storage_templates:
+                model_item = ET.SubElement(templates_folder_item, "Item", **{"class": "Model"})
+                mp = ET.SubElement(model_item, "Properties")
+                _make_property(mp, "string", "Name", model_name)
+                _make_part(model_item, root_part)
 
     # StarterGui — ScreenGui elements from Unity Canvas / RectTransform UI
     ui_elements_written = 0

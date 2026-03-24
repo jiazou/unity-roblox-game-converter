@@ -338,7 +338,7 @@ def apply_materials(
                 part.scripts.append(rbxl_writer.RbxScriptEntry(
                     name=f"{node.name}_MaterialEffect{suffix}",
                     luau_source=src,
-                    script_type="Script",
+                    script_type="LocalScript",
                 ))
 
         # Warn about additional materials that cannot be applied
@@ -397,6 +397,50 @@ def _detect_primitive_shape(node: scene_parser.SceneNode) -> str | None:
     return _UNITY_PRIMITIVE_NAMES.get(name_lower.capitalize())
 
 
+def _quat_multiply(q1: tuple, q2: tuple) -> tuple:
+    """Multiply two quaternions (x, y, z, w)."""
+    x1, y1, z1, w1 = q1
+    x2, y2, z2, w2 = q2
+    return (
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,
+        w1*z2 + x1*y2 - y1*x2 + z1*w2,
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,
+    )
+
+
+def _quat_rotate(q: tuple, v: tuple) -> tuple:
+    """Rotate a vector by a quaternion (x, y, z, w)."""
+    x, y, z, w = q
+    vx, vy, vz = v
+    # q * v * q_conjugate
+    t = (
+        2.0 * (y*vz - z*vy),
+        2.0 * (z*vx - x*vz),
+        2.0 * (x*vy - y*vx),
+    )
+    return (
+        vx + w*t[0] + y*t[2] - z*t[1],
+        vy + w*t[1] + z*t[0] - x*t[2],
+        vz + w*t[2] + x*t[1] - y*t[0],
+    )
+
+
+def _compute_world_transform(
+    local_pos: tuple, local_rot: tuple,
+    parent_pos: tuple, parent_rot: tuple,
+) -> tuple[tuple, tuple]:
+    """world_pos = parent_pos + parent_rot * local_pos; world_rot = parent_rot * local_rot."""
+    rotated = _quat_rotate(parent_rot, local_pos)
+    world_pos = (
+        parent_pos[0] + rotated[0],
+        parent_pos[1] + rotated[1],
+        parent_pos[2] + rotated[2],
+    )
+    world_rot = _quat_multiply(parent_rot, local_rot)
+    return world_pos, world_rot
+
+
 def node_to_part(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
@@ -405,10 +449,16 @@ def node_to_part(
     mesh_path_remap: dict[str, str] | None = None,
     directional_lights: list[dict] | None = None,
     component_warnings: list[ComponentWarning] | None = None,
+    parent_world_pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    parent_world_rot: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
 ) -> rbxl_writer.RbxPartEntry:
-    """Convert a single SceneNode (and its children recursively) to an RbxPartEntry."""
+    """Convert a SceneNode tree to an RbxPartEntry tree (recursive)."""
     if component_warnings is not None:
         _collect_component_warnings(node, component_warnings)
+
+    world_pos, world_rot = _compute_world_transform(
+        node.position, node.rotation, parent_world_pos, parent_world_rot,
+    )
 
     base_size = (1.0, 1.0, 1.0)
     scaled_size = (
@@ -418,8 +468,8 @@ def node_to_part(
     )
     part = rbxl_writer.RbxPartEntry(
         name=node.name,
-        position=node.position,
-        rotation=node.rotation,
+        position=world_pos,
+        rotation=world_rot,
         size=scaled_size,
         anchored=True,
     )
@@ -453,17 +503,15 @@ def node_to_part(
     convert_particle_components(part, node.name, node.components)
     apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
 
-    # Collider-only objects (no mesh, no renderer) should be invisible
+    # No renderer = invisible (Unity default; Roblox needs explicit Transparency=1)
     comp_types = {c.component_type for c in node.components}
     has_renderer = bool(comp_types & {"MeshRenderer", "SkinnedMeshRenderer", "SpriteRenderer"})
-    has_collider = bool(comp_types & {"BoxCollider", "SphereCollider", "CapsuleCollider", "MeshCollider"})
     has_mesh = node.mesh_guid is not None or part.shape is not None
-    if has_collider and not has_renderer and not has_mesh:
+    if not has_renderer and not has_mesh:
         part.transparency = 1.0
+        part.can_collide = False
 
-    # Inactive GameObjects: preserve in hierarchy but mark invisible.
-    # Unity's SetActive(false) hides the object and all descendants — they
-    # remain in the hierarchy so scripts can re-activate them at runtime.
+    # Inactive GameObjects → invisible
     if not node.active:
         part.transparency = 1.0
         part.can_collide = False
@@ -475,6 +523,7 @@ def node_to_part(
         part.children.append(node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
             mesh_path_remap, directional_lights, component_warnings,
+            parent_world_pos=world_pos, parent_world_rot=world_rot,
         ))
 
     return part
@@ -634,7 +683,7 @@ def _process_mono_properties(
             continue
 
         if ref_path.suffix == ".prefab":
-            # Prefab reference → ServerStorage:WaitForChild()
+            # Prefab reference → ReplicatedStorage.Templates:WaitForChild()
             asset_name = ref_path.stem
             refs = result.setdefault(script_path, {})
             if key not in refs:
@@ -737,7 +786,7 @@ def generate_prefab_packages(
             directional_lights,
         )
 
-        # Store the template for embedding in ServerStorage inside the .rbxl
+        # Store the template for embedding in ReplicatedStorage.Templates inside the .rbxl
         result.server_storage_templates.append((template.name, root_part))
 
         # Also write a standalone .rbxm file for Toolbox / manual import
@@ -1398,17 +1447,12 @@ def generate_bootstrap_script(
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local SoundService = game:GetService("SoundService")
-
--- Disable Roblox's default character spawning; the game manages its own.
-Players.CharacterAutoLoads = false
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- Require transpiled modules
-local GameManagerModule = require(ReplicatedStorage:WaitForChild("GameManager"))
-local GameManager = GameManagerModule.GameManager
+local GameManager = require(ReplicatedStorage:WaitForChild("GameManager"))
 {requires_block}
 {extra_requires}
 
@@ -1541,9 +1585,6 @@ def build_report(
     rpt.scripts.skipped = transpilation.skipped
     rpt.scripts.ai_transpiled = sum(
         1 for s in transpilation.scripts if s.strategy == "ai"
-    )
-    rpt.scripts.rule_based = sum(
-        1 for s in transpilation.scripts if s.strategy == "rule_based"
     )
     rpt.scripts.flagged_scripts = [
         str(s.source_path.name) for s in transpilation.scripts if s.flagged_for_review

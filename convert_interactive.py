@@ -423,11 +423,15 @@ def materials(unity_project_path: str, output_dir: str, referenced_guids: str | 
 @cli.command()
 @click.argument("unity_project_path", type=click.Path(exists=True, file_okay=False))
 @click.argument("output_dir", type=click.Path())
-@click.option("--use-ai/--no-ai", default=config.USE_AI_TRANSPILATION,
-              help="Use Claude for C# → Luau transpilation.")
-@click.option("--api-key", default=config.ANTHROPIC_API_KEY, envvar="ANTHROPIC_API_KEY")
-def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: str) -> None:
+@click.option("--api-key", default=config.ANTHROPIC_API_KEY, envvar="ANTHROPIC_API_KEY",
+              help="Anthropic API key for C# → Luau transpilation (required).")
+def transpile(unity_project_path: str, output_dir: str, api_key: str) -> None:
     """Phase 3b: Transpile C# scripts to Luau."""
+    if not api_key or api_key.startswith("sk-ant-PLACEHOLDER"):
+        raise click.UsageError(
+            "An Anthropic API key is required for C# → Luau transpilation. "
+            "Set --api-key or the ANTHROPIC_API_KEY environment variable."
+        )
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -458,7 +462,6 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
     try:
         transpilation = code_transpiler.transpile_scripts(
             unity_path,
-            use_ai=use_ai,
             api_key=api_key,
             model=config.ANTHROPIC_MODEL,
             max_tokens=config.ANTHROPIC_MAX_TOKENS,
@@ -518,14 +521,14 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
             warnings_text = " ".join(all_warnings).lower()
             if "credit balance" in warnings_text or "insufficient_credits" in warnings_text:
                 result_info["error_type"] = "insufficient_credits"
-                result_info["suggestion"] = "Provide a funded API key or use --no-ai"
+                result_info["suggestion"] = "Provide a funded API key with sufficient credits"
             elif (
                 "authentication_error" in warnings_text
                 or "invalid x-api-key" in warnings_text
                 or "401" in warnings_text
             ):
                 result_info["error_type"] = "auth_failure"
-                result_info["suggestion"] = "Provide a funded API key or use --no-ai"
+                result_info["suggestion"] = "Provide a valid Anthropic API key"
 
     except FileNotFoundError as exc:
         errors.append(str(exc))
@@ -622,8 +625,10 @@ def validate(output_dir: str) -> None:
               help="Generate .rbxm package files for each prefab.")
 @click.option("--preview-mode/--no-preview-mode", default=True,
               help="Preview mode: copy prefabs to Workspace, disable scripts and UI.")
+@click.option("--api-key", default=config.ANTHROPIC_API_KEY, envvar="ANTHROPIC_API_KEY",
+              help="Anthropic API key for C# → Luau transpilation (required).")
 def assemble(unity_project_path: str, output_dir: str, decimate: bool,
-             emit_packages: bool, preview_mode: bool) -> None:
+             emit_packages: bool, preview_mode: bool, api_key: str) -> None:
     """Phase 4: Assemble the .rbxl file from all converted data."""
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
@@ -684,7 +689,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
     try:
         transpilation = code_transpiler.transpile_scripts(
             unity_path,
-            use_ai=False,  # Assembly uses whatever was already generated
+            api_key=api_key,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
             serialized_refs=asm_serialized_refs,
         )
@@ -709,7 +714,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             output_filename=ca.asset_name + "_Data.lua",
             csharp_source="",
             luau_source=ca.luau_source,
-            strategy="rule_based",
+            strategy="ai",
             confidence=1.0,
             script_type="ModuleScript",
         ))
@@ -1161,7 +1166,9 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
 @click.argument("unity_project_path", type=click.Path(exists=True, file_okay=False))
 @click.argument("output_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--verbose/--no-verbose", default=config.REPORT_VERBOSE)
-def report(unity_project_path: str, output_dir: str, verbose: bool) -> None:
+@click.option("--api-key", default=config.ANTHROPIC_API_KEY, envvar="ANTHROPIC_API_KEY",
+              help="Anthropic API key for C# → Luau transpilation (required).")
+def report(unity_project_path: str, output_dir: str, verbose: bool, api_key: str) -> None:
     """Phase 6: Generate the final conversion report."""
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
@@ -1209,7 +1216,8 @@ def report(unity_project_path: str, output_dir: str, verbose: bool) -> None:
     ) or None
     try:
         transpilation = code_transpiler.transpile_scripts(
-            unity_path, use_ai=False,
+            unity_path,
+            api_key=api_key,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
             serialized_refs=rpt_serialized_refs,
         )
