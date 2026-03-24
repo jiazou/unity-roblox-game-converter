@@ -398,7 +398,6 @@ def _detect_primitive_shape(node: scene_parser.SceneNode) -> str | None:
 
 
 def _quat_multiply(q1: tuple, q2: tuple) -> tuple:
-    """Multiply two quaternions (x, y, z, w)."""
     x1, y1, z1, w1 = q1
     x2, y2, z2, w2 = q2
     return (
@@ -410,7 +409,6 @@ def _quat_multiply(q1: tuple, q2: tuple) -> tuple:
 
 
 def _quat_rotate(q: tuple, v: tuple) -> tuple:
-    """Rotate a vector by a quaternion (x, y, z, w)."""
     x, y, z, w = q
     vx, vy, vz = v
     # q * v * q_conjugate
@@ -460,12 +458,7 @@ def node_to_part(
         node.position, node.rotation, parent_world_pos, parent_world_rot,
     )
 
-    base_size = (1.0, 1.0, 1.0)
-    scaled_size = (
-        base_size[0] * abs(node.scale[0]),
-        base_size[1] * abs(node.scale[1]),
-        base_size[2] * abs(node.scale[2]),
-    )
+    scaled_size = (abs(node.scale[0]), abs(node.scale[1]), abs(node.scale[2]))
     part = rbxl_writer.RbxPartEntry(
         name=node.name,
         position=world_pos,

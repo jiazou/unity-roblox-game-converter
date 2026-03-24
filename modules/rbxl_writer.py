@@ -491,9 +491,6 @@ def _is_grouping_node(part: RbxPartEntry) -> bool:
 
 
 def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
-    # Use Model for pure grouping containers (children but no geometry).
-    # Use MeshPart when a mesh asset is available (required for SurfaceAppearance),
-    # otherwise fall back to a plain Part (box primitive).
     if _is_grouping_node(part):
         item = ET.SubElement(workspace, "Item", **{"class": "Model"})
         props = ET.SubElement(item, "Properties")
@@ -517,8 +514,6 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
 
-    # Write CFrame (position + rotation). When rotation is identity, just set Position
-    # for cleaner output. Otherwise, write a full CoordinateFrame with rotation matrix.
     if _is_identity_quat(part.rotation):
         _make_vector3(props, "Position", part.position)
     else:
@@ -544,23 +539,13 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     if part.material_enum:
         _make_property(props, "token", "Material", part.material_enum)
 
-    # SurfaceAppearance child (only meaningful on MeshPart)
     if part.surface_appearance and use_mesh:
         _make_surface_appearance(item, part.surface_appearance)
-    elif part.surface_appearance and not use_mesh:
-        # No mesh — SurfaceAppearance won't render on a plain Part.
-        # Apply what we can: color/transparency are already set via BasePart properties.
-        pass
 
-    # Light children (PointLight, SpotLight)
     for lc in part.light_children:
         _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
-
-    # Sound children
     for sc in part.sound_children:
         _make_sound(item, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7])
-
-    # ParticleEmitter children
     for pc in part.particle_children:
         _make_particle_emitter(item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7], pc[8], pc[9], pc[10])
 

@@ -109,9 +109,9 @@ def resolve_roblox_username(username: str) -> int | None:
 
 def _validate_api_key(api_key: str) -> bool:
     """Check that the API key is present and not a placeholder."""
-    if not api_key:
+    if not api_key or not api_key.strip():
         return False
-    placeholders = {"", "PLACEHOLDER", "your-api-key-here", "ROBLOX_API_KEY"}
+    placeholders = {"PLACEHOLDER", "your-api-key-here", "ROBLOX_API_KEY"}
     return api_key.strip() not in placeholders
 
 
