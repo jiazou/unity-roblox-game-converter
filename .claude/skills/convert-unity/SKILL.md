@@ -97,6 +97,7 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
    | **Camera** | No camera behavior until you write a script or attach a component | Third-person follow camera that orbits the character | The game uses fixed camera, rail camera, top-down, isometric, or any non-orbit view |
    | **Input → Movement** | No movement until you write `Update()` + `transform.Translate()` or a CharacterController | WASD/mobile stick moves the character, Space jumps, Humanoid handles it all | The game uses custom movement (auto-run, on-rails, grid-based, turn-based, vehicle, etc.) |
    | **Physics** | Rigidbody is opt-in, gravity/collision configured per-object | All parts have physics, character has Humanoid physics with WalkSpeed/JumpPower | The game positions objects directly via CFrame/Transform rather than through physics forces |
+   | **Object visibility** | Scene graphs contain many non-visual objects: trigger volumes (`isTrigger`), disabled GameObjects (`m_IsActive=false`), disabled renderers (`m_Enabled=0`), collider-only objects, nested UI canvases. These are invisible by design. | Every Part is visible by default — there is no concept of a "renderer component" separate from the object | Always. The pipeline handles this automatically (transparency=1 for triggers/disabled/collider-only objects, UI subtree filtering). If opaque rectangles block the view in the converted game, check for missed non-visual object categories. |
 
    For each pillar where the Unity game diverges from Roblox's default:
    - Identify exactly what the Unity code does (e.g., "TrackManager sets character position each frame from a spline curve")
@@ -163,7 +164,10 @@ Present each rewritten module to the user for review. Show:
 
 #### Key principles
 
+- **Faithful port over workarounds** — if Unity generates content at runtime (procedural levels, spawned obstacles, dynamic UI), the Roblox port must generate it at runtime too. Never substitute a Unity runtime system with a static Roblox-side workaround (e.g., don't replace procedural track generation with a hand-placed baseplate). The game should work the same way — if there's no static ground in Unity, there should be no static ground in Roblox.
 - **Architecture preservation over code translation** — the goal is a Roblox game that is wired the same way the Unity game was, not a line-by-line translation
+- **Port the system, not the symptom** — when something is missing or broken, trace back to what Unity system produces it and port that system. A missing floor means the track spawner needs porting, not that a floor needs adding.
+- **Preserve visibility semantics** — Unity separates "exists in scene" from "is visible" (renderers can be disabled, objects can be inactive, colliders can be trigger-only). Roblox conflates existence with visibility. The converter must bridge this gap so non-visual Unity objects stay non-visual in Roblox, rather than appearing as opaque default-colored parts.
 - Bridge modules (`bridge/`) are reusable — never modify them for one game
 - Game-specific scripts are output artifacts — they live in `<output_dir>/scripts/`, not in this repo
 - Focus on the 3-5 scripts that define the core game loop; leave utility scripts as-is from transpilation

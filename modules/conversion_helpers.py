@@ -64,7 +64,12 @@ def apply_collider_properties(
     """Apply physics collider and rigidbody properties to a part."""
     for comp in components:
         if comp.component_type == "BoxCollider":
-            part.anchored = False
+            is_trigger = bool(comp.properties.get("m_IsTrigger", 0))
+            if is_trigger:
+                part.transparency = 1.0
+                part.can_collide = False
+            else:
+                part.anchored = False
             size = comp.properties.get("m_Size", {})
             if isinstance(size, dict):
                 sx = float(size.get("x", 4.0))
@@ -72,12 +77,22 @@ def apply_collider_properties(
                 sz = float(size.get("z", 4.0))
                 part.size = (sx, sy, sz)
         elif comp.component_type == "SphereCollider":
-            part.anchored = False
+            is_trigger = bool(comp.properties.get("m_IsTrigger", 0))
+            if is_trigger:
+                part.transparency = 1.0
+                part.can_collide = False
+            else:
+                part.anchored = False
             radius = float(comp.properties.get("m_Radius", 0.5))
             diameter = radius * 2
             part.size = (diameter, diameter, diameter)
         elif comp.component_type == "CapsuleCollider":
-            part.anchored = False
+            is_trigger = bool(comp.properties.get("m_IsTrigger", 0))
+            if is_trigger:
+                part.transparency = 1.0
+                part.can_collide = False
+            else:
+                part.anchored = False
             radius = float(comp.properties.get("m_Radius", 0.5))
             height = float(comp.properties.get("m_Height", 2.0))
             diameter = radius * 2
@@ -220,6 +235,10 @@ def apply_materials(
     for comp in node.components:
         if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
             continue
+        # Skip disabled renderers — they should not be visible
+        if not bool(comp.properties.get("m_Enabled", 1)):
+            part.transparency = 1.0
+            return
         mat_refs = comp.properties.get("m_Materials", []) or []
         resolved_guids: list[str] = []
         for mat_ref in mat_refs:
@@ -355,8 +374,25 @@ def node_to_part(
     convert_particle_components(part, node.name, node.components)
     apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
 
-    # Recurse into children to preserve hierarchy
+    # Collider-only objects (no mesh, no renderer) should be invisible
+    comp_types = {c.component_type for c in node.components}
+    has_renderer = bool(comp_types & {"MeshRenderer", "SkinnedMeshRenderer", "SpriteRenderer"})
+    has_collider = bool(comp_types & {"BoxCollider", "SphereCollider", "CapsuleCollider", "MeshCollider"})
+    has_mesh = node.mesh_guid is not None or part.shape is not None
+    if has_collider and not has_renderer and not has_mesh:
+        part.transparency = 1.0
+
+    # Inactive GameObjects: preserve in hierarchy but mark invisible.
+    # Unity's SetActive(false) hides the object and all descendants — they
+    # remain in the hierarchy so scripts can re-activate them at runtime.
+    if not node.active:
+        part.transparency = 1.0
+        part.can_collide = False
+
+    # Recurse into children to preserve hierarchy (skip nested UI subtrees)
     for child in node.children:
+        if _is_ui_subtree(child):
+            continue
         part.children.append(node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
             mesh_path_remap, directional_lights,

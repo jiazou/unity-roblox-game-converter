@@ -666,3 +666,75 @@ class TestExtractSerializedFieldRefs:
         )
         result = extract_serialized_field_refs([scene], prefab_parser.PrefabLibrary(), gi)
         assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# Visibility: trigger colliders, disabled renderers, collider-only objects
+# ---------------------------------------------------------------------------
+
+class TestTriggerColliderVisibility:
+    """Trigger colliders (m_IsTrigger=1) should be transparent and non-colliding."""
+
+    def test_box_trigger(self) -> None:
+        part = _part()
+        comps = [_comp("BoxCollider", m_IsTrigger=1, m_Size={"x": 2, "y": 3, "z": 4})]
+        apply_collider_properties(part, comps)
+        assert part.transparency == 1.0
+        assert part.can_collide is False
+        assert part.anchored is True  # trigger should NOT unanchor
+
+    def test_sphere_trigger(self) -> None:
+        part = _part()
+        comps = [_comp("SphereCollider", m_IsTrigger=1, m_Radius=1.5)]
+        apply_collider_properties(part, comps)
+        assert part.transparency == 1.0
+        assert part.can_collide is False
+        assert part.size == (3.0, 3.0, 3.0)
+
+    def test_capsule_trigger(self) -> None:
+        part = _part()
+        comps = [_comp("CapsuleCollider", m_IsTrigger=1, m_Radius=0.5, m_Height=2.0)]
+        apply_collider_properties(part, comps)
+        assert part.transparency == 1.0
+        assert part.can_collide is False
+        assert part.size == (1.0, 2.0, 1.0)
+
+    def test_non_trigger_box_stays_visible(self) -> None:
+        part = _part()
+        comps = [_comp("BoxCollider", m_IsTrigger=0, m_Size={"x": 1, "y": 1, "z": 1})]
+        apply_collider_properties(part, comps)
+        assert part.transparency == 0.0
+        assert part.can_collide is True
+        assert part.anchored is False
+
+
+class TestDisabledRendererVisibility:
+    """Disabled MeshRenderers (m_Enabled=0) should make the part transparent."""
+
+    def test_disabled_mesh_renderer(self) -> None:
+        part = _part()
+        node = _snode(components=[
+            scene_parser.ComponentData(
+                component_type="MeshRenderer",
+                file_id="500",
+                properties={"m_Enabled": 0, "m_Materials": [{"guid": "mat1"}]},
+            ),
+        ])
+        rdef = material_mapper.RobloxMaterialDef(color_map="tex/albedo.png")
+        apply_materials(part, node, {"mat1": rdef}, None)
+        assert part.transparency == 1.0
+        assert part.surface_appearance is None  # material not applied
+
+    def test_enabled_renderer_applies_material(self) -> None:
+        part = _part()
+        node = _snode(components=[
+            scene_parser.ComponentData(
+                component_type="MeshRenderer",
+                file_id="500",
+                properties={"m_Enabled": 1, "m_Materials": [{"guid": "mat1"}]},
+            ),
+        ])
+        rdef = material_mapper.RobloxMaterialDef(color_map="tex/albedo.png")
+        apply_materials(part, node, {"mat1": rdef}, None)
+        assert part.transparency == 0.0
+        assert part.surface_appearance is not None

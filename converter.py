@@ -447,6 +447,7 @@ def convert(
         place_id=place_id,
         mesh_texture_map=mesh_texture_map,
         unity_project_path=unity_path,
+        asset_cache_path=out_dir / "asset_id_map.json",
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,

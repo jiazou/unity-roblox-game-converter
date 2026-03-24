@@ -87,6 +87,21 @@ class TestPartProperties:
         assert "0.7" in content
         assert "Transparency" in content
 
+    def test_can_collide_false_in_xml(self, tmp_path: Path) -> None:
+        parts = [RbxPartEntry(name="Trigger", can_collide=False)]
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl(parts, [], rbxl)
+        content = rbxl.read_text()
+        assert "CanCollide" in content
+        assert "false" in content
+
+    def test_can_collide_true_omitted(self, tmp_path: Path) -> None:
+        parts = [RbxPartEntry(name="Solid", can_collide=True)]
+        rbxl = tmp_path / "test.rbxl"
+        write_rbxl(parts, [], rbxl)
+        content = rbxl.read_text()
+        assert "CanCollide" not in content  # default, not written
+
 
 class TestSurfaceAppearanceDetailed:
     """Detailed tests for SurfaceAppearance serialization."""

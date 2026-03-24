@@ -59,6 +59,7 @@ class RbxPartEntry:
     transparency: float = 0.0
     material_enum: str | None = None     # e.g. "SmoothPlastic"
     surface_appearance: RbxSurfaceAppearance | None = None
+    can_collide: bool = True
     mesh_id: str | None = None           # rbxassetid:// or file path for MeshPart
     shape: str | None = None             # "Block" | "Ball" | "Cylinder" | "Wedge" (Part only)
     # Child objects converted from Unity Light, AudioSource, ParticleSystem components
@@ -533,6 +534,8 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         _make_color3(props, "Color3", part.color3)
     if part.transparency > 0.001:
         _make_property(props, "float", "Transparency", f"{part.transparency:.4f}")
+    if not part.can_collide:
+        _make_property(props, "bool", "CanCollide", "false")
     if part.material_enum:
         _make_property(props, "token", "Material", part.material_enum)
 

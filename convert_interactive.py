@@ -485,10 +485,18 @@ def transpile(unity_project_path: str, output_dir: str, use_ai: bool, api_key: s
         # Save transpiled scripts to output dir for later assembly
         scripts_out = out_dir / "scripts"
         scripts_out.mkdir(parents=True, exist_ok=True)
+        script_meta: dict[str, dict] = {}
         for ts in transpilation.scripts:
             (scripts_out / ts.output_filename).write_text(
                 ts.luau_source, encoding="utf-8"
             )
+            script_meta[ts.output_filename] = {
+                "script_type": ts.script_type,
+            }
+        # Save metadata so assemble can reconstruct script_type for on-disk scripts
+        (scripts_out / "_meta.json").write_text(
+            json.dumps(script_meta, indent=2), encoding="utf-8"
+        )
 
         result_info = {
             "total": transpilation.total,
@@ -564,7 +572,9 @@ def validate(output_dir: str) -> None:
     total_errors = 0
     total_warnings = 0
 
-    for lua_file in sorted(scripts_dir.glob("*.lua")):
+    for lua_file in sorted(
+        [*scripts_dir.glob("*.lua"), *scripts_dir.glob("*.luau")]
+    ):
         source = lua_file.read_text(encoding="utf-8")
         vr = code_validator.validate_luau(source, lua_file.name)
         issues = []
@@ -855,6 +865,48 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                             audio_copied += 1
 
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
+
+    # Overlay scripts from <output_dir>/scripts/ — these may have been
+    # hand-edited (e.g. GameBootstrap.lua rewritten during Step 4.5).
+    # Scripts on disk take precedence over freshly transpiled output.
+    scripts_dir = out_dir / "scripts"
+    if scripts_dir.is_dir():
+        meta_path = scripts_dir / "_meta.json"
+        script_meta: dict[str, dict] = {}
+        if meta_path.is_file():
+            script_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+        existing_names = {s.name for s in rbx_scripts}
+        for lua_file in sorted(
+            [*scripts_dir.glob("*.lua"), *scripts_dir.glob("*.luau")]
+        ):
+            disk_source = lua_file.read_text(encoding="utf-8")
+            meta = script_meta.get(lua_file.name, {})
+            script_name = meta.get("name", lua_file.stem)
+            script_type = meta.get("script_type", "Script")
+            original_name = lua_file.stem  # name before meta rename
+
+            if script_name in existing_names:
+                # Replace: disk version wins over transpiler output
+                for i, s in enumerate(rbx_scripts):
+                    if s.name == script_name:
+                        rbx_scripts[i] = rbxl_writer.RbxScriptEntry(
+                            name=script_name,
+                            luau_source=disk_source,
+                            script_type=script_type,
+                        )
+                        break
+            else:
+                # New script (or renamed via meta). Remove the original
+                # transpiled version if it exists under the pre-rename name.
+                if original_name != script_name and original_name in existing_names:
+                    rbx_scripts = [s for s in rbx_scripts if s.name != original_name]
+                rbx_scripts.append(rbxl_writer.RbxScriptEntry(
+                    name=script_name,
+                    luau_source=disk_source,
+                    script_type=script_type,
+                ))
+
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
     # Collect ServerStorage templates if packages were generated
@@ -1054,6 +1106,7 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         creator_type=creator_type,
         mesh_texture_map=mesh_texture_map,
         unity_project_path=unity_project_path if unity_project_path.is_dir() else None,
+        asset_cache_path=out_dir / "asset_id_map.json",
         max_retries=config.RETRY_MAX_ATTEMPTS,
         base_delay=config.RETRY_BASE_DELAY,
         max_delay=config.RETRY_MAX_DELAY,
