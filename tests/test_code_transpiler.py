@@ -228,3 +228,64 @@ class TestTranspileScripts:
         result = transpile_scripts(project, use_ai=False)
         ts = result.scripts[0]
         assert "string.format" in ts.luau_source
+
+
+# ---------------------------------------------------------------------------
+# Structural C# pattern detection
+# ---------------------------------------------------------------------------
+
+from modules.code_transpiler import _analyze_csharp_patterns
+
+
+class TestAnalyzeCsharpPatterns:
+    def test_custom_inheritance_warning(self) -> None:
+        source = "public class PlayerController : Character {\n}"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("extends custom base class" in w for w in warnings)
+        assert any("Character" in w for w in warnings)
+
+    def test_unity_base_class_no_warning(self) -> None:
+        source = "public class Player : MonoBehaviour {\n}"
+        warnings = _analyze_csharp_patterns(source)
+        assert not any("extends custom base class" in w for w in warnings)
+
+    def test_interface_not_flagged(self) -> None:
+        source = "public class Player : MonoBehaviour, IDisposable {\n}"
+        warnings = _analyze_csharp_patterns(source)
+        assert not any("extends custom base class" in w for w in warnings)
+
+    def test_linq_detection(self) -> None:
+        source = "var enemies = players.Where(p => p.isEnemy).ToList();"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("LINQ" in w for w in warnings)
+
+    def test_no_linq_no_warning(self) -> None:
+        source = "var x = GetComponent<Rigidbody>();"
+        warnings = _analyze_csharp_patterns(source)
+        assert not any("LINQ" in w for w in warnings)
+
+    def test_network_attributes(self) -> None:
+        source = "[Command]\nvoid CmdFire() { }\n[ClientRpc]\nvoid RpcDamage() { }"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("Networking" in w for w in warnings)
+
+    def test_complex_generics(self) -> None:
+        source = "Dictionary<string, List<Vector3>> waypoints;"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("generic" in w.lower() for w in warnings)
+
+    def test_async_task(self) -> None:
+        source = "async Task LoadLevel() { await Task.Delay(1000); }"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("async" in w.lower() for w in warnings)
+
+    def test_clean_script_no_warnings(self) -> None:
+        source = (
+            "public class Spinner : MonoBehaviour {\n"
+            "    void Update() {\n"
+            "        transform.Rotate(0, 1, 0);\n"
+            "    }\n"
+            "}\n"
+        )
+        warnings = _analyze_csharp_patterns(source)
+        assert warnings == []

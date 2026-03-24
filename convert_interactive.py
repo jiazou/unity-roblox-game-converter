@@ -49,6 +49,7 @@ from modules import (
     ui_translator,
 )
 from modules.conversion_helpers import (
+    ComponentWarning as _ComponentWarning,
     resolve_prefab_instances as _resolve_prefab_instances,
     extract_serialized_field_refs as _extract_serialized_field_refs,
     generate_prefab_packages as _generate_prefab_packages,
@@ -813,7 +814,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         ]
 
     # Build parts from scene nodes
-    parts, lighting_config, camera_config, skybox_config = _scene_nodes_to_parts(
+    parts, lighting_config, camera_config, skybox_config, comp_warnings = _scene_nodes_to_parts(
         parsed_scenes,
         guid_to_roblox_def=guid_to_roblox_def,
         guid_to_companion_scripts=guid_to_companion,
@@ -1012,6 +1013,10 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "parts_written": write_result.parts_written,
         "scripts_written": write_result.scripts_written,
         "prefab_instances_resolved": resolved_count,
+        "component_warnings": [
+            {"game_object": w.game_object, "component_type": w.component_type, "suggestion": w.suggestion}
+            for w in comp_warnings
+        ],
     }
     state["errors"].extend(errors)
     if "assemble" not in state["completed_phases"]:
@@ -1022,6 +1027,11 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
     if rbxl_path.exists():
         rbxl_size_mb = round(rbxl_path.stat().st_size / 1_048_576, 2)
 
+    # Summarise dropped components for the user
+    comp_warning_summary: dict[str, int] = {}
+    for w in comp_warnings:
+        comp_warning_summary[w.component_type] = comp_warning_summary.get(w.component_type, 0) + 1
+
     _emit({
         "phase": "assemble",
         "success": len(errors) == 0,
@@ -1031,6 +1041,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "scripts_written": write_result.scripts_written,
         "audio_files_staged": audio_copied,
         "warnings": write_result.warnings,
+        "dropped_components": comp_warning_summary,
         "decimation": decimation_info,
         "ui_translation": ui_info,
         "packages": package_info,
@@ -1217,10 +1228,22 @@ def report(unity_project_path: str, output_dir: str, verbose: bool) -> None:
     resolved_count = assembly.get("prefab_instances_resolved", 0)
     duration = time.monotonic() - t_start
 
+    # Restore component warnings from assembly phase
+    raw_warnings = assembly.get("component_warnings", [])
+    comp_warnings = [
+        _ComponentWarning(
+            game_object=w["game_object"],
+            component_type=w["component_type"],
+            suggestion=w["suggestion"],
+        )
+        for w in raw_warnings
+    ]
+
     rpt = _build_report(
         unity_path, out_dir, manifest, mat_result, parsed_scenes,
         prefabs, transpilation, write_result, decimation_result,
         resolved_count, duration, errors,
+        component_warnings=comp_warnings,
     )
 
     report_path = out_dir / config.REPORT_FILENAME

@@ -9,6 +9,7 @@ testable.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,80 @@ from modules import (
     scene_parser,
     rbxl_writer,
 )
+
+
+# ---------------------------------------------------------------------------
+# Component conversion tracking
+# ---------------------------------------------------------------------------
+
+# Components that node_to_part actually converts to Roblox equivalents
+_CONVERTED_COMPONENTS: frozenset[str] = frozenset({
+    "Transform", "RectTransform",
+    "MeshFilter", "MeshRenderer", "SkinnedMeshRenderer",
+    "BoxCollider", "SphereCollider", "CapsuleCollider", "MeshCollider",
+    "Rigidbody",
+    "Light",
+    "AudioSource",
+    "ParticleSystem",
+    "Camera",
+    "MonoBehaviour",
+    "Canvas", "CanvasRenderer", "CanvasGroup",
+})
+
+# Suggestions for unconverted components — what users can do about them
+_COMPONENT_SUGGESTIONS: dict[str, str] = {
+    "Animator": "Port animation state machine manually via Roblox AnimationController",
+    "CharacterController": "Replace with Humanoid or custom character controller in Luau",
+    "NavMeshAgent": "Use PathfindingService for AI navigation in Roblox",
+    "NavMeshObstacle": "Use PathfindingService modifiers for obstacles",
+    "Terrain": "Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()",
+    "TerrainCollider": "Roblox Terrain has built-in collision",
+    "LineRenderer": "Use Beam instances or draw lines with Parts",
+    "TrailRenderer": "Use Trail instances attached to Parts",
+    "SpriteRenderer": "Use Decal on a Part or ImageLabel in a SurfaceGui",
+    "Rigidbody2D": "Roblox has no 2D physics — rewrite as 3D or use custom constraints",
+    "BoxCollider2D": "Replace with 3D BoxCollider or use custom 2D collision",
+    "CircleCollider2D": "Replace with 3D SphereCollider or use custom 2D collision",
+    "PolygonCollider2D": "Replace with 3D MeshCollider or use custom 2D collision",
+    "HingeJoint": "Use HingeConstraint in Roblox",
+    "FixedJoint": "Use WeldConstraint or RigidConstraint in Roblox",
+    "SpringJoint": "Use SpringConstraint in Roblox",
+    "ConfigurableJoint": "Decompose into Roblox constraint primitives (Hinge + Spring + etc.)",
+    "Cloth": "No cloth simulation in Roblox — use animated MeshParts or skip",
+    "WindZone": "No wind simulation in Roblox — fake with particle drift or skip",
+    "ReflectionProbe": "Roblox handles reflections automatically via Lighting",
+    "LightProbeGroup": "Roblox handles ambient lighting via Lighting service",
+    "AudioListener": "Roblox positions audio listener at the camera automatically",
+    "VideoPlayer": "Use VideoFrame in Roblox SurfaceGui",
+    "PlayableDirector": "Port Timeline sequences as scripted cutscenes in Luau",
+    "LODGroup": "Roblox has no LOD system — use the highest-detail mesh",
+}
+
+
+@dataclass
+class ComponentWarning:
+    """A warning about a component that was recognized but not converted."""
+    game_object: str
+    component_type: str
+    suggestion: str
+
+
+def _collect_component_warnings(
+    node: scene_parser.SceneNode,
+    warnings: list[ComponentWarning],
+) -> None:
+    """Check a node's components and record warnings for unconverted ones."""
+    for comp in node.components:
+        if comp.component_type not in _CONVERTED_COMPONENTS:
+            suggestion = _COMPONENT_SUGGESTIONS.get(
+                comp.component_type,
+                "No automatic conversion available — port manually",
+            )
+            warnings.append(ComponentWarning(
+                game_object=node.name,
+                component_type=comp.component_type,
+                suggestion=suggestion,
+            ))
 
 
 def _parse_color3(color_data: Any, normalize_255: bool = False) -> tuple[float, float, float]:
@@ -329,8 +404,12 @@ def node_to_part(
     guid_index: guid_resolver.GuidIndex | None,
     mesh_path_remap: dict[str, str] | None = None,
     directional_lights: list[dict] | None = None,
+    component_warnings: list[ComponentWarning] | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a single SceneNode (and its children recursively) to an RbxPartEntry."""
+    if component_warnings is not None:
+        _collect_component_warnings(node, component_warnings)
+
     base_size = (1.0, 1.0, 1.0)
     scaled_size = (
         base_size[0] * abs(node.scale[0]),
@@ -395,7 +474,7 @@ def node_to_part(
             continue
         part.children.append(node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
-            mesh_path_remap, directional_lights,
+            mesh_path_remap, directional_lights, component_warnings,
         ))
 
     return part
@@ -1059,6 +1138,7 @@ def scene_nodes_to_parts(
     rbxl_writer.RbxLightingConfig | None,
     rbxl_writer.RbxCameraConfig | None,
     rbxl_writer.RbxSkyboxConfig | None,
+    list[ComponentWarning],
 ]:
     """Convert parsed Unity scene nodes into RbxPartEntry objects.
 
@@ -1067,10 +1147,12 @@ def scene_nodes_to_parts(
     separately by ui_translator and lighting/camera extraction.
 
     Returns:
-        Tuple of (parts, lighting_config, camera_config, skybox_config).
+        Tuple of (parts, lighting_config, camera_config, skybox_config,
+        component_warnings).
     """
     parts: list[rbxl_writer.RbxPartEntry] = []
     directional_lights: list[dict] = []
+    component_warnings: list[ComponentWarning] = []
     for parsed in parsed_scenes:
         for node in parsed.roots:
             if _is_ui_subtree(node):
@@ -1084,7 +1166,7 @@ def scene_nodes_to_parts(
                 continue
             parts.append(node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
-                mesh_path_remap, directional_lights,
+                mesh_path_remap, directional_lights, component_warnings,
             ))
 
     lighting = directional_lights_to_lighting(directional_lights)
@@ -1104,7 +1186,39 @@ def scene_nodes_to_parts(
     camera = _extract_camera_from_scenes(parsed_scenes, all_nodes)
     skybox = _extract_skybox_from_scenes(parsed_scenes, guid_index)
 
-    return parts, lighting, camera, skybox
+    return parts, lighting, camera, skybox, component_warnings
+
+
+def populate_component_report(
+    warnings: list[ComponentWarning],
+    report: report_generator.ConversionReport,
+    total_components: int | None = None,
+) -> None:
+    """Populate a ConversionReport's component summary from collected warnings."""
+    dropped_by_type: dict[str, int] = {}
+    for w in warnings:
+        dropped_by_type[w.component_type] = dropped_by_type.get(w.component_type, 0) + 1
+
+    dropped = len(warnings)
+    report.components.dropped = dropped
+    report.components.dropped_by_type = dropped_by_type
+    report.components.dropped_details = [
+        {"game_object": w.game_object, "component": w.component_type, "suggestion": w.suggestion}
+        for w in warnings
+    ]
+    if total_components is not None:
+        report.components.total_encountered = total_components
+        report.components.converted = total_components - dropped
+    else:
+        report.components.converted = 0
+        report.components.total_encountered = dropped
+
+    # Also add top-level warnings for the summary
+    for ctype, count in sorted(dropped_by_type.items(), key=lambda x: -x[1]):
+        suggestion = _COMPONENT_SUGGESTIONS.get(ctype, "Port manually")
+        report.warnings.append(
+            f"{ctype}: {count} instance(s) not converted — {suggestion}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1395,6 +1509,7 @@ def build_report(
     duration: float,
     errors: list[str],
     package_result: rbxl_writer.RbxPackageResult | None = None,
+    component_warnings: list[ComponentWarning] | None = None,
 ) -> report_generator.ConversionReport:
     """Populate a ConversionReport from pipeline outputs."""
     import config
@@ -1453,5 +1568,14 @@ def build_report(
             p.prefab_name for p in package_result.packages
         ]
         rpt.output.packages.packages_dir = str(output_dir / config.PACKAGES_SUBDIR)
+
+    if component_warnings:
+        # Count total components across all scenes for the converted/dropped ratio
+        total_comps = sum(
+            len(n.components)
+            for s in scenes
+            for n in s.all_nodes.values()
+        )
+        populate_component_report(component_warnings, rpt, total_comps)
 
     return rpt
