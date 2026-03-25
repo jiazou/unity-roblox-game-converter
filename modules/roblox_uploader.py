@@ -115,6 +115,23 @@ def _validate_api_key(api_key: str) -> bool:
     return api_key.strip() not in placeholders
 
 
+def _extract_owner_id(api_key: str) -> int | None:
+    """Extract ownerId from the embedded JWT in a Roblox Open Cloud API key."""
+    import base64
+    decoded = base64.b64decode(api_key[20:] + "==").decode("utf-8", errors="ignore")
+    # Find the JWT (three dot-separated base64 segments)
+    parts = [p for p in decoded.split(".") if len(p) > 20]
+    for part in parts:
+        try:
+            padded = part + "=" * (4 - len(part) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded))
+            if "ownerId" in payload:
+                return int(payload["ownerId"])
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
 def _describe_upload_error(exc: Exception) -> str:
     """Return a human-readable message that preserves HTTP status details."""
     import urllib.error
@@ -942,6 +959,12 @@ def upload_to_roblox(
     if not rbxl_path.exists():
         result.errors.append(f"rbxl file not found: {rbxl_path}")
         return result
+
+    # ── Auto-extract creator_id from API key JWT if not provided ──────
+    if creator_id is None:
+        creator_id = _extract_owner_id(api_key)
+        if creator_id:
+            logger.info("Auto-detected creator_id=%d from API key", creator_id)
 
     # ── Load asset cache from previous runs ───────────────────────────
     asset_cache: dict[str, dict] = {}

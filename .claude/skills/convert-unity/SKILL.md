@@ -132,6 +132,20 @@ For each major game system, write a **separate Luau module** that mirrors its Un
 - Component-to-component references → set during bootstrap, same as Unity's Inspector drag-and-drop
 - **Never merge two Unity classes into one Luau module** — if they were separate in Unity, they stay separate
 
+**Unity→Luau semantic gaps to catch during transpilation:**
+
+The AI transpiler translates C# syntax but can miss platform-level semantic differences. These are the known categories where 1:1 translation produces broken Luau:
+
+1. **MonoBehaviour lifecycle vs explicit construction.** Unity components are never `new()`-ed in code — they're attached to GameObjects and their fields are populated by the Inspector (serialized scene references). The transpiler converts these to `ClassName.new(config)` constructors, but callers may not know what config to pass (that info is in `.unity` YAML, not C# source). *Decision:* All constructors must start with `config = config or {}` and default every field. The bootstrap wires references after construction, same as Unity's Inspector.
+
+2. **C# properties → Luau has no `property()`.** C# `get`/`set` accessors have no Luau equivalent. If a property is trivial (just wraps a backing field), use a direct field. If it has side effects, use getter/setter methods. Never emit `property()` calls.
+
+3. **Binary serialization → table fields.** Unity often persists data via `BinaryWriter`/`BinaryReader`. Roblox uses DataStore (JSON via Lua tables). Replace `writer.Write(x)` / `reader.Read()` with `data.field = x` / `x = data.field`.
+
+4. **Cross-module exports.** When a module returns `{ ClassA = ClassA, EnumB = EnumB }`, access the export directly: `Module.EnumB`, not `Module.ClassA.EnumB`. The export table is flat — classes don't own sibling exports.
+
+5. **`GetComponent<T>()` on cloned objects.** Unity's `GetComponent` finds a component on a GameObject. In Roblox, cloned Instances don't have "components" — the object IS the thing. Adapt to Roblox's Instance hierarchy (`FindFirstChild`, `:IsA()`, or direct construction).
+
 **Timing model preservation:**
 - If Unity uses `trackManager.worldDistance` to measure jump/slide progress, the Roblox port must too
 - If Unity scales durations by `(1 + speedRatio)`, the Roblox port must too
@@ -140,11 +154,12 @@ For each major game system, write a **separate Luau module** that mirrors its Un
 #### Phase C: Bootstrap Wiring
 
 Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
-- Creates instances of each module
-- Wires cross-references (same as Unity's Inspector references)
+- Creates instances of each module — **always pass `{}` even if no config is needed** (constructors expect a table, not nil)
+- Wires cross-references **after** construction (same as Unity's Inspector references — components are created first, then linked)
 - Registers states with the StateMachine bridge
 - Starts the state machine with the initial state
 - Does NOT contain game logic — it's pure wiring
+- To determine what to wire: read the `.unity` scene file for serialized field references (e.g., `characterController: {fileID: XXXX}` tells you TrackManager needs a reference to CharacterInputController)
 
 **Implement the platform divergence decisions from Phase A, item 4.** For each pillar where the Unity game diverges from Roblox's defaults, the bootstrap must apply the appropriate override. Apply the scale conversion decision from Phase A, item 5.
 
