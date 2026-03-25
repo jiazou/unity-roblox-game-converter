@@ -97,6 +97,7 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
    | **Camera** | No camera behavior until you write a script or attach a component | Third-person follow camera that orbits the character | The game uses fixed camera, rail camera, top-down, isometric, or any non-orbit view |
    | **Input → Movement** | No movement until you write `Update()` + `transform.Translate()` or a CharacterController | WASD/mobile stick moves the character, Space jumps, Humanoid handles it all | The game uses custom movement (auto-run, on-rails, grid-based, turn-based, vehicle, etc.) |
    | **Physics** | Rigidbody is opt-in, gravity/collision configured per-object | All parts have physics, character has Humanoid physics with WalkSpeed/JumpPower | The game positions objects directly via CFrame/Transform rather than through physics forces |
+   | **Asset loading** | Unity loads meshes/textures from the Asset pipeline — once imported, they're embedded in the build and available immediately via Renderer/MeshFilter references. `Addressables.LoadAssetAsync` handles dynamic loading. | `MeshId` is **read-only at runtime** — scripts cannot set it. Meshes must be loaded via `InsertService:LoadAsset(assetId)` which returns a Model. To use the mesh, **clone** the MeshPart from the loaded Model and place the clone in the scene. You cannot create an empty MeshPart and assign its mesh later. | **Always for uploaded FBX assets.** The pipeline uploads FBX files as Model assets, then generates a MeshLoader script that loads them via InsertService at runtime. Scene MeshParts are placeholders that get **replaced** (not patched) by clones of the loaded assets. See `references/upload-patching.md` for the full pattern. |
    | **Object visibility** | In Unity, only GameObjects with a MeshRenderer, SkinnedMeshRenderer, or SpriteRenderer are visible. Everything else — script containers, empty transforms, trigger volumes, collider-only objects, disabled GameObjects, disabled renderers — is invisible by design. A Unity scene typically has far more invisible objects than visible ones. | Every Part is visible by default. There is no concept of a "renderer component" separate from the object. A Part with no mesh and no special properties still renders as a gray block. | **Always.** The pipeline sets `Transparency=1` on any object without a renderer component. This is the single most important visibility rule: **no renderer = invisible**. Additionally: trigger colliders (`isTrigger`), inactive GameObjects (`m_IsActive=0`), disabled renderers (`m_Enabled=0`), and UI subtrees (Canvas hierarchies) are all handled. If opaque gray rectangles block the view in the converted game, the root cause is almost always a non-visual Unity object that was not marked transparent. |
 
    For each pillar where the Unity game diverges from Roblox's default:
@@ -146,6 +147,25 @@ The AI transpiler translates C# syntax but can miss platform-level semantic diff
 
 5. **`GetComponent<T>()` on cloned objects.** Unity's `GetComponent` finds a component on a GameObject. In Roblox, cloned Instances don't have "components" — the object IS the thing. Adapt to Roblox's Instance hierarchy (`FindFirstChild`, `:IsA()`, or direct construction).
 
+6. **Singleton accessor functions vs properties.** In C#, `PlayerData.instance` is a static property (getter returns the singleton). The transpiler converts this to a module export `instance = getInstance` — a **function**, not a value. But call sites still emit `PlayerData.instance` (property-style access), which returns the function itself instead of calling it. All singleton accessors must be called: `Module.instance()`, not `Module.instance`. This affects every script that touches the singleton. The transpiler should either (a) emit `Module.instance()` at call sites, or (b) use a metatable `__index` so property-style access works. Until then, audit every `Module.instance` usage — if the module exports `instance = someFunction`, every access must have `()`.
+
+7. **Unity MonoBehaviour lifecycle → Luau explicit calls.** Unity implicitly calls lifecycle methods on every MonoBehaviour in a specific order. Roblox has no equivalent — all lifecycle calls must be explicit in the bootstrap or via RunService connections. The transpiler preserves these methods but the bootstrap must actually call them. **Never invent method names** (e.g., don't call `:Start()` if the transpiled module only has `:OnEnable()`). Always verify the method exists in the transpiled output before calling it.
+
+   | Unity lifecycle method | When Unity calls it | Roblox equivalent |
+   |---|---|---|
+   | `Awake()` | Once, when the object is created (before Start) | Call in constructor `.new()`, or immediately after construction |
+   | `OnEnable()` | When the object becomes active | Call explicitly after construction + wiring. Often the real "start" for managers |
+   | `Start()` | Once, on the first frame the object is active | Call explicitly after `OnEnable()`, or merge into `OnEnable()` if both exist |
+   | `Update()` | Every frame | `RunService.Heartbeat:Connect(function(dt) obj:Update(dt) end)` |
+   | `FixedUpdate()` | Every physics step | `RunService.Stepped:Connect(function(dt) obj:FixedUpdate(dt) end)` |
+   | `LateUpdate()` | Every frame, after all Update calls | `RunService.Heartbeat:Connect()` with a lower priority or after other connections |
+   | `OnDisable()` | When the object is deactivated | Call explicitly during cleanup / state exit |
+   | `OnDestroy()` | When the object is destroyed | Call explicitly, or use `Instance.Destroying` signal |
+   | `OnTriggerEnter/Exit()` | Physics trigger events | `part.Touched` / `part.TouchEnded` signals |
+   | `OnCollisionEnter/Exit()` | Physics collision events | `part.Touched` / `part.TouchEnded` signals |
+
+   **Key pitfall:** The transpiler may rename or merge lifecycle methods inconsistently. Some modules keep `OnEnable`, others rename it to `Start`, others have both. The bootstrap must read each module's actual method names — never assume a standard name exists.
+
 **Timing model preservation:**
 - If Unity uses `trackManager.worldDistance` to measure jump/slide progress, the Roblox port must too
 - If Unity scales durations by `(1 + speedRatio)`, the Roblox port must too
@@ -160,6 +180,19 @@ Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
 - Starts the state machine with the initial state
 - Does NOT contain game logic — it's pure wiring
 - To determine what to wire: read the `.unity` scene file for serialized field references (e.g., `characterController: {fileID: XXXX}` tells you TrackManager needs a reference to CharacterInputController)
+
+**Module export unwrapping — CRITICAL.** The transpiler is inconsistent about how modules export their classes. Some return the class directly (`return MyClass`), others wrap it in a table (`return { MyClass = MyClass, SomeEnum = SomeEnum }`). The bootstrap **must not assume** which style a module uses. Before writing `require()` calls, inspect each module's `return` statement. Use a defensive unwrap helper:
+
+```lua
+local function unwrap(mod, name)
+    if type(mod) == "table" and mod[name] then return mod[name] end
+    return mod
+end
+
+local SomeModule = unwrap(require(ReplicatedStorage:WaitForChild("SomeModule")), "SomeModule")
+```
+
+Why: if you write `local Foo = require(...)` and the module returns `{ Foo = Foo }`, then `Foo.new()` calls the wrapper table (which has no `.new`), producing "attempt to call a nil value". This is silent until runtime and affects every module whose return style doesn't match the bootstrap's assumption.
 
 **Implement the platform divergence decisions from Phase A, item 4.** For each pillar where the Unity game diverges from Roblox's defaults, the bootstrap must apply the appropriate override. Apply the scale conversion decision from Phase A, item 5.
 
