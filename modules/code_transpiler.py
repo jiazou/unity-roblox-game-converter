@@ -459,6 +459,23 @@ def _build_project_manifest(
 
 
 # ---------------------------------------------------------------------------
+# Post-processing: strip invalid Luau patterns
+# ---------------------------------------------------------------------------
+
+_PROPERTY_CALL = re.compile(r"^.*=\s*property\s*\(.*\)\s*$", re.MULTILINE)
+
+
+def _strip_property_calls(luau: str) -> str:
+    """Remove property() calls — Luau has no property() function.
+
+    The AI sometimes emits C#-style property descriptors like:
+        Foo.bar = property(Foo.getBar, Foo.setBar)
+    These must be stripped; callers should use direct field access instead.
+    """
+    return _PROPERTY_CALL.sub("", luau)
+
+
+# ---------------------------------------------------------------------------
 # AI transpilation (Claude via Anthropic API)
 # ---------------------------------------------------------------------------
 
@@ -493,6 +510,15 @@ def _ai_transpile(
                 "in the return table: return { Class1 = Class1, Class2 = Class2, ... }\n"
                 "- Singleton pattern (static instance) → module-level state.\n"
                 "- Unity GetComponent<T>() → explicit references passed via config/init.\n"
+                "- MonoBehaviour public/serialized fields are set by the Unity Inspector, "
+                "not by code. Constructors MUST start with `config = config or {}` and "
+                "default every field: `self.x = config.x or defaultValue`. Never assume "
+                "config fields are non-nil — the caller may wire references after construction.\n"
+                "- C# properties with get/set → use direct fields (self.fieldName). "
+                "Do NOT generate property() calls — Luau has no property() function.\n"
+                "- BinaryWriter/BinaryReader serialization → use Lua table fields. "
+                "Roblox persists data via DataStore (JSON), not binary streams. "
+                "Replace writer.Write(x)/reader.Read() with table.field = x / x = table.field.\n"
                 "- Output ONLY the Luau code for the target file, no explanations.\n\n"
                 f"=== PROJECT SOURCE ===\n{project_context}\n\n"
                 f"=== TARGET FILE TO CONVERT: {target_filename} ===\n"
@@ -505,19 +531,26 @@ def _ai_transpile(
                 f"```csharp\n{csharp}\n```"
             )
 
-        message = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        # Retry with doubled max_tokens on truncation (up to one retry)
+        current_max = max_tokens
+        for attempt in range(2):
+            message = client.messages.create(
+                model=model,
+                max_tokens=current_max,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            if message.stop_reason != "max_tokens" or attempt == 1:
+                break
+            current_max = min(current_max * 2, 65536)
+
         luau = message.content[0].text.strip()
-        # Strip markdown fences if present
         luau = re.sub(r"^```(?:lua|luau)?\n?", "", luau)
         luau = re.sub(r"\n?```$", "", luau)
+        luau = _strip_property_calls(luau)
         warnings: list[str] = []
         confidence = 0.9
         if message.stop_reason == "max_tokens":
-            warnings.append("Output truncated — max_tokens reached. Script may be incomplete.")
+            warnings.append("Output truncated after retry — script may be incomplete.")
             confidence = 0.3
         return luau, confidence, warnings
 
