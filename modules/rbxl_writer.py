@@ -752,20 +752,18 @@ def write_rbxl(
                 _make_property(mp, "string", "Name", model_name)
                 _make_part(model_item, root_part)
 
-    # StarterGui — ScreenGui elements from Unity Canvas / RectTransform UI
+    # Converted UI goes in ReplicatedStorage (not StarterGui) so it doesn't
+    # auto-display.  The game bootstrap enables specific GUIs when ready.
     ui_elements_written = 0
     if screen_guis:
-        sg_item = ET.SubElement(root, "Item", **{"class": "StarterGui"})
-        sg_props = ET.SubElement(sg_item, "Properties")
-        _make_property(sg_props, "string", "Name", "StarterGui")
-
         for gui in screen_guis:
-            screen_gui_item = ET.SubElement(sg_item, "Item", **{"class": "ScreenGui"})
+            screen_gui_item = ET.SubElement(rs_item, "Item", **{"class": "ScreenGui"})
             sgui_props = ET.SubElement(screen_gui_item, "Properties")
             _make_property(sgui_props, "string", "Name", gui.name)
             _make_property(sgui_props, "int", "DisplayOrder", str(gui.display_order))
             _make_property(sgui_props, "bool", "ResetOnSpawn",
                            str(gui.reset_on_spawn).lower())
+            _make_property(sgui_props, "bool", "Enabled", "false")
 
             for elem in gui.elements:
                 _make_ui_element(screen_gui_item, elem)
