@@ -214,6 +214,37 @@ The AI transpiler translates C# syntax but can miss platform-level semantic diff
 - If Unity scales durations by `(1 + speedRatio)`, the Roblox port must too
 - Do NOT simplify world-distance timing into time-based timing — it changes gameplay feel
 
+**Porting procedural content / runtime spawning systems:**
+
+Many Unity games generate gameplay content at runtime — endless runner segments, spawned enemies, projectile pools, procedural terrain chunks. This is the #1 system that **does not survive transpilation** because it depends on Inspector-serialized prefab references, Addressables async loading, and object pooling — none of which have Roblox equivalents. The transpiled code keeps the scoring/movement logic but the spawning methods become empty shells with nil references.
+
+**Typical Unity spawning architecture (endless runner pattern):**
+```
+Update() → SpawnNewSegment() → SpawnObstacle() → SpawnCoinAndPowerup()
+```
+- A `ThemeData` ScriptableObject holds `zones[]`, each with `prefabList[]` of track segment prefab references
+- Each segment prefab has: path waypoints, `obstaclePositions[]` (normalized t-values along the path), `possibleObstacles[]` (addressable refs to obstacle prefabs)
+- The manager maintains N segments ahead (e.g., 10), destroys segments that fall behind the player (e.g., -30 units back), and keeps the first few segments obstacle-free for a safe start
+- Obstacle types vary: static barriers spanning lanes, patrolling obstacles with PingPong movement, collectibles spawned at intervals along the segment path
+
+**Why it breaks:** Segment prefab references are Inspector-serialized AssetReferences (nil in Roblox). Prefab loading uses Unity Addressables (no equivalent). Object pooling libraries are not transpiled. The transpiled manager keeps `Update()` ticking but `SpawnNewSegment()` has zero functional spawning code.
+
+**Porting pattern (applies to any prefab-spawning system):**
+
+1. **Convert prefab templates to Models in ReplicatedStorage/Templates.** Each Unity segment/obstacle/collectible prefab becomes a named Model that can be cloned. The pipeline's assembly phase should already produce these from the prefab files.
+
+2. **Write a `SpawnNewSegment()` (or equivalent) that `:Clone()`s segment templates** and positions them ahead of the player. Use the ScriptableObject data modules (`_Data.lua`) to look up which templates belong to the current zone/theme — but resolve GUIDs to Template names first (see semantic gap #10).
+
+3. **Spawn obstacles onto segments at clone time.** Read each segment's `obstaclePositions` and `possibleObstacles` from the data, clone the obstacle template, and parent it to the segment Model at the correct position.
+
+4. **Spawn collectibles (coins, powerups) using simple Part creation** along the segment's path at fixed intervals. Unity often uses physics raycasting for precise placement — approximate with known path geometry instead.
+
+5. **Implement segment cleanup.** When a segment falls behind the player past a threshold distance, `:Destroy()` it. No need to port Unity's object pooling — Roblox's instance creation is fast enough for most games.
+
+6. **Wire into the game loop.** The spawning check (`if segmentCount < desiredCount then spawnNew()`) must run every frame via the Heartbeat connection, just like Unity's `Update()`.
+
+**Diagnostic:** If a converted game "runs" (score increments, character animates) but the world is empty — no track, no obstacles, no coins — the spawning system was not ported. Check the manager's `m_Segments` or equivalent array: if it stays empty, spawning is broken.
+
 #### Phase C: Bootstrap Wiring
 
 Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
