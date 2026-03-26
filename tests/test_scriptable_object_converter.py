@@ -96,7 +96,7 @@ class TestValueToLua:
     def test_unity_object_reference_becomes_nil(self) -> None:
         ref = {"fileID": 12345, "guid": "abcd1234", "type": 3}
         result = _value_to_lua(ref)
-        assert result == "nil -- (Unity object reference)"
+        assert result == "nil --[[(Unity object reference)]]"
 
     def test_nested_dict(self) -> None:
         data = {"inner": {"x": 1}}
