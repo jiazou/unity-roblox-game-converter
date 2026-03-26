@@ -104,7 +104,7 @@ def _value_to_lua(value: Any, indent: int = 1) -> str:
             return "{}"
         # Check if it looks like a Unity object reference (fileID/guid)
         if set(value.keys()) <= {"fileID", "guid", "type"}:
-            return "nil -- (Unity object reference)"
+            return "nil --[[(Unity object reference)]]"
         items = []
         for k, v in value.items():
             if isinstance(k, str) and k.startswith("m_") and k in _SKIP_FIELDS:

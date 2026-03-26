@@ -38,8 +38,7 @@ API_CALL_MAP: dict[str, str] = {
     "DontDestroyOnLoad": "-- DontDestroyOnLoad: parent to ReplicatedStorage to persist across places",
 
     # --- GameObject ---
-    # Note: SetActive is handled by a regex rule in code_transpiler.py
-    # that maps <var>.SetActive(<arg>) → <var>.Visible = <arg>
+    # SetActive is handled in the AI transpiler prompt → GameObjectUtil.SetActive()
     "gameObject.name": ".Name",
     "gameObject.tag": ":GetAttribute('Tag')",
     "gameObject.layer": "CollisionGroup",  # set via PhysicsService:SetPartCollisionGroup()

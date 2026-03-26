@@ -821,12 +821,14 @@ def _inject_mesh_loader(rbxl_path: Path, mesh_asset_ids: dict[str, int]) -> None
 
     loader_source = f'''\
 -- MeshLoader.lua (auto-generated)
--- Loads uploaded mesh Model assets via InsertService:LoadAsset()
--- and parents them into ServerStorage as templates for runtime use.
+-- Loads uploaded mesh FBX assets via InsertService:LoadAsset(),
+-- stores templates in ServerStorage, and applies MeshIds to
+-- matching MeshParts already placed in Workspace.
 
 local InsertService = game:GetService("InsertService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
 
 local meshAssets = {{
 {assets_table}
@@ -835,23 +837,68 @@ local meshAssets = {{
 local loaded = 0
 local failed = 0
 
+-- Strip trailing " (N)" pattern to get base mesh name for matching
+local function baseName(name)
+    return name:match("^(.-)%%s*%%(%d+%%)$") or name
+end
+
+-- Recursively find all MeshParts in a container
+local function findMeshParts(container, results)
+    results = results or {{}}
+    for _, child in ipairs(container:GetChildren()) do
+        if child:IsA("MeshPart") then
+            table.insert(results, child)
+        end
+        findMeshParts(child, results)
+    end
+    return results
+end
+
 for _, asset in ipairs(meshAssets) do
     task.spawn(function()
         local ok, model = pcall(function()
             return InsertService:LoadAsset(asset.id)
         end)
         if ok and model then
-            local child = model:GetChildren()[1]
-            if child then
-                child.Name = asset.name
-                -- Scale from centimeters to studs (Unity default FBX scale)
-                if child:IsA("Model") then
-                    pcall(function() child:ScaleTo(0.01) end)
-                elseif child:IsA("MeshPart") then
-                    child.Size = child.Size * 0.01
+            -- Find the first MeshPart in the loaded model
+            local sourceMeshPart = nil
+            for _, desc in ipairs(model:GetDescendants()) do
+                if desc:IsA("MeshPart") then
+                    sourceMeshPart = desc
+                    break
                 end
-                child.Parent = ServerStorage
             end
+
+            if sourceMeshPart then
+                -- Store template in ServerStorage for runtime spawning
+                local template = sourceMeshPart:Clone()
+                template.Name = asset.name
+                template.Parent = ServerStorage
+
+                -- Replace matching placeholder MeshParts in Workspace with loaded mesh
+                -- (MeshId is read-only at runtime, so we clone the loaded part instead)
+                local allParts = findMeshParts(Workspace)
+                for _, part in ipairs(allParts) do
+                    if baseName(part.Name) == asset.name then
+                        local replacement = sourceMeshPart:Clone()
+                        replacement.Name = part.Name
+                        replacement.CFrame = part.CFrame
+                        replacement.Anchored = true
+                        replacement.CanCollide = part.CanCollide
+                        replacement.Transparency = part.Transparency
+                        replacement.Parent = part.Parent
+                        part:Destroy()
+                    end
+                end
+            else
+                -- Fallback: store the whole model child
+                local child = model:GetChildren()[1]
+                if child then
+                    child.Name = asset.name
+                    child.Parent = ServerStorage
+                end
+            end
+
             model:Destroy()
             loaded = loaded + 1
         else

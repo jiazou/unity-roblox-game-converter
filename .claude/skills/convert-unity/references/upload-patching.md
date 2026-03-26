@@ -31,6 +31,36 @@ Roblox .rbxl XML requires Content-type properties (MeshId, TextureId, SoundId, C
 ```
 Writing the value directly as text content (`<Content name="MeshId">rbxassetid://12345</Content>`) causes Roblox Studio to ignore the value, resulting in missing textures/meshes.
 
+### Mesh Loading at Runtime (Critical Platform Constraint)
+
+**`MeshId` is read-only at runtime.** Roblox does not allow scripts to set the `MeshId` property on a MeshPart — attempting it produces `"The current thread cannot write 'MeshId' (lacking capability NotAccessible)"`. This means you **cannot** create an empty MeshPart in the .rbxl and fill in its MeshId later from a script.
+
+**How mesh assets work in Roblox:**
+- FBX files uploaded via Open Cloud become **Model assets** (not raw meshes)
+- `InsertService:LoadAsset(assetId)` returns a Model containing MeshParts with their MeshId already set
+- To get a mesh into the scene at runtime, you must **clone** the MeshPart from the loaded Model
+
+**The MeshLoader pattern:**
+1. Upload FBX files as Model assets → get asset IDs
+2. At runtime, `InsertService:LoadAsset()` each asset → extract the first MeshPart descendant
+3. Store the extracted MeshPart in ServerStorage as a template
+4. For scene placement: **clone the template and replace** placeholder Parts, copying CFrame/Name/Parent from the placeholder. Do NOT try to set MeshId on existing parts.
+
+```lua
+-- WRONG: MeshId is read-only at runtime
+part.MeshId = sourceMeshPart.MeshId  -- ERROR: NotAccessible
+
+-- RIGHT: Clone the loaded MeshPart and replace the placeholder
+local replacement = sourceMeshPart:Clone()
+replacement.Name = placeholder.Name
+replacement.CFrame = placeholder.CFrame
+replacement.Anchored = true
+replacement.Parent = placeholder.Parent
+placeholder:Destroy()
+```
+
+This applies to both scene objects (placed in Workspace at conversion time) and prefab templates (stored in ReplicatedStorage for runtime spawning). Any MeshPart that needs a visible mesh must ultimately be a clone of a MeshPart loaded via InsertService.
+
 ## Upload Patching Strategies
 
 The upload command handles everything automatically:
