@@ -891,6 +891,8 @@ local function loadOneAsset(asset)
                         replacement.Anchored = true
                         replacement.CanCollide = part.CanCollide
                         replacement.Transparency = part.Transparency
+                        replacement.Color = part.Color
+                        replacement.Size = part.Size
                         -- Copy SurfaceAppearance and other children from placeholder
                         -- (the rbxl has textures as SurfaceAppearance children,
                         --  but the InsertService-loaded mesh won't have them)
@@ -1188,7 +1190,7 @@ def upload_to_roblox(
         # Merge new uploads into the cache (type is inferred from extension)
         _TYPE_BY_EXT: dict[str, str] = {
             ".fbx": "MODEL", ".obj": "MODEL", ".dae": "MODEL",
-            ".png": "DECAL", ".jpg": "DECAL", ".jpeg": "DECAL",
+            ".png": "IMAGE", ".jpg": "IMAGE", ".jpeg": "IMAGE",
             ".ogg": "AUDIO", ".mp3": "AUDIO", ".wav": "AUDIO",
         }
         for name, aid in result.asset_ids.items():
