@@ -35,6 +35,7 @@ from modules.unity_yaml_utils import (
     CID_MESH_RENDERER as _CID_MESH_RENDERER,
     CID_MESH_FILTER as _CID_MESH_FILTER,
     CID_SKINNED_MESH_RENDERER as _CID_SKINNED_MESH_RENDERER,
+    CID_ANIMATOR as _CID_ANIMATOR,
     CID_RECT_TRANSFORM as _CID_RECT_TRANSFORM,
     CID_RENDER_SETTINGS as _CID_RENDER_SETTINGS,
     CID_PREFAB_INSTANCE as _CID_PREFAB_INSTANCE,
@@ -109,6 +110,7 @@ class ParsedScene:
     referenced_material_guids: set[str] = field(default_factory=set)
     referenced_mesh_guids: set[str] = field(default_factory=set)
     prefab_instances: list[PrefabInstanceData] = field(default_factory=list)
+    referenced_animator_controller_guids: set[str] = field(default_factory=set)
     skybox_material_guid: str | None = None  # from RenderSettings.m_SkyboxMaterial
     render_settings: dict[str, Any] = field(default_factory=dict)  # raw RenderSettings
 
@@ -276,6 +278,13 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
                 guid = _ref_guid(mat_ref)
                 if guid:
                     result.referenced_material_guids.add(guid)
+
+        # Extract Animator Controller GUID from Animator components
+        if cid == _CID_ANIMATOR:
+            ctrl_ref = body.get("m_Controller", {})
+            guid = _ref_guid(ctrl_ref)
+            if guid:
+                result.referenced_animator_controller_guids.add(guid)
 
     # ------------------------------------------------------------------
     # Pass 5: Wire parent/child hierarchy
