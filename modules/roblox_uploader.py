@@ -383,7 +383,8 @@ def _upload_asset(
     """
     Upload a file to Roblox via Open Cloud Assets API (POST /v1/assets).
 
-    Works for images (Decal), audio (Audio), and meshes (Model).
+    Works for images (Image for PBR textures, Decal for UI), audio (Audio),
+    and meshes (Model).
     """
     import urllib.request
 
@@ -753,7 +754,8 @@ def _patch_rbxl_asset_ids(
             sa_name.text = "SurfaceAppearance"
             sa_cmap = ET.SubElement(sa_props, "Content")
             sa_cmap.set("name", "ColorMap")
-            sa_cmap.text = matched_url
+            url_el = ET.SubElement(sa_cmap, "url")
+            url_el.text = matched_url
             changed = True
 
     if changed:
@@ -854,13 +856,13 @@ local function findMeshParts(container, results)
     return results
 end
 
-for _, asset in ipairs(meshAssets) do
-    task.spawn(function()
+local function loadOneAsset(asset)
+    local MAX_RETRIES = 3
+    for attempt = 1, MAX_RETRIES do
         local ok, model = pcall(function()
             return InsertService:LoadAsset(asset.id)
         end)
         if ok and model then
-            -- Find the first MeshPart in the loaded model
             local sourceMeshPart = nil
             for _, desc in ipairs(model:GetDescendants()) do
                 if desc:IsA("MeshPart") then
@@ -870,14 +872,17 @@ for _, asset in ipairs(meshAssets) do
             end
 
             if sourceMeshPart then
-                -- Store template in ServerStorage for runtime spawning
                 local template = sourceMeshPart:Clone()
                 template.Name = asset.name
                 template.Parent = ServerStorage
 
-                -- Replace matching placeholder MeshParts in Workspace with loaded mesh
+                -- Replace matching placeholder MeshParts everywhere: Workspace (scene objects)
+                -- and ReplicatedStorage (prefab templates used for runtime spawning)
                 -- (MeshId is read-only at runtime, so we clone the loaded part instead)
                 local allParts = findMeshParts(Workspace)
+                for _, p in ipairs(findMeshParts(ReplicatedStorage)) do
+                    table.insert(allParts, p)
+                end
                 for _, part in ipairs(allParts) do
                     if baseName(part.Name) == asset.name then
                         local replacement = sourceMeshPart:Clone()
@@ -886,12 +891,17 @@ for _, asset in ipairs(meshAssets) do
                         replacement.Anchored = true
                         replacement.CanCollide = part.CanCollide
                         replacement.Transparency = part.Transparency
+                        -- Copy SurfaceAppearance and other children from placeholder
+                        -- (the rbxl has textures as SurfaceAppearance children,
+                        --  but the InsertService-loaded mesh won't have them)
+                        for _, child in ipairs(part:GetChildren()) do
+                            child.Parent = replacement
+                        end
                         replacement.Parent = part.Parent
                         part:Destroy()
                     end
                 end
             else
-                -- Fallback: store the whole model child
                 local child = model:GetChildren()[1]
                 if child then
                     child.Name = asset.name
@@ -901,14 +911,38 @@ for _, asset in ipairs(meshAssets) do
 
             model:Destroy()
             loaded = loaded + 1
+            return true
         else
-            warn("[MeshLoader] Failed to load " .. asset.name .. ": " .. tostring(model))
-            failed = failed + 1
+            if attempt < MAX_RETRIES then
+                task.wait(1 * attempt)
+            else
+                warn("[MeshLoader] Failed to load " .. asset.name .. ": " .. tostring(model))
+                failed = failed + 1
+            end
         end
-    end)
+    end
+    return false
 end
 
--- Wait for all loads to complete
+-- Load in batches to avoid overwhelming InsertService
+local BATCH_SIZE = 10
+for i = 1, #meshAssets, BATCH_SIZE do
+    local batchEnd = math.min(i + BATCH_SIZE - 1, #meshAssets)
+    for j = i, batchEnd do
+        task.spawn(function()
+            loadOneAsset(meshAssets[j])
+        end)
+    end
+    -- Wait for this batch to finish before starting the next
+    local batchCount = batchEnd - i + 1
+    local prevTotal = loaded + failed - batchCount
+    while (loaded + failed) < (i - 1 + batchCount) do
+        task.wait(0.1)
+    end
+    task.wait(0.2)
+end
+
+-- Wait for any stragglers
 while loaded + failed < #meshAssets do
     task.wait(0.1)
 end
@@ -1083,7 +1117,7 @@ def upload_to_roblox(
                 continue
             try:
                 resp = _upload_asset(
-                    img_path, api_key, asset_type="Decal",
+                    img_path, api_key, asset_type="Image",
                     display_name=img_path.stem,
                     creator_id=creator_id,
                     creator_type=creator_type,
