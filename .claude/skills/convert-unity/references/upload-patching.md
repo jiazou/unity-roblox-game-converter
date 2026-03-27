@@ -6,6 +6,7 @@ The assembly phase:
 - Converts scene nodes to Roblox Parts/MeshParts
 - Generates prefab packages and embeds them in ReplicatedStorage/Templates (enabled by default). This is critical for runtime-driven games where environment content (tracks, obstacles, pickups) is spawned by code rather than placed in the scene. Without this, only the scene's static objects (UI, camera, sky) would be included.
 - Builds a `mesh_texture_map` linking mesh IDs to texture filenames for the upload patcher
+- **Vertex-color fallback**: For MeshParts with no texture and no material color, extracts the average vertex color from the FBX binary and sets `Color3`. Many stylized Unity assets (roads, buildings, sky, poles) use per-vertex colors instead of textures. Roblox ignores vertex colors, so this flat-color approximation prevents them from rendering as default gray. Implemented in `conversion_helpers.py:extract_fbx_dominant_color()`.
 
 ### Local-to-World Transform Computation (Critical)
 

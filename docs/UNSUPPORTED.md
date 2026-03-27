@@ -271,9 +271,16 @@ data. There is no property to enable vertex color multiplication.
 - Multiplies rasterised color map into albedo texture
 - Batch processing API for all meshes in a project
 
-**Remaining limitation**: FBX format is not natively supported by trimesh. Meshes in
-FBX format need to be converted to OBJ/GLB first, or processed through a separate
-FBX parsing library (pyassimp, Blender Python API) for vertex color extraction.
+**FBX dominant-color fallback** (`conversion_helpers.py:extract_fbx_dominant_color()`):
+For FBX meshes that have vertex colors but no associated texture, the pipeline extracts
+the average vertex color directly from the FBX binary (`LayerElementColor` section) and
+sets `BasePart.Color3` to that color. This is a flat-color approximation (one color
+instead of per-vertex variation), but it's dramatically better than default gray for
+environment meshes like roads, buildings, sky backdrops, and street furniture.
+
+**Remaining limitation**: Full per-vertex color baking (trimesh rasterization) does not
+support FBX format natively. FBX meshes get the dominant-color fallback; OBJ/PLY/GLB
+meshes get full UV-mapped vertex color baking via `vertex_color_baker.py`.
 
 #### Multi-Material Meshes
 

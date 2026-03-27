@@ -9,6 +9,8 @@ testable.
 
 from __future__ import annotations
 
+import struct
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -439,6 +441,102 @@ def _compute_world_transform(
     return world_pos, world_rot
 
 
+_fbx_color_cache: dict[str, tuple[float, float, float] | None] = {}
+
+
+def extract_fbx_dominant_color(
+    fbx_path: str,
+) -> tuple[float, float, float] | None:
+    """Extract the average vertex color from an FBX file.
+
+    Many Unity assets (roads, buildings, sky backdrops) use vertex colors
+    instead of textures.  Roblox MeshParts ignore vertex colors, so the
+    converter sets Color3 to the dominant vertex color as an approximation.
+
+    Returns an (R, G, B) tuple in 0-1 range, or None if no vertex colors.
+    """
+    if fbx_path in _fbx_color_cache:
+        return _fbx_color_cache[fbx_path]
+
+    result = _parse_fbx_vertex_colors(fbx_path)
+    _fbx_color_cache[fbx_path] = result
+    return result
+
+
+def _parse_fbx_vertex_colors(fbx_path: str) -> tuple[float, float, float] | None:
+    """Low-level FBX binary parser for LayerElementColor data."""
+    try:
+        with open(fbx_path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+
+    if b"LayerElementColor" not in data:
+        return None
+
+    # Collect vertex colors from all LayerElementColor sections and average.
+    all_r, all_g, all_b, total = 0.0, 0.0, 0.0, 0
+
+    idx = 0
+    while True:
+        idx = data.find(b"LayerElementColor", idx)
+        if idx == -1:
+            break
+        search_end = min(idx + 2000, len(data))
+
+        # Try double arrays ('d'), then float arrays ('f')
+        for dtype, fmt, stride in [(b"d", "<dddd", 32), (b"f", "<ffff", 16)]:
+            pos = idx
+            while pos < search_end:
+                if data[pos : pos + 1] == dtype:
+                    try:
+                        count = struct.unpack("<I", data[pos + 1 : pos + 5])[0]
+                        encoding = struct.unpack("<I", data[pos + 5 : pos + 9])[0]
+                        comp_len = struct.unpack("<I", data[pos + 9 : pos + 13])[0]
+                    except struct.error:
+                        pos += 1
+                        continue
+
+                    if not (4 <= count <= 500_000 and encoding in (0, 1) and comp_len > 0):
+                        pos += 1
+                        continue
+
+                    raw: bytes | None = None
+                    if encoding == 1:
+                        try:
+                            raw = zlib.decompress(data[pos + 13 : pos + 13 + comp_len])
+                        except zlib.error:
+                            pass
+                    elif encoding == 0:
+                        raw = data[pos + 13 : pos + 13 + count * (stride // 4)]
+
+                    if raw is not None and len(raw) == count * (stride // 4):
+                        num_verts = count // 4
+                        sr = sg = sb = 0.0
+                        for i in range(num_verts):
+                            r, g, b, _a = struct.unpack_from(fmt, raw, i * stride)
+                            sr += r
+                            sg += g
+                            sb += b
+                        all_r += sr
+                        all_g += sg
+                        all_b += sb
+                        total += num_verts
+                        break  # found for this LayerElementColor
+                    pos += 1
+                    continue
+                pos += 1
+            else:
+                continue
+            break  # found with this dtype
+
+        idx += 1
+
+    if total == 0:
+        return None
+    return (all_r / total, all_g / total, all_b / total)
+
+
 def node_to_part(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
@@ -495,6 +593,13 @@ def node_to_part(
     convert_audio_components(part, node.name, node.components, guid_index)
     convert_particle_components(part, node.name, node.components)
     apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
+
+    # Vertex-color fallback: Roblox ignores FBX vertex colors, so approximate
+    # by setting Color3 to the mesh's average vertex color when no texture exists.
+    if part.mesh_id and not part.surface_appearance and not part.color3:
+        vc = extract_fbx_dominant_color(part.mesh_id)
+        if vc:
+            part.color3 = vc
 
     # No renderer = invisible (Unity default; Roblox needs explicit Transparency=1)
     comp_types = {c.component_type for c in node.components}

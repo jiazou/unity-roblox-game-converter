@@ -543,3 +543,61 @@ class TestPatchWithSurfaceAppearance:
         for elem in tree.iter("Content"):
             if elem.get("name") == "SoundId":
                 assert elem.text == "rbxassetid://55555"
+
+
+# ---------------------------------------------------------------------------
+# Vertex color extraction from FBX files
+# ---------------------------------------------------------------------------
+
+from modules.conversion_helpers import extract_fbx_dominant_color
+
+
+class TestExtractFbxDominantColor:
+    """Vertex color extraction for FBX files without textures."""
+
+    def test_returns_none_for_nonexistent_file(self) -> None:
+        assert extract_fbx_dominant_color("/nonexistent/file.fbx") is None
+
+    def test_returns_none_for_file_without_vertex_colors(self, tmp_path: Path) -> None:
+        fbx = tmp_path / "no_colors.fbx"
+        fbx.write_bytes(b"Kaydara FBX Binary  \x00some data without vertex colors")
+        assert extract_fbx_dominant_color(str(fbx)) is None
+
+    def test_extracts_color_from_uncompressed_float_array(self, tmp_path: Path) -> None:
+        """Build a minimal FBX-like binary with LayerElementColor + float array."""
+        import struct
+
+        # 2 vertices, RGBA floats: (1, 0, 0, 1) and (0, 0, 1, 1)
+        colors = struct.pack("<ffff", 1.0, 0.0, 0.0, 1.0) + struct.pack("<ffff", 0.0, 0.0, 1.0, 1.0)
+        count = 8  # 2 vertices * 4 components
+        encoding = 0  # uncompressed
+        comp_len = len(colors)
+        # type 'f', count, encoding, comp_len, data
+        array_data = b"f" + struct.pack("<III", count, encoding, comp_len) + colors
+
+        payload = b"padding" * 10 + b"LayerElementColor" + b"\x00" * 20 + array_data
+        fbx = tmp_path / "test.fbx"
+        fbx.write_bytes(payload)
+
+        result = extract_fbx_dominant_color(str(fbx))
+        assert result is not None
+        r, g, b = result
+        assert abs(r - 0.5) < 0.01
+        assert abs(g - 0.0) < 0.01
+        assert abs(b - 0.5) < 0.01
+
+    def test_caches_results(self, tmp_path: Path) -> None:
+        """Second call returns cached result without re-reading."""
+        from modules.conversion_helpers import _fbx_color_cache
+
+        fbx = tmp_path / "cached.fbx"
+        fbx.write_bytes(b"no vertex colors here")
+        path = str(fbx)
+        _fbx_color_cache.pop(path, None)  # ensure clean
+
+        result1 = extract_fbx_dominant_color(path)
+        assert result1 is None
+        assert path in _fbx_color_cache
+
+        result2 = extract_fbx_dominant_color(path)
+        assert result2 is None
