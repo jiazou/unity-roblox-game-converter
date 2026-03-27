@@ -63,8 +63,8 @@ references, and parent-child relationships. Resolves prefab instances and applie
 
 | Gap | Severity | Notes |
 |-----|----------|-------|
-| Animator Controller (classID 91) not parsed | MEDIUM | State machines, blend trees not extracted. Manual re-animation needed. |
-| AnimationClip (classID 74) not extracted | MEDIUM | `.anim` files discovered but not processed |
+| Animator Controller (classID 91) not parsed | MEDIUM | State machines, blend trees not extracted. Planned: parse `.controller` YAML → config tables for `AnimatorBridge.lua` (see FUTURE_IMPROVEMENTS.md HA-2). |
+| AnimationClip (classID 74) not extracted | MEDIUM | `.anim` files discovered but not processed. Planned: extract keyframe curves via `unityparser` or `UnityPy`, generate KeyframeSequence nodes (see FUTURE_IMPROVEMENTS.md HA-2). |
 | CharacterController (classID 143) not recognized | LOW | Roblox Humanoid is fundamentally different; manual rewrite needed |
 | MeshCollider (classID 64) not converted | LOW | Complex mesh-based collision has no direct Roblox equivalent |
 
@@ -260,7 +260,7 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 
 **Resolution**: Replaced ~20 `-- comment` placeholder entries with real Roblox implementations:
 - `PlayerPrefs.*` → `DataStoreService:GetDataStore('PlayerPrefs'):SetAsync/GetAsync`
-- `Animator.SetBool/SetFloat` → `:SetAttribute`, `Animator.SetTrigger/Play` → `AnimationTrack:Play()`
+- `Animator.SetBool/SetFloat` → `:SetAttribute`, `Animator.SetTrigger/Play` → `AnimationTrack:Play()` (stub mappings — will be replaced with `animatorBridge:SetBool/SetFloat/SetTrigger/Play` once HA-2 is implemented)
 - `SceneManager.LoadScene` → `TeleportService:Teleport`
 - `[Command]` → `RemoteEvent:FireServer`, `[ClientRpc]` → `RemoteEvent:FireAllClients`, `[SyncVar]` → `:SetAttribute`
 - `AddComponent` → `Instance.new`, `Mathf.Lerp` → `math.lerp`
@@ -550,7 +550,7 @@ Features not yet implemented, tracked for future work:
 
 | Feature | Priority | Notes |
 |---------|----------|-------|
-| Animation system (Animator/AnimationClip) | P1 | Requires bone retargeting (Unity Humanoid → Roblox R15/R6). Manual re-animation recommended. |
+| Animation system (Animator/AnimationClip) | P1 | Strategy A planned: embedded state machine generation. Parse `.anim`/`.controller` → Luau config tables + `AnimatorBridge.lua` runtime. Bone retargeting via static Unity Humanoid → R15 lookup table. Implementation order: simple transitions → 1D blend trees → KeyframeSequence export → advanced features. See FUTURE_IMPROVEMENTS.md HA-2 for full plan. |
 | Multi-material mesh splitting | P1 | Parse FBX sub-meshes, split geometry at material boundaries |
 | Terrain splat map → MaterialVariant | P2 | Create MaterialVariants per splat layer, paint voxels from splat weights |
 | Custom Shader Graph (.shadergraph) parsing | P2 | Extract exposed properties and node connections |
