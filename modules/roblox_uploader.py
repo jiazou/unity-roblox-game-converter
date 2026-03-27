@@ -691,7 +691,8 @@ def _patch_rbxl_asset_ids(
             if p.get("name") == "Name":
                 part_name = p.text or ""
             elif p.get("name") == "MeshId":
-                mesh_id = p.text or ""
+                url_child = p.find("url")
+                mesh_id = url_child.text if url_child is not None and url_child.text else (p.text or "")
 
         matched_url = None
 
@@ -848,7 +849,7 @@ local failed = 0
 
 -- Strip trailing " (N)" pattern to get base mesh name for matching
 local function baseName(name)
-    return name:match("^(.-)%%s*%%(%d+%%)$") or name
+    return name:match("^(.-)%s*%(%d+%)$") or name
 end
 
 -- Recursively find all MeshParts in a container
@@ -957,6 +958,32 @@ while loaded + failed < #meshAssets do
 end
 
 print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ReplicatedStorage/Templates")
+
+-- Set PrimaryPart on all Models in Templates so PivotTo() works when cloned
+for _, child in ipairs(Templates:GetChildren()) do
+    if child:IsA("Model") and not child.PrimaryPart then
+        local firstPart = child:FindFirstChildWhichIsA("BasePart", true)
+        if firstPart then
+            child.PrimaryPart = firstPart
+        end
+    end
+end
+
+-- Also set PrimaryPart on Models in Workspace (scene-placed prefab instances)
+local function setPrimaryParts(container)
+    for _, child in ipairs(container:GetChildren()) do
+        if child:IsA("Model") and not child.PrimaryPart then
+            local firstPart = child:FindFirstChildWhichIsA("BasePart", true)
+            if firstPart then
+                child.PrimaryPart = firstPart
+            end
+        end
+        if child:IsA("Model") or child:IsA("Folder") then
+            setPrimaryParts(child)
+        end
+    end
+end
+setPrimaryParts(Workspace)
 
 -- Signal completion so game scripts can proceed
 local done = Instance.new("BoolValue")
