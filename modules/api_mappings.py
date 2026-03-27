@@ -213,12 +213,16 @@ API_CALL_MAP: dict[str, str] = {
     "AudioSource.loop": ".Looped",
     "AudioSource.isPlaying": ".IsPlaying",
 
-    # --- Animation ---
-    "Animator.SetBool": ":SetAttribute",  # store animator params as attributes
-    "Animator.SetFloat": ":SetAttribute",  # store animator params as attributes
-    "Animator.SetTrigger": "AnimationTrack:Play()",
-    "Animator.Play": "AnimationTrack:Play()",
-    "Animation.Play": "AnimationTrack:Play()",
+    # --- Animation (driven by AnimatorBridge from auto-generated config) ---
+    "Animator.SetBool": "animatorBridge:SetBool",
+    "Animator.SetFloat": "animatorBridge:SetFloat",
+    "Animator.SetInteger": "animatorBridge:SetInt",
+    "Animator.SetTrigger": "animatorBridge:SetTrigger",
+    "Animator.GetBool": "animatorBridge:GetBool",
+    "Animator.GetFloat": "animatorBridge:GetFloat",
+    "Animator.GetInteger": "animatorBridge:GetInt",
+    "Animator.Play": "animatorBridge:Play",
+    "Animation.Play": "animatorBridge:Play",
 
     # --- Camera ---
     "Camera.main": "workspace.CurrentCamera",

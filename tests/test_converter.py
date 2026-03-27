@@ -276,7 +276,7 @@ class TestSceneNodesToParts:
         parts, _, _, _, comp_warnings = _scene_nodes_to_parts([scene])
         assert len(parts) == 1
         warning_types = {w.component_type for w in comp_warnings}
-        assert "Animator" in warning_types
+        assert "Animator" not in warning_types  # now converted via AnimatorBridge
         assert "NavMeshAgent" in warning_types
         assert "MeshRenderer" not in warning_types  # converted, not warned
 

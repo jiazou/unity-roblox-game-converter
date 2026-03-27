@@ -34,6 +34,7 @@ import click
 
 import config
 from modules import (
+    animation_converter,
     asset_extractor,
     code_transpiler,
     code_validator,
@@ -718,6 +719,34 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             confidence=1.0,
             script_type="ModuleScript",
         ))
+
+    # Animation conversion (Animator → config tables + bridge)
+    anim_result = animation_converter.convert_animations(
+        parsed_scenes, guid_index, unity_path,
+    )
+    if anim_result.animators_converted:
+        for mod_name, mod_source in anim_result.config_modules:
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path("(generated)"),
+                output_filename=f"{mod_name}.lua",
+                csharp_source="",
+                luau_source=mod_source,
+                strategy="ai",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
+        if anim_result.bridge_needed:
+            bridge_path = Path(__file__).parent / "bridge" / "AnimatorBridge.lua"
+            if bridge_path.exists():
+                transpilation.scripts.append(code_transpiler.TranspiledScript(
+                    source_path=Path("(generated)"),
+                    output_filename="AnimatorBridge.lua",
+                    csharp_source="",
+                    luau_source=bridge_path.read_text(encoding="utf-8"),
+                    strategy="ai",
+                    confidence=1.0,
+                    script_type="ModuleScript",
+                ))
 
     # Mesh decimation
     manifest = asset_extractor.AssetManifest(unity_project_path=unity_path)

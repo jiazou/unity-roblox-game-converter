@@ -41,13 +41,14 @@ _CONVERTED_COMPONENTS: frozenset[str] = frozenset({
     "AudioSource",
     "ParticleSystem",
     "Camera",
+    "Animator",
     "MonoBehaviour",
     "Canvas", "CanvasRenderer", "CanvasGroup",
 })
 
 # Suggestions for unconverted components — what users can do about them
 _COMPONENT_SUGGESTIONS: dict[str, str] = {
-    "Animator": "Port animation state machine manually via Roblox AnimationController",
+    "Animator": "Auto-converted via AnimatorBridge; review generated config for blend trees and missing clips",
     "CharacterController": "Replace with Humanoid or custom character controller in Luau",
     "NavMeshAgent": "Use PathfindingService for AI navigation in Roblox",
     "NavMeshObstacle": "Use PathfindingService modifiers for obstacles",
