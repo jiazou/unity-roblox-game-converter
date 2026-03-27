@@ -889,7 +889,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             disk_source = lua_file.read_text(encoding="utf-8")
             meta = script_meta.get(lua_file.name, {})
             script_name = meta.get("name", lua_file.stem)
-            script_type = meta.get("script_type", "Script")
+            script_type = meta.get("script_type", "ModuleScript")
             original_name = lua_file.stem  # name before meta rename
 
             if script_name in existing_names:

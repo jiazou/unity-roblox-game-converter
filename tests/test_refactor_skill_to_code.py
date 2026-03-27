@@ -487,7 +487,9 @@ class TestPatchWithSurfaceAppearance:
         assert len(sa_items) == 1
         color_map = sa_items[0].find(".//Content[@name='ColorMap']")
         assert color_map is not None
-        assert color_map.text == "rbxassetid://99999"
+        url_el = color_map.find("url")
+        assert url_el is not None
+        assert url_el.text == "rbxassetid://99999"
 
     def test_skips_if_sa_already_exists(self, tmp_path: Path) -> None:
         xml_content = textwrap.dedent("""\

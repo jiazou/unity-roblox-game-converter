@@ -432,7 +432,16 @@ def _make_particle_emitter(
     k2.set("time", "1")
     k2.set("value", f"{size:.4f}")
     k2.set("envelope", "0")
-    _make_color3(props, "Color", color)
+    # ParticleEmitter.Color is a ColorSequence, not Color3
+    cs = ET.SubElement(props, "ColorSequence", name="Color")
+    ck1 = ET.SubElement(cs, "Keypoint")
+    ck1.set("time", "0")
+    ck1.set("color", f"{color[0]:.6f} {color[1]:.6f} {color[2]:.6f} 0")
+    ck1.set("envelope", "0")
+    ck2 = ET.SubElement(cs, "Keypoint")
+    ck2.set("time", "1")
+    ck2.set("color", f"{color[0]:.6f} {color[1]:.6f} {color[2]:.6f} 0")
+    ck2.set("envelope", "0")
     if texture_path:
         _make_property(props, "Content", "Texture", f"-- TODO: upload {texture_path}")
     _make_property(props, "float", "LightEmission", f"{light_emission:.4f}")
@@ -728,7 +737,7 @@ def write_rbxl(
             scripts_written += 1
 
     # ReplicatedStorage — ModuleScripts + prefab templates (client-accessible)
-    if module_scripts or server_storage_templates:
+    if module_scripts or server_storage_templates or screen_guis:
         rs_item = ET.SubElement(root, "Item", **{"class": "ReplicatedStorage"})
         rs_props = ET.SubElement(rs_item, "Properties")
         _make_property(rs_props, "string", "Name", "ReplicatedStorage")
@@ -752,20 +761,18 @@ def write_rbxl(
                 _make_property(mp, "string", "Name", model_name)
                 _make_part(model_item, root_part)
 
-    # StarterGui — ScreenGui elements from Unity Canvas / RectTransform UI
+    # Converted UI goes in ReplicatedStorage (not StarterGui) so it doesn't
+    # auto-display.  The game bootstrap enables specific GUIs when ready.
     ui_elements_written = 0
     if screen_guis:
-        sg_item = ET.SubElement(root, "Item", **{"class": "StarterGui"})
-        sg_props = ET.SubElement(sg_item, "Properties")
-        _make_property(sg_props, "string", "Name", "StarterGui")
-
         for gui in screen_guis:
-            screen_gui_item = ET.SubElement(sg_item, "Item", **{"class": "ScreenGui"})
+            screen_gui_item = ET.SubElement(rs_item, "Item", **{"class": "ScreenGui"})
             sgui_props = ET.SubElement(screen_gui_item, "Properties")
             _make_property(sgui_props, "string", "Name", gui.name)
             _make_property(sgui_props, "int", "DisplayOrder", str(gui.display_order))
             _make_property(sgui_props, "bool", "ResetOnSpawn",
                            str(gui.reset_on_spawn).lower())
+            _make_property(sgui_props, "bool", "Enabled", "false")
 
             for elem in gui.elements:
                 _make_ui_element(screen_gui_item, elem)

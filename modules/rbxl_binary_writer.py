@@ -43,8 +43,6 @@ TYPE_REFERENT = 0x13
 TYPE_NUMBERSEQUENCE = 0x15
 TYPE_COLORSEQUENCE = 0x16
 TYPE_NUMBERRANGE = 0x17
-TYPE_CONTENT = 0x20
-
 # Map XML element tags → binary type IDs.
 _XML_TYPE_MAP: dict[str, int] = {
     "string": TYPE_STRING,
@@ -58,11 +56,15 @@ _XML_TYPE_MAP: dict[str, int] = {
     "Color3": TYPE_COLOR3,
     "BrickColor": TYPE_BRICKCOLOR,
     "token": TYPE_ENUM,
-    "Content": TYPE_CONTENT,
+    # Roblox Studio expects ContentId properties (MeshId, TextureId, ColorMap,
+    # SoundId) as type 0x01 (String), not 0x20 (Content).  Writing 0x20 causes
+    # "Unexpected format 32 (expected 1) << ContentId" on load.
+    "Content": TYPE_STRING,
     "ProtectedString": TYPE_STRING,
     "UDim2": TYPE_UDIM2,
     "NumberRange": TYPE_NUMBERRANGE,
     "NumberSequence": TYPE_NUMBERSEQUENCE,
+    "ColorSequence": TYPE_COLORSEQUENCE,
 }
 
 # ── BrickColor name → integer ──────────────────────────────────────────────
@@ -242,6 +244,23 @@ def _parse_number_sequence(el: ET.Element) -> list[tuple[float, float, float]]:
     return keypoints
 
 
+def _parse_color_sequence(el: ET.Element) -> list[tuple[float, float, float, float, int]]:
+    """Parse a ColorSequence XML element into keypoints: (time, r, g, b, envelope)."""
+    keypoints: list[tuple[float, float, float, float, int]] = []
+    for kp in el.findall("Keypoint"):
+        t = float(kp.get("time", "0"))
+        color_str = kp.get("color", "1 1 1 0")
+        parts = color_str.split()
+        r = float(parts[0]) if len(parts) > 0 else 1.0
+        g = float(parts[1]) if len(parts) > 1 else 1.0
+        b = float(parts[2]) if len(parts) > 2 else 1.0
+        e = int(float(parts[3])) if len(parts) > 3 else 0
+        keypoints.append((t, r, g, b, e))
+    if not keypoints:
+        keypoints = [(0.0, 1.0, 1.0, 1.0, 0), (1.0, 1.0, 1.0, 1.0, 0)]
+    return keypoints
+
+
 def _parse_property(el: ET.Element) -> tuple[int, object] | None:
     """Parse an XML property element into (type_id, value). Returns None for unknown types."""
     tag = el.tag
@@ -252,7 +271,11 @@ def _parse_property(el: ET.Element) -> tuple[int, object] | None:
     if tag in ("string", "ProtectedString"):
         return (TYPE_STRING, el.text or "")
     elif tag == "Content":
-        return (TYPE_CONTENT, el.text or "")
+        # Roblox XML uses <Content><url>value</url></Content> for asset refs.
+        # Fall back to el.text for legacy flat-text Content elements.
+        url_child = el.find("url")
+        value = url_child.text if url_child is not None and url_child.text else (el.text or "")
+        return (TYPE_STRING, value)
     elif tag == "bool":
         return (TYPE_BOOL, (el.text or "").lower() == "true")
     elif tag == "int":
@@ -287,6 +310,8 @@ def _parse_property(el: ET.Element) -> tuple[int, object] | None:
         return (TYPE_NUMBERRANGE, _parse_number_range(el))
     elif tag == "NumberSequence":
         return (TYPE_NUMBERSEQUENCE, _parse_number_sequence(el))
+    elif tag == "ColorSequence":
+        return (TYPE_COLORSEQUENCE, _parse_color_sequence(el))
     return None
 
 
@@ -327,7 +352,7 @@ def _default_for_type(type_id: int) -> object:
     """Return a sensible default value for a given property type."""
     defaults: dict[int, object] = {
         TYPE_STRING: "",
-        TYPE_CONTENT: "",
+
         TYPE_BOOL: False,
         TYPE_INT32: 0,
         TYPE_FLOAT: 0.0,
@@ -341,6 +366,7 @@ def _default_for_type(type_id: int) -> object:
         TYPE_UDIM2: (0.0, 0, 0.0, 0),
         TYPE_NUMBERRANGE: (0.0, 0.0),
         TYPE_NUMBERSEQUENCE: [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)],
+        TYPE_COLORSEQUENCE: [(0.0, 1.0, 1.0, 1.0, 0), (1.0, 1.0, 1.0, 1.0, 0)],
         TYPE_REFERENT: -1,
     }
     return defaults.get(type_id, "")
@@ -351,7 +377,7 @@ def _serialise_prop_values(type_id: int, values: list[object]) -> bytes:
     n = len(values)
     buf = bytearray()
 
-    if type_id == TYPE_STRING or type_id == TYPE_CONTENT:
+    if type_id == TYPE_STRING:
         for v in values:
             buf += _encode_string(str(v))
 
@@ -453,6 +479,14 @@ def _serialise_prop_values(type_id: int, values: list[object]) -> bytes:
             buf += struct.pack("<I", len(keypoints))
             for t, val, env in keypoints:
                 buf += struct.pack("<fff", t, val, env)
+
+    elif type_id == TYPE_COLORSEQUENCE:
+        # Same layout as NumberSequence but keypoints have (time, r, g, b, envelope)
+        for v in values:
+            keypoints = v
+            buf += struct.pack("<I", len(keypoints))
+            for t, r, g, b, e in keypoints:
+                buf += struct.pack("<ffffi", t, r, g, b, e)
 
     elif type_id == TYPE_REFERENT:
         refs = [int(v) for v in values]

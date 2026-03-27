@@ -1440,6 +1440,7 @@ def generate_bootstrap_script(
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -1476,6 +1477,28 @@ if CharacterInputController and CharacterInputController.new then
 end
 
 ---------------------------------------------------------------------------
+-- Phase 2b: Character setup
+-- The game uses a custom character controller, so Roblox's default
+-- movement must be overridden: anchor HumanoidRootPart to prevent
+-- physics/gravity, disable WalkSpeed/JumpPower so WASD does nothing.
+-- This mirrors Unity's model where there IS no default character —
+-- all movement comes from scripts.
+---------------------------------------------------------------------------
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+if characterController then
+\thrp.Anchored = true
+\thumanoid.WalkSpeed = 0
+\thumanoid.JumpPower = 0
+\thumanoid.JumpHeight = 0
+\tcharacterController.humanoidRootPart = hrp
+\tcharacterController.humanoid = humanoid
+\tcharacterController.character = character
+end
+
+---------------------------------------------------------------------------
 -- Phase 3: Instantiate game states (order matches Unity Inspector array)
 ---------------------------------------------------------------------------
 {instantiation_block}
@@ -1497,7 +1520,30 @@ if characterController then
 end
 
 ---------------------------------------------------------------------------
--- Phase 6: Cleanup
+-- Phase 6: Collision wiring (OnTriggerEnter / OnCollisionEnter)
+-- Unity fires OnTriggerEnter on ANY trigger contact. The transpiled
+-- CharacterInputController.OnTriggerEnter decides what to do (die,
+-- collect coin, etc). We just wire the signal — same as Unity's engine.
+---------------------------------------------------------------------------
+if characterController then
+\tfor _, bodyPart in ipairs(character:GetDescendants()) do
+\t\tif bodyPart:IsA("BasePart") then
+\t\t\tif characterController.OnTriggerEnter then
+\t\t\t\tbodyPart.Touched:Connect(function(otherPart)
+\t\t\t\t\tcharacterController:OnTriggerEnter(otherPart)
+\t\t\t\tend)
+\t\t\tend
+\t\t\tif characterController.OnTriggerExit then
+\t\t\t\tbodyPart.TouchEnded:Connect(function(otherPart)
+\t\t\t\t\tcharacterController:OnTriggerExit(otherPart)
+\t\t\t\tend)
+\t\t\tend
+\t\tend
+\tend
+end
+
+---------------------------------------------------------------------------
+-- Phase 7: Cleanup
 ---------------------------------------------------------------------------
 player.AncestryChanged:Connect(function()
 \tif gameManager then
