@@ -388,8 +388,8 @@ def _detect_primitive_shape(node: scene_parser.SceneNode) -> str | None:
                         10207: "Ball",      # Sphere
                         10206: "Cylinder",  # Cylinder
                         10208: "Cylinder",  # Capsule → Cylinder
-                        10209: "Block",     # Plane → flat Block
-                        10210: "Block",     # Quad → flat Block
+                        10209: "_Plane",    # Plane → flat effect (hidden)
+                        10210: "_Quad",     # Quad → flat effect (hidden)
                     }
                     shape = _BUILTIN_MESH_IDS.get(file_id)
                     if shape:
@@ -565,13 +565,25 @@ def node_to_part(
         anchored=True,
     )
 
-    # Detect Unity built-in primitive → Roblox shape
+    # Detect Unity built-in primitive → Roblox shape.
+    # Built-in meshes use GUID 0000000000000000e000000000000000; treat them
+    # the same as "no external mesh" since they don't resolve to an FBX file.
+    _BUILTIN_MESH_GUID = "0000000000000000e000000000000000"
+    is_builtin_mesh = node.mesh_guid == _BUILTIN_MESH_GUID
     shape = _detect_primitive_shape(node)
-    if shape and not node.mesh_guid:
-        part.shape = shape
+    if shape and (not node.mesh_guid or is_builtin_mesh):
+        if shape.startswith("_"):
+            # Quad/Plane primitives are flat effect surfaces (shadows, glows,
+            # graffiti billboards) that have no meaningful 3D presence in Roblox.
+            part.shape = "Block"
+            part.transparency = 1.0
+            part.can_collide = False
+        else:
+            part.shape = shape
 
     # Set mesh_id from the node's mesh GUID via the GUID index.
-    if node.mesh_guid and guid_index:
+    # Skip built-in primitives — they don't resolve to external FBX files.
+    if node.mesh_guid and node.mesh_guid != _BUILTIN_MESH_GUID and guid_index:
         mesh_path = guid_index.resolve(node.mesh_guid)
         if mesh_path:
             mesh_str = str(mesh_path)
@@ -603,7 +615,10 @@ def node_to_part(
 
     # No renderer = invisible (Unity default; Roblox needs explicit Transparency=1)
     comp_types = {c.component_type for c in node.components}
-    has_renderer = bool(comp_types & {"MeshRenderer", "SkinnedMeshRenderer", "SpriteRenderer"})
+    # SpriteRenderers are 2D overlays (graffiti, shadows, glows) that have no 3D mesh;
+    # they produce empty opaque blocks in Roblox unless hidden.  Only MeshRenderer and
+    # SkinnedMeshRenderer count as "real" 3D renderers.
+    has_renderer = bool(comp_types & {"MeshRenderer", "SkinnedMeshRenderer"})
     has_mesh = node.mesh_guid is not None or part.shape is not None
     if not has_renderer and not has_mesh:
         part.transparency = 1.0

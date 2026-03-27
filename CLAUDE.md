@@ -25,6 +25,13 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 - No module imports another module — all wiring happens in the orchestrators
 - State between interactive phases is stored in `<output_dir>/.convert_state.json`
 
+## Dependencies
+
+Python packages: see `requirements.txt` (`trimesh`, `Pillow`, `numpy`, `pyassimp`, etc.)
+
+System libraries:
+- **assimp** (`brew install assimp`) — Required for FBX vertex color baking. The `pyassimp` Python wrapper needs `libassimp.dylib` at `/opt/homebrew/lib/`. Without it, vertex-colored meshes (VCOL material) render as flat gray in Roblox.
+
 ## Running Tests
 
 ```bash
@@ -43,6 +50,6 @@ The `/convert-unity` skill (`.claude/skills/convert-unity.md`) provides an inter
 ## Known Limitations
 
 See `docs/UNSUPPORTED.md` for the full list. Key ones:
-- No vertex color support (Roblox platform limitation)
+- Vertex colors require baking to textures via `vertex_color_baker.py` + assimp (Roblox ignores FBX vertex colors)
 - One material per MeshPart (multi-material meshes need splitting)
 - C# → Luau transpilation requires an Anthropic API key (Claude)

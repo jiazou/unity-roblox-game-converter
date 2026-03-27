@@ -6,7 +6,9 @@ The assembly phase:
 - Converts scene nodes to Roblox Parts/MeshParts
 - Generates prefab packages and embeds them in ReplicatedStorage/Templates (enabled by default). This is critical for runtime-driven games where environment content (tracks, obstacles, pickups) is spawned by code rather than placed in the scene. Without this, only the scene's static objects (UI, camera, sky) would be included.
 - Builds a `mesh_texture_map` linking mesh IDs to texture filenames for the upload patcher
-- **Vertex-color fallback**: For MeshParts with no texture and no material color, extracts the average vertex color from the FBX binary and sets `Color3`. Many stylized Unity assets (roads, buildings, sky, poles) use per-vertex colors instead of textures. Roblox ignores vertex colors, so this flat-color approximation prevents them from rendering as default gray. Implemented in `conversion_helpers.py:extract_fbx_dominant_color()`.
+- **Vertex-color handling**: Many stylized Unity assets (roads, buildings, sky, poles) use per-vertex colors instead of textures (Unity `VCOL` material — `_MainTex: {fileID: 0}`). Roblox ignores FBX vertex colors entirely. Two approaches:
+  1. **Baking** (preferred): `vertex_color_baker.py` rasterizes per-vertex colors onto UV-mapped textures using barycentric interpolation. Requires `assimp` (`brew install assimp`) to load FBX vertex colors + UVs via `pyassimp`. The baked PNGs are uploaded as Image assets and applied via SurfaceAppearance.
+  2. **Flat-color fallback**: `conversion_helpers.py:extract_fbx_dominant_color()` extracts the average vertex color from the FBX binary and sets `Color3`. This prevents default gray but loses all per-vertex detail (lane markings, wall patterns, etc.).
 
 ### Local-to-World Transform Computation (Critical)
 
@@ -56,6 +58,10 @@ local replacement = sourceMeshPart:Clone()
 replacement.Name = placeholder.Name
 replacement.CFrame = placeholder.CFrame
 replacement.Anchored = true
+replacement.CanCollide = placeholder.CanCollide
+replacement.Transparency = placeholder.Transparency
+replacement.Color = placeholder.Color       -- preserve vertex-color fallback
+replacement.Size = placeholder.Size         -- preserve converted size
 -- Transfer children (SurfaceAppearance, etc.) from placeholder to clone
 for _, child in ipairs(placeholder:GetChildren()) do
     child.Parent = replacement
@@ -66,8 +72,9 @@ placeholder:Destroy()
 
 **Critical details:**
 - **Scan both Workspace AND ReplicatedStorage.** Scene objects live in Workspace, but prefab templates for runtime spawning live in ReplicatedStorage/Templates. If the MeshLoader only scans Workspace, all runtime-cloned content will have placeholder geometry instead of real meshes.
-- **Transfer children from placeholder to clone.** The `.rbxl` stores SurfaceAppearance (texture references) as children of placeholder MeshParts. InsertService-loaded meshes have geometry but no SurfaceAppearance. Before destroying the placeholder, reparent all its children to the replacement. Without this, meshes render as untextured default-colored shapes.
+- **Transfer ALL properties from placeholder to clone.** The replacement must copy `CFrame`, `Anchored`, `CanCollide`, `Transparency`, `Color` (vertex-color fallback), and `Size` from the placeholder. It must also reparent all children (SurfaceAppearance with texture references). InsertService-loaded meshes have geometry but no SurfaceAppearance or custom Color3. Missing any property causes visual regressions: no `Color` → vertex-colored objects revert to default gray; no `Size` → objects render at wrong scale.
 - **Batch InsertService calls.** Firing all `InsertService:LoadAsset()` calls simultaneously overwhelms Roblox's asset servers, causing `SslConnectFail` on most requests. Load in batches of ~10 with retries (3 attempts, increasing delay).
+- **Game bootstrap MUST wait for MeshLoader to finish before entering gameplay.** MeshLoader loads assets asynchronously (typically 20-30s for ~175 meshes). If the game's state machine starts gameplay before MeshLoader finishes replacing template MeshParts, any templates cloned by the spawning system (TrackManager, etc.) will contain placeholder geometry instead of real meshes — producing gray boxes instead of textured buildings, obstacles, and collectibles. The MeshLoader signals completion by creating a `BoolValue` named `MeshLoaderDone` in ReplicatedStorage. The bootstrap must `ReplicatedStorage:WaitForChild("MeshLoaderDone", 120)` before calling `SwitchState("Game")` or equivalent.
 
 ### Asset Type for Texture Uploads
 
