@@ -27,7 +27,7 @@ attribute_list, comment, type_argument_list
 - `foreach_statement` → `for _, item in collection do...end`
 - `block` / `{...}` → proper `end` placement (no heuristic brace matching)
 - `invocation_expression` → restructure calls like `Instantiate(prefab)` → `prefab:Clone()`
-- `[SerializeField]` attributes → `ServerStorage:WaitForChild()` (using `serialized_refs`)
+- `[SerializeField]` attributes → `ReplicatedStorage.Templates:WaitForChild()` (using `serialized_refs`)
 
 ## Hard Cases (regex gets these wrong)
 

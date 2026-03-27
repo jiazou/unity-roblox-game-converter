@@ -866,7 +866,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                 mesh_texture_map[p.mesh_id] = p.surface_appearance.color_map
             _collect_mesh_textures(p.children)
     _collect_mesh_textures(parts)
-    # Also collect from ServerStorage templates (prefabs)
+    # Also collect from ReplicatedStorage templates (prefabs)
     if emit_packages and package_info:
         for _name, root_part in (package_result.replicated_templates or []):
             _collect_mesh_textures([root_part])
@@ -944,10 +944,10 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
 
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
-    # Collect ServerStorage templates if packages were generated
-    ss_templates = None
+    # Collect ReplicatedStorage templates if packages were generated
+    rs_templates = None
     if emit_packages and package_info:
-        ss_templates = package_result.replicated_templates or None
+        rs_templates = package_result.replicated_templates or None
 
     write_result = rbxl_writer.write_rbxl(
         parts=parts,
@@ -957,7 +957,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         lighting=lighting_config,
         camera=camera_config,
         skybox=skybox_config,
-        replicated_templates=ss_templates,
+        replicated_templates=rs_templates,
         screen_guis=rbx_screen_guis,
     )
 
