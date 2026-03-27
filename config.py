@@ -122,7 +122,7 @@ RETRY_BACKOFF_FACTOR: float = 2.0
 
 RBXL_OUTPUT_FILENAME: str = "converted_place.rbxl"
 ROBLOX_XML_NAMESPACE: str = "roblox.com"
-EMIT_PACKAGES: bool = True                  # generate .rbxm per prefab + embed in ServerStorage
+EMIT_PACKAGES: bool = True                  # generate .rbxm per prefab + embed in ReplicatedStorage/Templates
 PACKAGES_SUBDIR: str = "packages"           # subdirectory under output_dir
 
 # ---------------------------------------------------------------------------

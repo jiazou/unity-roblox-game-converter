@@ -457,7 +457,7 @@ def convert(
         lighting=lighting_config,
         camera=camera_config,
         skybox=skybox_config,
-        server_storage_templates=package_result.server_storage_templates or None,
+        replicated_templates=package_result.replicated_templates or None,
         screen_guis=rbx_screen_guis,
     )
     click.echo(f"    → Written to {write_result.output_path}")

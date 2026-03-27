@@ -96,7 +96,7 @@ class SceneNode:
 
     # Whether this node came from a PrefabInstance
     from_prefab_instance: bool = False
-    # Name of the source prefab template (for ServerStorage referencing)
+    # Name of the source prefab template (for ReplicatedStorage/Templates referencing)
     source_prefab_name: str | None = None
 
 

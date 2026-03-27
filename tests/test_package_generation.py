@@ -2,7 +2,7 @@
 
 Covers:
   - write_rbxm() in rbxl_writer.py
-  - write_rbxl() ServerStorage template embedding
+  - write_rbxl() ReplicatedStorage/Templates template embedding
   - generate_prefab_packages() in conversion_helpers.py
   - source_prefab_name tracking on SceneNode
 """
@@ -280,31 +280,31 @@ class TestGeneratePrefabPackages:
         model_items = root.findall(".//Item[@class='Model']")
         assert len(model_items) == 1
 
-    def test_server_storage_templates_populated(self, tmp_path: Path) -> None:
-        """generate_prefab_packages should return templates for ServerStorage."""
+    def test_replicated_templates_populated(self, tmp_path: Path) -> None:
+        """generate_prefab_packages should return templates for ReplicatedStorage."""
         lib = PrefabLibrary(prefabs=[
             _make_prefab("EnemyTemplate"),
             _make_prefab("BulletTemplate"),
         ])
         result = generate_prefab_packages(lib, tmp_path)
-        assert len(result.server_storage_templates) == 2
-        names = [name for name, _ in result.server_storage_templates]
+        assert len(result.replicated_templates) == 2
+        names = [name for name, _ in result.replicated_templates]
         assert "EnemyTemplate" in names
         assert "BulletTemplate" in names
 
-    def test_server_storage_templates_are_part_entries(self, tmp_path: Path) -> None:
+    def test_replicated_templates_are_part_entries(self, tmp_path: Path) -> None:
         lib = PrefabLibrary(prefabs=[_make_prefab("Shield")])
         result = generate_prefab_packages(lib, tmp_path)
-        assert len(result.server_storage_templates) == 1
-        name, root_part = result.server_storage_templates[0]
+        assert len(result.replicated_templates) == 1
+        name, root_part = result.replicated_templates[0]
         assert name == "Shield"
         assert isinstance(root_part, RbxPartEntry)
         assert root_part.name == "Shield"
 
-    def test_server_storage_templates_empty_for_rootless(self, tmp_path: Path) -> None:
+    def test_replicated_templates_empty_for_rootless(self, tmp_path: Path) -> None:
         lib = PrefabLibrary(prefabs=[_make_prefab("Broken", has_root=False)])
         result = generate_prefab_packages(lib, tmp_path)
-        assert len(result.server_storage_templates) == 0
+        assert len(result.replicated_templates) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,7 @@ class TestTemplatesInRbxl:
     def test_templates_in_replicated_storage(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         templates = [("Enemy", RbxPartEntry(name="EnemyRoot"))]
-        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        write_rbxl([], [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert "ReplicatedStorage" in content
         assert "Templates" in content
@@ -331,7 +331,7 @@ class TestTemplatesInRbxl:
     def test_model_wraps_template(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         templates = [("Coin", RbxPartEntry(name="CoinGeometry"))]
-        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        write_rbxl([], [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert 'class="Model"' in content
         assert "Coin" in content
@@ -344,7 +344,7 @@ class TestTemplatesInRbxl:
             ("Bullet", RbxPartEntry(name="BulletMesh")),
             ("Pickup", RbxPartEntry(name="PickupBox")),
         ]
-        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        write_rbxl([], [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert "Enemy" in content
         assert "Bullet" in content
@@ -355,7 +355,7 @@ class TestTemplatesInRbxl:
         root = RbxPartEntry(name="CarBody", children=[child])
         templates = [("Car", root)]
         rbxl = tmp_path / "test.rbxl"
-        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        write_rbxl([], [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert "CarBody" in content
         assert "Wheel" in content
@@ -363,7 +363,7 @@ class TestTemplatesInRbxl:
     def test_templates_folder_valid_xml(self, tmp_path: Path) -> None:
         templates = [("Box", RbxPartEntry(name="BoxPart"))]
         rbxl = tmp_path / "test.rbxl"
-        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        write_rbxl([], [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         root = ET.fromstring(content.replace('<?xml version="1.0" ?>', "").strip())
         rs_items = root.findall(".//Item[@class='ReplicatedStorage']")
@@ -378,7 +378,7 @@ class TestTemplatesInRbxl:
         templates = [("Tree", RbxPartEntry(name="Trunk"))]
         scene_parts = [RbxPartEntry(name="Ground")]
         rbxl = tmp_path / "test.rbxl"
-        write_rbxl(scene_parts, [], rbxl, server_storage_templates=templates)
+        write_rbxl(scene_parts, [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert "Workspace" in content
         assert "ReplicatedStorage" in content
@@ -388,7 +388,7 @@ class TestTemplatesInRbxl:
     def test_template_mesh_part(self, tmp_path: Path) -> None:
         templates = [("Weapon", RbxPartEntry(name="Sword", mesh_id="rbxassetid://999"))]
         rbxl = tmp_path / "test.rbxl"
-        write_rbxl([], [], rbxl, server_storage_templates=templates)
+        write_rbxl([], [], rbxl, replicated_templates=templates)
         content = rbxl.read_text(encoding="utf-8")
         assert 'class="MeshPart"' in content
         assert "Sword" in content

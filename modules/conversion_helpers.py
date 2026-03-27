@@ -901,7 +901,7 @@ def generate_prefab_packages(
         )
 
         # Store the template for embedding in ReplicatedStorage.Templates inside the .rbxl
-        result.server_storage_templates.append((template.name, root_part))
+        result.replicated_templates.append((template.name, root_part))
 
         # Also write a standalone .rbxm file for Toolbox / manual import
         rbxm_path = packages_dir / f"{template.name}.rbxm"

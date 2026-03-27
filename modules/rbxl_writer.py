@@ -176,9 +176,9 @@ class RbxPackageResult:
     packages: list[RbxPackageEntry] = field(default_factory=list)
     total_packages: int = 0
     warnings: list[str] = field(default_factory=list)
-    # Converted part trees for embedding in ServerStorage inside the .rbxl.
+    # Converted part trees for embedding in ReplicatedStorage/Templates inside the .rbxl.
     # Each tuple is (model_name, root_part).
-    server_storage_templates: list[tuple[str, RbxPartEntry]] = field(default_factory=list)
+    replicated_templates: list[tuple[str, RbxPartEntry]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -598,7 +598,7 @@ def write_rbxl(
     lighting: RbxLightingConfig | None = None,
     camera: RbxCameraConfig | None = None,
     skybox: RbxSkyboxConfig | None = None,
-    server_storage_templates: list[tuple[str, RbxPartEntry]] | None = None,
+    replicated_templates: list[tuple[str, RbxPartEntry]] | None = None,
     screen_guis: list[RbxScreenGui] | None = None,
 ) -> RbxWriteResult:
     """
@@ -612,8 +612,8 @@ def write_rbxl(
         lighting: Optional lighting configuration from directional lights.
         camera: Optional camera configuration from Unity Camera component.
         skybox: Optional skybox configuration from Unity RenderSettings.
-        server_storage_templates: Optional prefab templates to place in
-            ServerStorage for runtime Clone(). Each tuple is
+        replicated_templates: Optional prefab templates to place in
+            ReplicatedStorage/Templates for runtime Clone(). Each tuple is
             (model_name, root_part_entry).
         screen_guis: Optional list of ScreenGui objects to place in StarterGui.
             Generated from Unity Canvas / RectTransform UI hierarchy.
@@ -737,7 +737,7 @@ def write_rbxl(
             scripts_written += 1
 
     # ReplicatedStorage — ModuleScripts + prefab templates (client-accessible)
-    if module_scripts or server_storage_templates or screen_guis:
+    if module_scripts or replicated_templates:
         rs_item = ET.SubElement(root, "Item", **{"class": "ReplicatedStorage"})
         rs_props = ET.SubElement(rs_item, "Properties")
         _make_property(rs_props, "string", "Name", "ReplicatedStorage")
@@ -750,23 +750,26 @@ def write_rbxl(
             scripts_written += 1
 
         # Prefab templates in a "Templates" folder for runtime Clone()
-        if server_storage_templates:
+        if replicated_templates:
             templates_folder_item = ET.SubElement(rs_item, "Item", **{"class": "Folder"})
             tf_props = ET.SubElement(templates_folder_item, "Properties")
             _make_property(tf_props, "string", "Name", "Templates")
 
-            for model_name, root_part in server_storage_templates:
+            for model_name, root_part in replicated_templates:
                 model_item = ET.SubElement(templates_folder_item, "Item", **{"class": "Model"})
                 mp = ET.SubElement(model_item, "Properties")
                 _make_property(mp, "string", "Name", model_name)
                 _make_part(model_item, root_part)
 
-    # Converted UI goes in ReplicatedStorage (not StarterGui) so it doesn't
-    # auto-display.  The game bootstrap enables specific GUIs when ready.
+    # StarterGui — ScreenGuis with Enabled=false (bootstrap enables them when ready)
     ui_elements_written = 0
     if screen_guis:
+        sg_item = ET.SubElement(root, "Item", **{"class": "StarterGui"})
+        sg_props = ET.SubElement(sg_item, "Properties")
+        _make_property(sg_props, "string", "Name", "StarterGui")
+
         for gui in screen_guis:
-            screen_gui_item = ET.SubElement(rs_item, "Item", **{"class": "ScreenGui"})
+            screen_gui_item = ET.SubElement(sg_item, "Item", **{"class": "ScreenGui"})
             sgui_props = ET.SubElement(screen_gui_item, "Properties")
             _make_property(sgui_props, "string", "Name", gui.name)
             _make_property(sgui_props, "int", "DisplayOrder", str(gui.display_order))

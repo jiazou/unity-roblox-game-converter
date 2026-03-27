@@ -868,7 +868,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
     _collect_mesh_textures(parts)
     # Also collect from ServerStorage templates (prefabs)
     if emit_packages and package_info:
-        for _name, root_part in (package_result.server_storage_templates or []):
+        for _name, root_part in (package_result.replicated_templates or []):
             _collect_mesh_textures([root_part])
     state["mesh_texture_map"] = mesh_texture_map
 
@@ -947,7 +947,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
     # Collect ServerStorage templates if packages were generated
     ss_templates = None
     if emit_packages and package_info:
-        ss_templates = package_result.server_storage_templates or None
+        ss_templates = package_result.replicated_templates or None
 
     write_result = rbxl_writer.write_rbxl(
         parts=parts,
@@ -957,12 +957,12 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         lighting=lighting_config,
         camera=camera_config,
         skybox=skybox_config,
-        server_storage_templates=ss_templates,
+        replicated_templates=ss_templates,
         screen_guis=rbx_screen_guis,
     )
 
     # Preview mode: make the place viewable without working game scripts.
-    # - Copy prefabs from ServerStorage to Workspace so they render
+    # - Copy prefabs from ReplicatedStorage/Templates to Workspace so they render
     # - Disable scripts that would interfere with viewing
     # - Disable ScreenGuis that overlay the 3D view
     preview_info: dict = {}
@@ -1015,17 +1015,27 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                     scripts_disabled += 1
                     _changed = True
 
-        # Copy prefab templates from ServerStorage to Workspace
+        # Copy prefab templates from ReplicatedStorage/Templates to Workspace
         prefabs_copied = 0
         _workspace = None
-        _ss = None
+        _rs = None
         for _item in _root.findall("Item"):
             if _item.get("class") == "Workspace":
                 _workspace = _item
-            elif _item.get("class") == "ServerStorage":
-                _ss = _item
-        if _workspace is not None and _ss is not None:
-            for _model in _ss.findall("Item"):
+            elif _item.get("class") == "ReplicatedStorage":
+                _rs = _item
+        _templates_folder = None
+        if _rs is not None:
+            for _child in _rs.findall("Item"):
+                if _child.get("class") == "Folder":
+                    _fp = _child.find("Properties")
+                    if _fp is not None:
+                        for _p in _fp:
+                            if _p.get("name") == "Name" and _p.text == "Templates":
+                                _templates_folder = _child
+                                break
+        if _workspace is not None and _templates_folder is not None:
+            for _model in _templates_folder.findall("Item"):
                 if _model.get("class") == "Model":
                     _workspace.append(_copy.deepcopy(_model))
                     prefabs_copied += 1
