@@ -801,7 +801,7 @@ def _inject_mesh_loader(rbxl_path: Path, mesh_asset_ids: dict[str, int]) -> None
     This function:
     1. Removes MeshPart items from the .rbxl (they'd render as grey boxes)
     2. Injects a Script that loads each Model asset via InsertService
-       and parents the content into ServerStorage as templates
+       and parents the content into ReplicatedStorage/Templates
     """
     import xml.etree.ElementTree as ET
 
@@ -824,13 +824,20 @@ def _inject_mesh_loader(rbxl_path: Path, mesh_asset_ids: dict[str, int]) -> None
     loader_source = f'''\
 -- MeshLoader.lua (auto-generated)
 -- Loads uploaded mesh FBX assets via InsertService:LoadAsset(),
--- stores templates in ServerStorage, and applies MeshIds to
+-- stores templates in ReplicatedStorage/Templates, and applies MeshIds to
 -- matching MeshParts already placed in Workspace.
 
 local InsertService = game:GetService("InsertService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
+
+-- Ensure the Templates folder exists in ReplicatedStorage
+local Templates = ReplicatedStorage:FindFirstChild("Templates")
+if not Templates then
+    Templates = Instance.new("Folder")
+    Templates.Name = "Templates"
+    Templates.Parent = ReplicatedStorage
+end
 
 local meshAssets = {{
 {assets_table}
@@ -874,7 +881,7 @@ local function loadOneAsset(asset)
             if sourceMeshPart then
                 local template = sourceMeshPart:Clone()
                 template.Name = asset.name
-                template.Parent = ServerStorage
+                template.Parent = Templates
 
                 -- Replace matching placeholder MeshParts everywhere: Workspace (scene objects)
                 -- and ReplicatedStorage (prefab templates used for runtime spawning)
@@ -907,7 +914,7 @@ local function loadOneAsset(asset)
                 local child = model:GetChildren()[1]
                 if child then
                     child.Name = asset.name
-                    child.Parent = ServerStorage
+                    child.Parent = Templates
                 end
             end
 
@@ -949,7 +956,7 @@ while loaded + failed < #meshAssets do
     task.wait(0.1)
 end
 
-print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ServerStorage")
+print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ReplicatedStorage/Templates")
 
 -- Signal completion so game scripts can proceed
 local done = Instance.new("BoolValue")
@@ -1206,7 +1213,7 @@ def upload_to_roblox(
     # ── Inject MeshLoader script into .rbxl ──────────────────────────
     # Meshes uploaded as GLB Model assets can only be loaded at runtime
     # via InsertService:LoadAsset(). Generate a Script that loads each
-    # mesh Model and parents it into ServerStorage as a template.
+    # mesh Model and parents it into ReplicatedStorage/Templates.
     # Identify mesh assets by extension OR by cache type metadata
     mesh_exts = {".fbx", ".obj", ".dae"}
     mesh_asset_ids = {}

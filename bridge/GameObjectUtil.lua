@@ -7,7 +7,15 @@
 --   local obj = GO.Find("PlayerCat")
 
 local InsertService = game:GetService("InsertService")
-local ServerStorage = game:GetService("ServerStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Ensure the Templates folder exists in ReplicatedStorage
+local Templates = ReplicatedStorage:FindFirstChild("Templates")
+if not Templates then
+	Templates = Instance.new("Folder")
+	Templates.Name = "Templates"
+	Templates.Parent = ReplicatedStorage
+end
 
 local GameObjectUtil = {}
 
@@ -45,7 +53,7 @@ function GameObjectUtil.InstantiateFromAsset(assetId, position)
 		if child then
 			-- Cache the template
 			local template = child:Clone()
-			template.Parent = ServerStorage
+			template.Parent = Templates
 			pcall(function()
 				if template:IsA("Model") then template:ScaleTo(0.01) end
 			end)

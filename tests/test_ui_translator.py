@@ -439,7 +439,7 @@ class TestScreenGuiInRbxl:
         rbxl = tmp_path / "ui_test.rbxl"
         result = write_rbxl([], [], rbxl, screen_guis=[gui])
         content = rbxl.read_text()
-        assert "ReplicatedStorage" in content
+        assert "StarterGui" in content
         assert "ScreenGui" in content
         assert "ScoreLabel" in content
         assert "TextLabel" in content
