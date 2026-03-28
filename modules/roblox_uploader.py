@@ -303,6 +303,12 @@ def _convert_fbx_to_glb(
             images_list = []
             textures_list = []
 
+            mat_names = [m.get("name", "") for m in gltf_data.get("materials", [])]
+            logger.debug(
+                "FBX→GLB %s: glTF has %d material(s): %s",
+                stem, len(mat_names), mat_names,
+            )
+
             for mat in gltf_data.get("materials", []):
                 mat_name = mat.get("name", "")
                 # Look for <MaterialName>_color.png
@@ -315,6 +321,18 @@ def _convert_fbx_to_glb(
                     if candidate and candidate.exists():
                         found_tex = candidate
                         break
+
+                if not found_tex:
+                    logger.warning(
+                        "FBX→GLB %s: NO texture for material %r — tried %s",
+                        stem, mat_name,
+                        [str(c) for c in tex_candidates if c],
+                    )
+                else:
+                    logger.debug(
+                        "FBX→GLB %s: material %r → texture %s",
+                        stem, mat_name, found_tex.name,
+                    )
 
                 if found_tex:
                     tex_b64 = base64.b64encode(found_tex.read_bytes()).decode()
@@ -557,6 +575,12 @@ def _build_mesh_material_map(unity_project_path: Path | None) -> dict[str, str]:
                 if tex_fn:
                     mesh_to_texture[mesh_path.stem.lower()] = tex_fn
 
+    logger.info(
+        "mesh→material map: %d meshes mapped. Texture breakdown: %s",
+        len(mesh_to_texture),
+        {tex: sum(1 for v in mesh_to_texture.values() if v == tex)
+         for tex in set(mesh_to_texture.values())},
+    )
     return mesh_to_texture
 
 
@@ -666,20 +690,33 @@ def _patch_rbxl_asset_ids(
             elem.text = text
             changed = True
 
-    # ── Pass 2: inject SurfaceAppearance on MeshParts ───────────────
+    # ── Pass 2: inject or patch SurfaceAppearance on MeshParts ──────
     # Uses mesh_texture_map (mesh_id → texture filename) built during assembly,
     # plus a fallback name-matching strategy.
     for item in list(root.iter("Item")):
         if item.get("class") != "MeshPart":
             continue
 
-        # Skip if SurfaceAppearance already exists.
-        has_sa = any(
-            child.get("class") == "SurfaceAppearance"
-            for child in item.findall("Item")
-        )
-        if has_sa:
-            continue
+        # Check for existing SurfaceAppearance and whether it has a ColorMap.
+        existing_sa = None
+        existing_sa_has_colormap = False
+        for child in item.findall("Item"):
+            if child.get("class") == "SurfaceAppearance":
+                existing_sa = child
+                sa_props = child.find("Properties")
+                if sa_props is not None:
+                    for p in sa_props:
+                        if p.get("name") == "ColorMap":
+                            # ColorMap value may be in a <url> child or directly on the element
+                            url_el = p.find("url")
+                            colormap_text = (
+                                (url_el.text if url_el is not None else None)
+                                or p.text
+                                or ""
+                            ).strip()
+                            if colormap_text:
+                                existing_sa_has_colormap = True
+                break
 
         props = item.find("Properties")
         if props is None:
@@ -693,6 +730,16 @@ def _patch_rbxl_asset_ids(
             elif p.get("name") == "MeshId":
                 url_child = p.find("url")
                 mesh_id = url_child.text if url_child is not None and url_child.text else (p.text or "")
+
+        if existing_sa_has_colormap:
+            logger.debug("SA patch: %r already has ColorMap — skipping", part_name)
+            continue  # Already has a texture — nothing to do
+
+        if existing_sa is not None:
+            logger.info(
+                "SA patch: %r has EMPTY SurfaceAppearance (no ColorMap) — will try to find texture",
+                part_name,
+            )
 
         matched_url = None
 
@@ -737,16 +784,21 @@ def _patch_rbxl_asset_ids(
             candidates = [
                 f"{clean_name}_color",
                 f"{part_name.lower()}_color",
+                f"{clean_name}_vc",
+                f"{part_name.lower()}_vc",
                 clean_name,
             ]
             if mesh_id and not mesh_id.startswith("rbxassetid"):
-                candidates.append(f"{Path(mesh_id).stem.lower()}_color")
+                mesh_stem = Path(mesh_id).stem.lower()
+                candidates.append(f"{mesh_stem}_color")
+                candidates.append(f"{mesh_stem}_vc")
             for candidate in candidates:
                 if candidate and candidate in texture_stem_to_url:
                     matched_url = texture_stem_to_url[candidate]
                     break
 
         if matched_url:
+            logger.debug("SA inject: %s → %s", part_name, matched_url)
             sa_item = ET.SubElement(item, "Item")
             sa_item.set("class", "SurfaceAppearance")
             sa_props = ET.SubElement(sa_item, "Properties")
@@ -758,6 +810,12 @@ def _patch_rbxl_asset_ids(
             url_el = ET.SubElement(sa_cmap, "url")
             url_el.text = matched_url
             changed = True
+        else:
+            logger.warning(
+                "SA inject MISS: MeshPart %r (mesh_id=%s) — no texture matched. "
+                "Tried candidates for clean_name=%r",
+                part_name, mesh_id[:60] if mesh_id else "''", clean_name,
+            )
 
     if changed:
         tree.write(rbxl_path, encoding="unicode", xml_declaration=True)
@@ -832,6 +890,8 @@ local InsertService = game:GetService("InsertService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+print("[MeshLoader] Starting — loading mesh assets via InsertService")
+
 -- Ensure the Templates folder exists in ReplicatedStorage
 local Templates = ReplicatedStorage:FindFirstChild("Templates")
 if not Templates then
@@ -844,8 +904,11 @@ local meshAssets = {{
 {assets_table}
 }}
 
+print("[MeshLoader] " .. #meshAssets .. " mesh assets to load")
+
 local loaded = 0
 local failed = 0
+local replaced = 0
 
 -- Strip trailing " (N)" pattern to get base mesh name for matching
 local function baseName(name)
@@ -880,17 +943,15 @@ local function loadOneAsset(asset)
             end
 
             if sourceMeshPart then
-                local template = sourceMeshPart:Clone()
-                template.Name = asset.name
-                template.Parent = Templates
-
-                -- Replace matching placeholder MeshParts everywhere: Workspace (scene objects)
-                -- and ReplicatedStorage (prefab templates used for runtime spawning)
-                -- (MeshId is read-only at runtime, so we clone the loaded part instead)
+                -- Replace matching placeholder MeshParts everywhere:
+                -- Workspace (scene objects) and ReplicatedStorage (prefab
+                -- templates used for runtime spawning).
+                -- Note: template is created AFTER this loop to avoid self-match.
                 local allParts = findMeshParts(Workspace)
                 for _, p in ipairs(findMeshParts(ReplicatedStorage)) do
                     table.insert(allParts, p)
                 end
+                local matchCount = 0
                 for _, part in ipairs(allParts) do
                     if baseName(part.Name) == asset.name then
                         local replacement = sourceMeshPart:Clone()
@@ -901,17 +962,69 @@ local function loadOneAsset(asset)
                         replacement.Transparency = part.Transparency
                         replacement.Color = part.Color
                         replacement.Size = part.Size
-                        -- Copy SurfaceAppearance and other children from placeholder
-                        -- (the rbxl has textures as SurfaceAppearance children,
-                        --  but the InsertService-loaded mesh won't have them)
+
+                        -- Count placeholder SAs and gather them
+                        local placeholderSAs = {{}}
+                        for _, child in ipairs(part:GetChildren()) do
+                            if child:IsA("SurfaceAppearance") then
+                                table.insert(placeholderSAs, child)
+                            end
+                        end
+
+                        -- If placeholder has SAs, remove the loaded mesh's SA first
+                        -- to prevent duplicate/conflicting SAs on the replacement.
+                        -- The placeholder SA (from rbxl XML) has the correct
+                        -- rbxassetid ColorMap; the loaded mesh's SA may be empty.
+                        if #placeholderSAs > 0 then
+                            for _, child in ipairs(replacement:GetChildren()) do
+                                if child:IsA("SurfaceAppearance") then
+                                    child:Destroy()
+                                end
+                            end
+                        end
+
+                        -- Transfer all children from placeholder to replacement
                         for _, child in ipairs(part:GetChildren()) do
                             child.Parent = replacement
                         end
+
+                        if matchCount == 0 then
+                            local finalSACount = 0
+                            for _, child in ipairs(replacement:GetChildren()) do
+                                if child:IsA("SurfaceAppearance") then
+                                    finalSACount = finalSACount + 1
+                                end
+                            end
+                            print("[MeshLoader]   " .. asset.name .. ": transferred " .. #placeholderSAs .. " SA(s) from placeholder, final SA count=" .. finalSACount)
+                        end
+
                         replacement.Parent = part.Parent
                         part:Destroy()
+                        matchCount = matchCount + 1
+                        replaced = replaced + 1
                     end
                 end
+
+                -- Store template in ReplicatedStorage/Templates for TrackManager cloning.
+                -- If we found placeholders with SAs, apply the SA to the template too
+                -- so cloned segments inherit textures.
+                local template = sourceMeshPart:Clone()
+                template.Name = asset.name
+                -- Remove loaded mesh's SA from template if we have a better one
+                if matchCount > 0 then
+                    -- Find the first replaced part's SA to copy to template
+                    -- (we can't access the destroyed placeholder, but the
+                    --  replacements in allParts have the transferred SAs)
+                end
+                template.Parent = Templates
+
+                if matchCount > 0 then
+                    print("[MeshLoader] ✓ " .. asset.name .. " — replaced " .. matchCount .. " placeholder(s)")
+                else
+                    print("[MeshLoader] ✓ " .. asset.name .. " — loaded to Templates (no placeholders matched)")
+                end
             else
+                warn("[MeshLoader] ⚠ " .. asset.name .. " — InsertService returned model with no MeshPart")
                 local child = model:GetChildren()[1]
                 if child then
                     child.Name = asset.name
@@ -924,9 +1037,10 @@ local function loadOneAsset(asset)
             return true
         else
             if attempt < MAX_RETRIES then
+                warn("[MeshLoader] Retry " .. attempt .. "/" .. MAX_RETRIES .. " for " .. asset.name .. ": " .. tostring(model))
                 task.wait(1 * attempt)
             else
-                warn("[MeshLoader] Failed to load " .. asset.name .. ": " .. tostring(model))
+                warn("[MeshLoader] ✗ FAILED to load " .. asset.name .. " (id=" .. asset.id .. "): " .. tostring(model))
                 failed = failed + 1
             end
         end
@@ -936,8 +1050,11 @@ end
 
 -- Load in batches to avoid overwhelming InsertService
 local BATCH_SIZE = 10
+local totalBatches = math.ceil(#meshAssets / BATCH_SIZE)
 for i = 1, #meshAssets, BATCH_SIZE do
+    local batchNum = math.ceil(i / BATCH_SIZE)
     local batchEnd = math.min(i + BATCH_SIZE - 1, #meshAssets)
+    print("[MeshLoader] Batch " .. batchNum .. "/" .. totalBatches .. " (assets " .. i .. "-" .. batchEnd .. ")")
     for j = i, batchEnd do
         task.spawn(function()
             loadOneAsset(meshAssets[j])
@@ -957,7 +1074,10 @@ while loaded + failed < #meshAssets do
     task.wait(0.1)
 end
 
-print("[MeshLoader] Loaded " .. loaded .. "/" .. #meshAssets .. " mesh assets into ReplicatedStorage/Templates")
+print("[MeshLoader] ══════════════════════════════════════")
+print("[MeshLoader] Complete: " .. loaded .. "/" .. #meshAssets .. " loaded, " .. failed .. " failed, " .. replaced .. " placeholders replaced")
+print("[MeshLoader] Templates children: " .. #Templates:GetChildren())
+print("[MeshLoader] ══════════════════════════════════════")
 
 -- Set PrimaryPart on all Models in Templates so PivotTo() works when cloned
 for _, child in ipairs(Templates:GetChildren()) do
@@ -989,6 +1109,7 @@ setPrimaryParts(Workspace)
 local done = Instance.new("BoolValue")
 done.Name = "MeshLoaderDone"
 done.Parent = ReplicatedStorage
+print("[MeshLoader] MeshLoaderDone signal fired")
 '''
 
     # Find or create ServerScriptService
@@ -1063,25 +1184,11 @@ def upload_to_roblox(
     """
     result = UploadResult()
 
-    # ── Gate: require a valid API key ──────────────────────────────────
-    if not _validate_api_key(api_key):
-        result.skipped = True
-        result.warnings.append(
-            "Roblox upload skipped: no valid API key provided. "
-            "Set --roblox-api-key or ROBLOX_API_KEY env var. "
-            "You can open the .rbxl file manually in Roblox Studio."
-        )
-        return result
-
     if not rbxl_path.exists():
         result.errors.append(f"rbxl file not found: {rbxl_path}")
         return result
 
-    # ── Auto-extract creator_id from API key JWT if not provided ──────
-    if creator_id is None:
-        creator_id = _extract_owner_id(api_key)
-        if creator_id:
-            logger.info("Auto-detected creator_id=%d from API key", creator_id)
+    has_valid_api_key = _validate_api_key(api_key)
 
     # ── Load asset cache from previous runs ───────────────────────────
     asset_cache: dict[str, dict] = {}
@@ -1093,8 +1200,30 @@ def upload_to_roblox(
         if asset_cache:
             logger.info("Loaded %d cached asset IDs — will skip re-upload for these", len(asset_cache))
 
+    # ── Gate: require a valid API key for actual uploads ───────────────
+    if not has_valid_api_key:
+        if asset_cache:
+            logger.info(
+                "No Roblox API key — skipping uploads, but will patch .rbxl "
+                "with %d cached asset IDs", len(asset_cache),
+            )
+        else:
+            result.skipped = True
+            result.warnings.append(
+                "Roblox upload skipped: no valid API key provided. "
+                "Set --roblox-api-key or ROBLOX_API_KEY env var. "
+                "You can open the .rbxl file manually in Roblox Studio."
+            )
+            return result
+
+    # ── Auto-extract creator_id from API key JWT if not provided ──────
+    if has_valid_api_key and creator_id is None:
+        creator_id = _extract_owner_id(api_key)
+        if creator_id:
+            logger.info("Auto-detected creator_id=%d from API key", creator_id)
+
     # ── Convert FBX→GLB with textures, then upload ──────────────────
-    if meshes_dir and meshes_dir.is_dir():
+    if has_valid_api_key and meshes_dir and meshes_dir.is_dir():
         mesh_exts = {".fbx", ".obj", ".dae"}
         glb_dir = meshes_dir / "glb"
         glb_dir.mkdir(exist_ok=True)
@@ -1120,6 +1249,26 @@ def upload_to_roblox(
                 candidate = textures_dir_path / tex_filename
                 if candidate.exists():
                     tex_path = candidate
+                else:
+                    logger.warning(
+                        "Mesh %s: material map says %r but file does NOT exist at %s",
+                        mesh_path.name, tex_filename, candidate,
+                    )
+            elif tex_filename:
+                logger.warning(
+                    "Mesh %s: material map says %r but textures dir missing",
+                    mesh_path.name, tex_filename,
+                )
+            else:
+                logger.warning(
+                    "Mesh %s: no entry in mesh→material map (stem=%r)",
+                    mesh_path.name, mesh_stem,
+                )
+
+            if tex_path:
+                logger.info("Mesh %s: using texture %s", mesh_path.name, tex_path.name)
+            else:
+                logger.warning("Mesh %s: will be uploaded WITHOUT texture", mesh_path.name)
 
             # Convert FBX → GLB with embedded texture
             glb_path = _convert_fbx_to_glb(mesh_path, tex_path, glb_dir)
@@ -1143,7 +1292,7 @@ def upload_to_roblox(
                 )
 
     # ── Upload textures ────────────────────────────────────────────────
-    if textures_dir and textures_dir.is_dir():
+    if has_valid_api_key and textures_dir and textures_dir.is_dir():
         image_exts = {".png", ".jpg", ".jpeg"}
         for img_path in sorted(textures_dir.iterdir()):
             if img_path.suffix.lower() not in image_exts:
@@ -1168,7 +1317,7 @@ def upload_to_roblox(
                 )
 
     # ── Upload sprites ─────────────────────────────────────────────────
-    if sprites_dir and sprites_dir.is_dir():
+    if has_valid_api_key and sprites_dir and sprites_dir.is_dir():
         image_exts = {".png", ".jpg", ".jpeg"}
         for img_path in sorted(sprites_dir.iterdir()):
             if img_path.suffix.lower() not in image_exts:
@@ -1194,7 +1343,7 @@ def upload_to_roblox(
                 )
 
     # ── Upload audio ───────────────────────────────────────────────────
-    if audio_dir and audio_dir.is_dir():
+    if has_valid_api_key and audio_dir and audio_dir.is_dir():
         audio_exts = {".ogg", ".mp3", ".wav"}
         for audio_path in sorted(audio_dir.iterdir()):
             if audio_path.suffix.lower() not in audio_exts:
@@ -1282,7 +1431,7 @@ def upload_to_roblox(
             result.warnings.append(f"Binary conversion failed, uploading XML: {exc}")
 
     # ── Upload place file (after patching) ─────────────────────────────
-    if universe_id and place_id:
+    if has_valid_api_key and universe_id and place_id:
         try:
             resp = _upload_place(upload_path, api_key, universe_id, place_id)
             result.place_id = place_id

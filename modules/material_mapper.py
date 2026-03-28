@@ -738,12 +738,18 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
 
     cat = parsed.shader.category
 
-    # --- Fully unconvertible ---
+    # --- Vertex-color-only shaders ---
     if cat == "vertex_color":
         result.unconverted.append(UnconvertedFeature(
             "Vertex-color-only shader", "VertexColor shader",
-            "HIGH", "Assign flat color manually in Roblox Studio", False,
+            "HIGH", "Bake vertex colors into texture via vertex_color_baker", True,
         ))
+        # Create a minimal RobloxMaterialDef so the pipeline can attach a
+        # baked vertex-color texture later (color_map stays None for now).
+        rdef = RobloxMaterialDef()
+        if parsed.albedo_color and not _is_white(parsed.albedo_color):
+            rdef.base_part_color = parsed.albedo_color[:3]
+        result.roblox_def = rdef
         return result
 
     if cat == "unknown":

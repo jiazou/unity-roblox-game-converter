@@ -25,6 +25,7 @@ Sub-commands:
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sys
 import time
@@ -48,6 +49,7 @@ from modules import (
     scene_parser,
     scriptable_object_converter,
     ui_translator,
+    vertex_color_baker,
 )
 from modules.conversion_helpers import (
     ComponentWarning as _ComponentWarning,
@@ -59,6 +61,22 @@ from modules.conversion_helpers import (
     build_report as _build_report,
 )
 from modules.retry import call_with_retry
+
+logger = logging.getLogger(__name__)
+
+
+def _iter_all_nodes(roots):
+    """Recursively yield all SceneNodes from a list of root nodes."""
+    for node in roots:
+        yield node
+        yield from _iter_all_nodes(node.children)
+
+
+def _iter_prefab_nodes(roots):
+    """Recursively yield all PrefabNodes from a list of root nodes."""
+    for node in roots:
+        yield node
+        yield from _iter_prefab_nodes(node.children)
 
 
 # ---------------------------------------------------------------------------
@@ -694,8 +712,27 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
             serialized_refs=asm_serialized_refs,
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, Exception) as exc:
         transpilation = code_transpiler.TranspilationResult()
+        # Fall back to scripts already on disk (from a previous transpile run)
+        scripts_dir = out_dir / "scripts"
+        meta_path = scripts_dir / "_meta.json"
+        if meta_path.exists():
+            import json as _json
+            meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+            for filename, info in meta.items():
+                lua_path = scripts_dir / filename
+                if lua_path.exists():
+                    transpilation.scripts.append(code_transpiler.TranspiledScript(
+                        source_path=Path("(cached)"),
+                        output_filename=filename,
+                        csharp_source="",
+                        luau_source=lua_path.read_text(encoding="utf-8"),
+                        strategy="ai",
+                        confidence=1.0,
+                        script_type=info.get("script_type", "ModuleScript"),
+                    ))
+            errors.append(f"Transpilation failed ({exc}); loaded {len(transpilation.scripts)} cached scripts from disk")
 
     # Luau validation pass
     for ts in transpilation.scripts:
@@ -809,6 +846,122 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             if scripts:
                 guid_to_companion[guid] = scripts
 
+    # --- Vertex color baking ---------------------------------------------------
+    # Meshes that use vertex-color-only materials end up with empty
+    # SurfaceAppearances (no ColorMap). Bake their vertex colors into
+    # standalone textures so they render correctly in Roblox.
+    vc_baked_textures: dict[str, str] = {}
+    textures_out = out_dir / "textures"
+    textures_out.mkdir(parents=True, exist_ok=True)
+    _BUILTIN_MESH_GUID = "0000000000000000e000000000000000"
+
+    if guid_to_roblox_def and guid_index:
+        # Collect unique mesh paths that need VC baking: material exists but
+        # has no color_map, meaning the mesh relies on vertex colors alone.
+        meshes_needing_bake: dict[str, tuple[Path, str | None]] = {}  # mesh_path → (Path, albedo_filename|None)
+        # Collect nodes from both scene roots AND prefab templates
+        def _all_vc_candidate_nodes():
+            """Yield (mesh_guid, components) for all nodes that might need VC baking."""
+            for ps in parsed_scenes:
+                for node in _iter_all_nodes(ps.roots):
+                    yield node.mesh_guid, node.components
+            # Also walk prefab template nodes (they become ReplicatedStorage packages)
+            for template in prefabs.prefabs:
+                if template.root is None:
+                    continue
+                for pnode in _iter_prefab_nodes([template.root]):
+                    yield pnode.mesh_guid, pnode.components
+
+        for node_mesh_guid, node_components in _all_vc_candidate_nodes():
+            if not node_mesh_guid or node_mesh_guid == _BUILTIN_MESH_GUID:
+                continue
+            # Find the material for this node
+            mat_guid = None
+            for comp in node_components:
+                if comp.component_type in ("MeshRenderer", "SkinnedMeshRenderer"):
+                    mat_refs = comp.properties.get("m_Materials", []) or []
+                    for mat_ref in mat_refs:
+                        if isinstance(mat_ref, dict):
+                            g = mat_ref.get("guid", "")
+                            if g and g in guid_to_roblox_def:
+                                mat_guid = g
+                                break
+                    break
+            if not mat_guid:
+                continue
+            rdef = guid_to_roblox_def[mat_guid]
+            if rdef.color_map:
+                # Material already has an albedo texture — check if it also
+                # uses vertex colors (shader multiplies texture × vertex color).
+                # If so, we need bake_vertex_colors_into_albedo.
+                entry = guid_index.guid_to_entry.get(mat_guid)
+                if entry:
+                    # Check the MaterialConversionResult unconverted list.
+                    for mc in mat_result.materials:
+                        if mc.material_path == entry.asset_path:
+                            if any("ertex color" in u.feature_name for u in mc.unconverted):
+                                mesh_path = guid_index.resolve(node_mesh_guid)
+                                if mesh_path:
+                                    mp = str(mesh_path)
+                                    if mesh_path_remap and mp in mesh_path_remap:
+                                        mp = mesh_path_remap[mp]
+                                    if mp not in meshes_needing_bake:
+                                        meshes_needing_bake[mp] = (Path(mp), rdef.color_map)
+                            break
+                continue
+            # No color_map → needs standalone VC bake
+            mesh_path = guid_index.resolve(node_mesh_guid)
+            if mesh_path:
+                mp = str(mesh_path)
+                if mesh_path_remap and mp in mesh_path_remap:
+                    mp = mesh_path_remap[mp]
+                if mp not in meshes_needing_bake:
+                    meshes_needing_bake[mp] = (Path(mp), None)
+
+        # Bake vertex colors for collected meshes
+        vc_baked = 0
+        vc_skipped = 0
+        for mp, (mesh_p, albedo_filename) in meshes_needing_bake.items():
+            stem = mesh_p.stem
+            baked_name = f"{stem}_vc.png"
+            baked_path = textures_out / baked_name
+            if albedo_filename:
+                # Bake vertex colors multiplied into existing albedo
+                albedo_path = textures_out / albedo_filename
+                if albedo_path.exists():
+                    bake_res = vertex_color_baker.bake_vertex_colors_into_albedo(
+                        mesh_p, albedo_path, baked_path,
+                    )
+                else:
+                    bake_res = vertex_color_baker.bake_vertex_colors_standalone(
+                        mesh_p, baked_path,
+                    )
+            else:
+                bake_res = vertex_color_baker.bake_vertex_colors_standalone(
+                    mesh_p, baked_path,
+                )
+            if bake_res.baked:
+                vc_baked_textures[mp] = baked_name
+                vc_baked += 1
+                logger.info("VC bake: %s → %s", stem, baked_name)
+            else:
+                vc_skipped += 1
+                if bake_res.error:
+                    logger.warning("VC bake failed for %s: %s", stem, bake_res.error)
+                elif not bake_res.has_vertex_colors:
+                    logger.debug("VC bake: %s has no vertex colors, skipped", stem)
+
+        if meshes_needing_bake:
+            logger.info(
+                "Vertex color baking: %d meshes identified, %d baked, %d skipped",
+                len(meshes_needing_bake), vc_baked, vc_skipped,
+            )
+            click.echo(
+                f"🎨  Vertex color baking: {len(meshes_needing_bake)} meshes → "
+                f"{vc_baked} baked, {vc_skipped} skipped",
+                err=True,
+            )
+
     # Prefab → .rbxm package generation
     package_info: dict = {}
     if emit_packages and prefabs.prefabs:
@@ -818,6 +971,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             guid_to_companion_scripts=guid_to_companion,
             guid_index=guid_index,
             mesh_path_remap=mesh_path_remap,
+            vc_baked_textures=vc_baked_textures,
         )
         package_info = {
             "total_packages": package_result.total_packages,
@@ -854,6 +1008,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         guid_to_companion_scripts=guid_to_companion,
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
+        vc_baked_textures=vc_baked_textures,
     )
 
     # Record mesh→texture mapping for the upload patcher.

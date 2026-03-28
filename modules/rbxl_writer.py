@@ -12,12 +12,15 @@ No other module is imported here.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 from xml.dom import minidom
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +552,20 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         _make_property(props, "token", "Material", part.material_enum)
 
     if part.surface_appearance and use_mesh:
+        sa = part.surface_appearance
+        if sa.color_map:
+            logger.debug("write_part: %r → SA color_map=%s", part.name, sa.color_map)
+        else:
+            logger.warning(
+                "write_part: %r → SA with NO color_map (empty SurfaceAppearance)",
+                part.name,
+            )
         _make_surface_appearance(item, part.surface_appearance)
+    elif use_mesh and not part.surface_appearance:
+        logger.warning(
+            "write_part: %r is MeshPart with NO SurfaceAppearance at all",
+            part.name,
+        )
 
     for lc in part.light_children:
         _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
