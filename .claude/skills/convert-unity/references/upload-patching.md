@@ -46,7 +46,7 @@ Writing the value directly as text content (`<Content name="MeshId">rbxassetid:/
 **The MeshLoader pattern:**
 1. Upload FBX files as Model assets → get asset IDs
 2. At runtime, `InsertService:LoadAsset()` each asset → extract the first MeshPart descendant
-3. Store the extracted MeshPart in ServerStorage as a template
+3. Store the extracted MeshPart in ReplicatedStorage/Templates as a template
 4. For scene placement: **clone the template and replace** placeholder Parts, copying CFrame/Name/Parent from the placeholder. Do NOT try to set MeshId on existing parts.
 
 ```lua

@@ -226,7 +226,7 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 - String interpolation, lambda/anonymous delegates, LINQ expressions
 - 50+ Unity API → Roblox mappings (informed by `api_mappings.py`), automatic service imports
 - Script classification: Input/Camera/GUI → LocalScript, Command/SyncVar → Script, utility → ModuleScript
-- `[SerializeField]` fields with prefab refs → `ServerStorage:WaitForChild()`
+- `[SerializeField]` fields with prefab refs → `ReplicatedStorage:WaitForChild()`
 - Inheritance, interfaces, complex generics handled correctly
 
 **Code validator**:

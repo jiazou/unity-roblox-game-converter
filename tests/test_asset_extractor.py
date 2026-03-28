@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -117,9 +118,6 @@ class TestAssetExtractionErrorRecovery:
         assert len(manifest.warnings) == 1
         assert "broken.png" in manifest.warnings[0]
 
-    @pytest.mark.skipif(
-        os.getuid() == 0, reason="Root can read all files; chmod has no effect"
-    )
     def test_unreadable_file_skipped_with_warning(self, tmp_path: Path) -> None:
         """A file that cannot be read should be skipped with a warning."""
         project = tmp_path / "Project"
@@ -130,19 +128,25 @@ class TestAssetExtractionErrorRecovery:
         good = assets / "good.png"
         good.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-        # Create a file then remove read permission
+        # Create a file that we'll make "unreadable" via mocking
         bad = assets / "noperm.png"
         bad.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
-        bad.chmod(0o000)
 
-        try:
+        # Mock Path.stat() to raise PermissionError for the bad file.
+        # This works even when running as root (where chmod has no effect).
+        _orig_stat = Path.stat
+
+        def _stat_deny(self_path, *args, **kwargs):
+            if self_path.name == "noperm.png":
+                raise PermissionError(f"Permission denied: {self_path}")
+            return _orig_stat(self_path, *args, **kwargs)
+
+        with patch.object(Path, "stat", _stat_deny):
             manifest = extract_assets(project)
             assert len(manifest.assets) == 1
             assert manifest.assets[0].path.name == "good.png"
             assert len(manifest.warnings) == 1
             assert "noperm.png" in manifest.warnings[0]
-        finally:
-            bad.chmod(0o644)  # restore for cleanup
 
     def test_warnings_field_exists_on_clean_extraction(self, unity_project: Path) -> None:
         """Warnings field should exist even when there are no issues."""
