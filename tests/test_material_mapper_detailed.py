@@ -545,7 +545,10 @@ class TestConvertMaterial:
             shader=ShaderInfo("VC", "vertex_color", False, True, False, False),
         )
         result = _convert_material(parsed)
-        assert result.roblox_def is None
+        # vertex_color materials now get a minimal RobloxMaterialDef (no color_map)
+        # so the pipeline can attach a baked vertex-color texture later
+        assert result.roblox_def is not None
+        assert result.roblox_def.color_map is None
         assert len(result.unconverted) > 0
 
     def test_unknown_shader_unconverted(self) -> None:

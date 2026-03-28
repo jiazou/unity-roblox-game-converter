@@ -9,8 +9,11 @@ testable.
 
 from __future__ import annotations
 
+import logging
 import struct
 import zlib
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -309,6 +312,7 @@ def apply_materials(
     allows downstream tools / reports to flag meshes that need manual splitting.
     """
     if not guid_to_roblox_def:
+        logger.debug("apply_materials: no guid_to_roblox_def for %r", node.name)
         return
     for comp in node.components:
         if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
@@ -319,18 +323,41 @@ def apply_materials(
             return
         mat_refs = comp.properties.get("m_Materials", []) or []
         resolved_guids: list[str] = []
+        unresolved_guids: list[str] = []
         for mat_ref in mat_refs:
             if isinstance(mat_ref, dict):
                 guid = mat_ref.get("guid", "")
                 if guid and guid in guid_to_roblox_def:
                     resolved_guids.append(guid)
+                elif guid:
+                    unresolved_guids.append(guid)
 
         if not resolved_guids:
+            if unresolved_guids:
+                logger.warning(
+                    "apply_materials: %r has %d material GUIDs but none resolved "
+                    "to a RobloxMaterialDef (unresolved: %s)",
+                    node.name, len(unresolved_guids),
+                    ", ".join(unresolved_guids[:3]),
+                )
+            elif mat_refs:
+                logger.debug(
+                    "apply_materials: %r has m_Materials but no valid GUIDs",
+                    node.name,
+                )
             continue
 
         # Apply the first material (Roblox limitation: one material per MeshPart)
         rdef = guid_to_roblox_def[resolved_guids[0]]
-        part.surface_appearance = roblox_def_to_surface_appearance(rdef)
+        sa = roblox_def_to_surface_appearance(rdef)
+        part.surface_appearance = sa
+        if sa.color_map:
+            logger.debug("apply_materials: %r → color_map=%s", node.name, sa.color_map)
+        else:
+            logger.warning(
+                "apply_materials: %r has material but SurfaceAppearance has no color_map",
+                node.name,
+            )
         if rdef.base_part_color:
             part.color3 = rdef.base_part_color
         if rdef.base_part_transparency > 0:
@@ -548,6 +575,7 @@ def node_to_part(
     component_warnings: list[ComponentWarning] | None = None,
     parent_world_pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
     parent_world_rot: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
+    vc_baked_textures: dict[str, str] | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a SceneNode tree to an RbxPartEntry tree (recursive)."""
     if component_warnings is not None:
@@ -607,12 +635,39 @@ def node_to_part(
     convert_particle_components(part, node.name, node.components)
     apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
 
+    # Apply baked vertex-color textures to parts with empty SurfaceAppearances.
+    if vc_baked_textures and part.mesh_id and part.mesh_id in vc_baked_textures:
+        baked_tex = vc_baked_textures[part.mesh_id]
+        if part.surface_appearance and not part.surface_appearance.color_map:
+            part.surface_appearance.color_map = baked_tex
+            logger.info(
+                "node_to_part: %r → applied baked VC texture %s",
+                node.name, baked_tex,
+            )
+        elif not part.surface_appearance:
+            part.surface_appearance = roblox_def_to_surface_appearance(
+                material_mapper.RobloxMaterialDef(color_map=baked_tex),
+            )
+            logger.info(
+                "node_to_part: %r → created SA with baked VC texture %s",
+                node.name, baked_tex,
+            )
+
     # Vertex-color fallback: Roblox ignores FBX vertex colors, so approximate
     # by setting Color3 to the mesh's average vertex color when no texture exists.
     if part.mesh_id and not part.surface_appearance and not part.color3:
         vc = extract_fbx_dominant_color(part.mesh_id)
         if vc:
             part.color3 = vc
+            logger.debug("node_to_part: %r → VC fallback color3=%s", node.name, vc)
+    elif part.mesh_id and part.surface_appearance:
+        sa = part.surface_appearance
+        if not sa.color_map:
+            logger.warning(
+                "node_to_part: %r has SurfaceAppearance but NO color_map "
+                "(normal=%s, metalness=%s) — mesh will appear untextured",
+                node.name, sa.normal_map, sa.metalness_map,
+            )
 
     # No renderer = invisible (Unity default; Roblox needs explicit Transparency=1)
     comp_types = {c.component_type for c in node.components}
@@ -638,6 +693,7 @@ def node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
             mesh_path_remap, directional_lights, component_warnings,
             parent_world_pos=world_pos, parent_world_rot=world_rot,
+            vc_baked_textures=vc_baked_textures,
         ))
 
     return part
@@ -861,6 +917,7 @@ def generate_prefab_packages(
     guid_to_companion_scripts: dict[str, list[str]] | None = None,
     guid_index: guid_resolver.GuidIndex | None = None,
     mesh_path_remap: dict[str, str] | None = None,
+    vc_baked_textures: dict[str, str] | None = None,
 ) -> rbxl_writer.RbxPackageResult:
     """
     Convert each PrefabTemplate into a standalone .rbxm (Roblox model) file.
@@ -898,6 +955,7 @@ def generate_prefab_packages(
             guid_index,
             mesh_path_remap,
             directional_lights,
+            vc_baked_textures=vc_baked_textures,
         )
 
         # Store the template for embedding in ReplicatedStorage.Templates inside the .rbxl
@@ -1296,6 +1354,7 @@ def scene_nodes_to_parts(
     guid_index: guid_resolver.GuidIndex | None = None,
     mesh_path_remap: dict[str, str] | None = None,
     mat_results: list | None = None,
+    vc_baked_textures: dict[str, str] | None = None,
 ) -> tuple[
     list[rbxl_writer.RbxPartEntry],
     rbxl_writer.RbxLightingConfig | None,
@@ -1330,6 +1389,7 @@ def scene_nodes_to_parts(
             parts.append(node_to_part(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
                 mesh_path_remap, directional_lights, component_warnings,
+                vc_baked_textures=vc_baked_textures,
             ))
 
     lighting = directional_lights_to_lighting(directional_lights)
@@ -1617,6 +1677,19 @@ if characterController then
 \tcharacterController.humanoidRootPart = hrp
 \tcharacterController.humanoid = humanoid
 \tcharacterController.character = character
+end
+
+---------------------------------------------------------------------------
+-- Phase 2c: Call Init() on modules that define it
+-- Unity calls custom Init() methods explicitly from other scripts (e.g.
+-- TrackManager.Begin() calls characterController.Init()). The converter
+-- cannot trace cross-class call graphs, so we call Init() generically
+-- on every instantiated module after references are wired.
+---------------------------------------------------------------------------
+for _, mod in ipairs({{characterController, trackManager}}) do
+\tif mod and type(mod.Init) == "function" then
+\t\tmod:Init()
+\tend
 end
 
 ---------------------------------------------------------------------------

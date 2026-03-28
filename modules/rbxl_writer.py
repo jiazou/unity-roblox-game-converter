@@ -12,12 +12,15 @@ No other module is imported here.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 from xml.dom import minidom
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +261,12 @@ def _make_ui_element(parent: ET.Element, elem: "RbxUIElement") -> None:
     _make_property(props, "int", "BorderSizePixel", str(elem.border_size))
     _make_property(props, "bool", "Visible", str(elem.visible).lower())
     _make_property(props, "int", "ZIndex", str(elem.z_index))
+
+    # Nested ScreenGuis (Unity Canvas → Roblox ScreenGui) must start disabled;
+    # the game's state machine enables the correct one at runtime.
+    if elem.class_name == "ScreenGui":
+        _make_property(props, "bool", "Enabled", "false")
+        _make_property(props, "bool", "ResetOnSpawn", "false")
 
     # Text properties (TextLabel / TextButton)
     if elem.class_name in ("TextLabel", "TextButton"):
@@ -523,10 +532,9 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
 
-    if _is_identity_quat(part.rotation):
-        _make_vector3(props, "Position", part.position)
-    else:
-        _make_cframe(props, "CFrame", part.position, part.rotation)
+    # Always write CFrame (CoordinateFrame) — Roblox ignores the Position
+    # property in XML; only CFrame is used to place parts correctly.
+    _make_cframe(props, "CFrame", part.position, part.rotation)
 
     _make_vector3(props, "Size", part.size)
     _make_property(props, "BrickColor", "BrickColor", part.brick_color)
@@ -549,7 +557,20 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         _make_property(props, "token", "Material", part.material_enum)
 
     if part.surface_appearance and use_mesh:
+        sa = part.surface_appearance
+        if sa.color_map:
+            logger.debug("write_part: %r → SA color_map=%s", part.name, sa.color_map)
+        else:
+            logger.warning(
+                "write_part: %r → SA with NO color_map (empty SurfaceAppearance)",
+                part.name,
+            )
         _make_surface_appearance(item, part.surface_appearance)
+    elif use_mesh and not part.surface_appearance:
+        logger.warning(
+            "write_part: %r is MeshPart with NO SurfaceAppearance at all",
+            part.name,
+        )
 
     for lc in part.light_children:
         _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
