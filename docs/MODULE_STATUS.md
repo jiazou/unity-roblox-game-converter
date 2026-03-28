@@ -1,6 +1,6 @@
 # Module Status — Unity→Roblox Game Converter
 
-> Last updated: 2026-03-04
+> Last updated: 2026-03-28
 > Consolidates: FRAGILITY_AUDIT.md, component_analysis_comparison.md,
 > function_spec_review.md, material_converter_plan.md, sprites-audio-ui-fix-plan.md
 
@@ -23,7 +23,7 @@
 | [11](#11-scriptableobject-conversion) | ScriptableObject Conversion | Fully implemented (1 medium gap) |
 | [12](#12-roblox-platform-limitations) | Roblox Platform Limitations | 12 permanent engine-level restrictions |
 | [13](#13-deferred-features) | Deferred Features | 12 features tracked (P1–P3) |
-| [14](#14-test-coverage) | Test Coverage | 811 tests across 16 files |
+| [14](#14-test-coverage) | Test Coverage | 972 tests across 33 files |
 
 ### Related Documents (Not Consolidated)
 
@@ -390,8 +390,9 @@ SpotLight, and Camera objects.
 | Gap | Severity | Notes |
 |-----|----------|-------|
 | Positional tuple unpacking for light/sound/particle | MEDIUM | `rbxl_writer.py:549-557` — no named struct, fragile ordering |
-| No `.rbxm` output option | LOW | Would allow merging converted content into existing Roblox places |
 | Audio SoundId uses local paths | LOW | Needs upload step to get `rbxassetid://` URLs |
+
+**Resolved:** `.rbxm` output is now supported via `write_rbxm_package()` for prefab templates.
 
 ---
 
@@ -555,7 +556,7 @@ Features not yet implemented, tracked for future work:
 | Terrain splat map → MaterialVariant | P2 | Create MaterialVariants per splat layer, paint voxels from splat weights |
 | Custom Shader Graph (.shadergraph) parsing | P2 | Extract exposed properties and node connections |
 | Networking adapter (RemoteEvent generation) | P2 | Detect `[Command]`/`[ClientRpc]` → generate RemoteEvent/RemoteFunction boilerplate |
-| `.rbxm` output format | P2 | Alternative output for merging into existing Roblox places |
+| ~~`.rbxm` output format~~ | ~~P2~~ | DONE — `write_rbxm_package()` in `rbxl_writer.py` |
 | Sprite extraction from spritesheets | P2 | Read `.meta` sprite rects, slice with PIL, wire into UI elements |
 | Audio file upload pipeline | P2 | Copy audio to build output, upload to Roblox, patch SoundId in .rbxl |
 | Texture atlasing | P3 | Not needed for Roblox's per-MeshPart material model |
@@ -567,22 +568,33 @@ Features not yet implemented, tracked for future work:
 
 ## 14. Test Coverage
 
-**811 automated tests** across 16 test files:
+**972 automated tests** across 33 test files:
 
 | Test File | Coverage Area |
 |-----------|--------------|
 | `test_unity_yaml_utils.py` | YAML parsing, vector/quaternion extraction, references |
 | `test_conversion_helpers.py` | Component conversion helpers (colliders, lights, audio, particles, materials) |
-| `test_converter.py` | End-to-end node-to-part, prefab resolution, scene conversion, report building |
-| `test_scene_parser.py` | Scene YAML parsing, hierarchy building |
-| `test_prefab_parser.py` | Prefab YAML parsing |
-| `test_material_mapper.py` | Shader property mapping, pipeline detection |
-| `test_code_transpiler.py` | C# → Luau AI transpilation |
+| `test_converter.py` / `_detailed` / `_e2e` | End-to-end node-to-part, prefab resolution, scene conversion, report building |
+| `test_scene_parser.py` / `_detailed` | Scene YAML parsing, hierarchy building |
+| `test_prefab_parser.py` / `_detailed` | Prefab YAML parsing |
+| `test_material_mapper.py` / `_detailed` | Shader property mapping, pipeline detection |
+| `test_code_transpiler.py` / `_detailed` | C# → Luau AI transpilation |
 | `test_api_mappings.py` | API call/type/lifecycle mapping tables |
 | `test_llm_cache.py` | LLM response caching, TTL, eviction |
 | `test_retry.py` | Retry logic, backoff, exception handling |
 | `test_asset_extractor.py` | Asset file discovery |
 | `test_code_validator.py` | Luau syntax validation |
+| `test_guid_resolver.py` / `_detailed` | GUID index building and resolution |
+| `test_rbxl_writer.py` / `_detailed` | .rbxl XML serialization |
+| `test_mesh_decimator.py` / `_detailed` | Mesh decimation |
+| `test_animation_converter.py` | Animator controller/clip parsing, config generation |
+| `test_scriptable_object_converter.py` | ScriptableObject → Luau data tables |
+| `test_ui_translator.py` | Canvas → ScreenGui conversion |
+| `test_vertex_color_baker.py` | Vertex color baking to UV textures |
+| `test_roblox_uploader.py` | Upload, patching, MeshLoader injection |
+| `test_report_generator.py` | Report generation |
+| `test_package_generation.py` | .rbxm prefab package generation |
+| `test_generic_game_support.py` | Multi-game converter genericity |
 
 **Still needed**:
 - Integration test: full pipeline on synthetic project, assert output structure
