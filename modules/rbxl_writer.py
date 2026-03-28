@@ -262,6 +262,12 @@ def _make_ui_element(parent: ET.Element, elem: "RbxUIElement") -> None:
     _make_property(props, "bool", "Visible", str(elem.visible).lower())
     _make_property(props, "int", "ZIndex", str(elem.z_index))
 
+    # Nested ScreenGuis (Unity Canvas → Roblox ScreenGui) must start disabled;
+    # the game's state machine enables the correct one at runtime.
+    if elem.class_name == "ScreenGui":
+        _make_property(props, "bool", "Enabled", "false")
+        _make_property(props, "bool", "ResetOnSpawn", "false")
+
     # Text properties (TextLabel / TextButton)
     if elem.class_name in ("TextLabel", "TextButton"):
         _make_property(props, "string", "Text", elem.text)
@@ -526,10 +532,9 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     _make_property(props, "string", "Name", part.name)
     _make_property(props, "bool", "Anchored", str(part.anchored).lower())
 
-    if _is_identity_quat(part.rotation):
-        _make_vector3(props, "Position", part.position)
-    else:
-        _make_cframe(props, "CFrame", part.position, part.rotation)
+    # Always write CFrame (CoordinateFrame) — Roblox ignores the Position
+    # property in XML; only CFrame is used to place parts correctly.
+    _make_cframe(props, "CFrame", part.position, part.rotation)
 
     _make_vector3(props, "Size", part.size)
     _make_property(props, "BrickColor", "BrickColor", part.brick_color)

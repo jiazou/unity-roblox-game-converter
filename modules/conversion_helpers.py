@@ -1680,6 +1680,19 @@ if characterController then
 end
 
 ---------------------------------------------------------------------------
+-- Phase 2c: Call Init() on modules that define it
+-- Unity calls custom Init() methods explicitly from other scripts (e.g.
+-- TrackManager.Begin() calls characterController.Init()). The converter
+-- cannot trace cross-class call graphs, so we call Init() generically
+-- on every instantiated module after references are wired.
+---------------------------------------------------------------------------
+for _, mod in ipairs({{characterController, trackManager}}) do
+\tif mod and type(mod.Init) == "function" then
+\t\tmod:Init()
+\tend
+end
+
+---------------------------------------------------------------------------
 -- Phase 3: Instantiate game states (order matches Unity Inspector array)
 ---------------------------------------------------------------------------
 {instantiation_block}
