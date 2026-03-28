@@ -45,6 +45,7 @@ _CONVERTED_COMPONENTS: frozenset[str] = frozenset({
     "ParticleSystem",
     "Camera",
     "Animator",
+    "Animation",
     "MonoBehaviour",
     "Canvas", "CanvasRenderer", "CanvasGroup",
 })
@@ -52,6 +53,7 @@ _CONVERTED_COMPONENTS: frozenset[str] = frozenset({
 # Suggestions for unconverted components — what users can do about them
 _COMPONENT_SUGGESTIONS: dict[str, str] = {
     "Animator": "Auto-converted via AnimatorBridge; review generated config for blend trees and missing clips",
+    "Animation": "Auto-converted via TransformAnimator bridge; review generated keyframe config for simple looping animations",
     "CharacterController": "Replace with Humanoid or custom character controller in Luau",
     "NavMeshAgent": "Use PathfindingService for AI navigation in Roblox",
     "NavMeshObstacle": "Use PathfindingService modifiers for obstacles",
@@ -261,7 +263,15 @@ def convert_particle_components(
     node_name: str,
     components: list[scene_parser.ComponentData],
 ) -> None:
-    """Convert Unity ParticleSystem components to Roblox particle emitter tuples."""
+    """Convert Unity ParticleSystem components to Roblox particle emitter tuples.
+
+    Detects burst vs continuous emission:
+    - Continuous: rateOverTime > 0, looping (default behaviour)
+    - Burst: rateOverTime ≈ 0 with burst entries, or non-looping one-shot effects
+
+    Burst particles are written with Rate=0, Enabled=false and a BurstCount tag.
+    Game scripts trigger them via ParticleEmitter:Emit(count).
+    """
     for comp in components:
         if comp.component_type != "ParticleSystem":
             continue
@@ -286,6 +296,34 @@ def convert_particle_components(
         color_data = start_color.get("maxColor", {}) if isinstance(start_color, dict) else {}
         p_color = _parse_color3(color_data, normalize_255=True)
 
+        # Detect burst vs continuous emission
+        looping = bool(props.get("looping", 1))
+        burst_count = 0
+
+        # New format (Unity 2017.3+): m_Bursts array
+        bursts = emission_module.get("m_Bursts", [])
+        if isinstance(bursts, list) and bursts:
+            first_burst = bursts[0] if isinstance(bursts[0], dict) else {}
+            count_curve = first_burst.get("countCurve", {})
+            if isinstance(count_curve, dict):
+                burst_count = int(_scalar_or_default(count_curve, 10))
+            else:
+                burst_count = int(_scalar_or_default(first_burst.get("minCount", first_burst.get("count", {})), 10))
+
+        # Old format: cnt0-cnt3 fields
+        if burst_count == 0:
+            for i in range(4):
+                cnt = emission_module.get(f"cnt{i}", 0)
+                try:
+                    cnt_val = int(cnt)
+                except (TypeError, ValueError):
+                    cnt_val = 0
+                if cnt_val > 0:
+                    burst_count = max(burst_count, cnt_val)
+
+        is_burst = (rate < 0.01) and (burst_count > 0 or not looping)
+        emission_mode = "burst" if is_burst else "continuous"
+
         part.particle_children.append((
             node_name + "_Particles",
             rate, lifetime, lifetime,
@@ -294,6 +332,8 @@ def convert_particle_components(
             None,   # texture
             0.0,    # light_emission
             0.0,    # transparency
+            emission_mode,
+            burst_count,
         ))
 
 

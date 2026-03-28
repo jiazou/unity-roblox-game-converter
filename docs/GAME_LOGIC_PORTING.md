@@ -22,6 +22,7 @@ The bridge is NOT a full Unity emulator. It provides the 20% of Unity APIs that 
 | `Time` | deltaTime, time, timeScale | RunService.Heartbeat delta, os.clock |
 | `StateMachine` | GameManager + AState (stack-based state machine) | Enter/Exit/Tick lifecycle, PushState/PopState/SwitchState |
 | `AnimatorBridge` | Animator state machine, blend trees, parameters | AnimationTrack crossfades, parameter-driven transitions |
+| `TransformAnimator` | Legacy Animation on non-skeletal objects (spin, bob, tilt) | Shared Heartbeat-driven keyframe interpolation on CFrame/Size |
 
 The bridge API should match Unity's naming so transpiled code needs minimal changes:
 ```lua
@@ -72,7 +73,7 @@ Unity C# Scripts
 | Bootstrap script generator | `modules/conversion_helpers.py: generate_bootstrap_script()` | GameManager state machine wiring |
 | AI transpiler (Claude) | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality |
 
-**Status**: Bridge Luau modules exist in `bridge/` (AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
+**Status**: Bridge Luau modules exist in `bridge/` (AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
 
 **Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below. Currently, the AI transpiler inlines bridge patterns directly into transpiled scripts rather than requiring the bridge modules at runtime.
 

@@ -10,7 +10,7 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 - `convert_interactive.py` — Phase-based CLI for the `/convert-unity` skill (interactive, one phase at a time)
 - `config.py` — All configuration constants (paths, API keys, thresholds)
 - `modules/` — Individual pipeline modules (22 modules; no cross-imports except `conversion_helpers` which imports data types from `rbxl_writer`)
-- `bridge/` — Reusable Unity API shim modules in Luau (8 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). Not yet auto-injected into .rbxl — assembly integration is TODO.
+- `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). Not yet auto-injected into .rbxl — assembly integration is TODO.
 
 ### Pipeline Phases
 

@@ -348,6 +348,57 @@ class TestConvertParticleComponents:
         assert pc[6] == pytest.approx(2.0)
         assert pc[1] == pytest.approx(5.0)
 
+    def test_burst_particle_detection(self) -> None:
+        """ParticleSystem with rateOverTime≈0 and burst entries → burst mode."""
+        part = _part()
+        comps = [_comp("ParticleSystem",
+            looping=0,
+            InitialModule={
+                "startLifetime": {"scalar": 0.5},
+                "startSpeed": {"scalar": 3.0},
+                "startSize": {"scalar": 1.0},
+                "startColor": {"maxColor": {"r": 1.0, "g": 1.0, "b": 0.0}},
+            },
+            EmissionModule={
+                "rateOverTime": {"scalar": 0.0},
+                "m_Bursts": [{"countCurve": {"scalar": 20}}],
+            },
+        )]
+        convert_particle_components(part, "Explosion", comps)
+        assert len(part.particle_children) == 1
+        pc = part.particle_children[0]
+        assert pc[11] == "burst"
+        assert pc[12] == 20
+
+    def test_continuous_particle_has_mode(self) -> None:
+        """Normal continuous particles get emission_mode='continuous'."""
+        part = _part()
+        comps = [_comp("ParticleSystem",
+            looping=1,
+            InitialModule={"startLifetime": {"scalar": 2.0}},
+            EmissionModule={"rateOverTime": {"scalar": 15.0}},
+        )]
+        convert_particle_components(part, "Smoke", comps)
+        pc = part.particle_children[0]
+        assert pc[11] == "continuous"
+        assert pc[12] == 0
+
+    def test_burst_old_format_cnt0(self) -> None:
+        """ParticleSystem with cnt0 (old format) detected as burst."""
+        part = _part()
+        comps = [_comp("ParticleSystem",
+            looping=0,
+            InitialModule={},
+            EmissionModule={
+                "rateOverTime": {"scalar": 0.0},
+                "cnt0": 15,
+            },
+        )]
+        convert_particle_components(part, "Spark", comps)
+        pc = part.particle_children[0]
+        assert pc[11] == "burst"
+        assert pc[12] == 15
+
 
 # ---------------------------------------------------------------------------
 # apply_materials

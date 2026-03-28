@@ -294,6 +294,42 @@ def convert(
     else:
         click.echo("    → No Animator components found")
 
+    # ── Transform animation conversion (Legacy Animation → config + bridge) ──
+    click.echo("🔄  Converting transform animations …")
+    transform_result = animation_converter.convert_transform_animations(
+        parsed_scenes, guid_index, unity_path, prefab_library=prefabs,
+    )
+    if transform_result.anims_found:
+        click.echo(f"    → {transform_result.anims_found} Legacy Animation(s) found, "
+                   f"{transform_result.anims_converted} converted")
+        for mod_name, mod_source in transform_result.config_modules:
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path("(generated)"),
+                output_filename=f"{mod_name}.lua",
+                csharp_source="",
+                luau_source=mod_source,
+                strategy="ai",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
+        if transform_result.bridge_needed:
+            bridge_path = Path(__file__).parent / "bridge" / "TransformAnimator.lua"
+            if bridge_path.exists():
+                transpilation.scripts.append(code_transpiler.TranspiledScript(
+                    source_path=Path("(generated)"),
+                    output_filename="TransformAnimator.lua",
+                    csharp_source="",
+                    luau_source=bridge_path.read_text(encoding="utf-8"),
+                    strategy="ai",
+                    confidence=1.0,
+                    script_type="ModuleScript",
+                ))
+                click.echo("    → TransformAnimator.lua added (ModuleScript in ReplicatedStorage)")
+        for w in transform_result.warnings:
+            click.echo(f"    ⚠ {w}")
+    else:
+        click.echo("    → No Legacy Animation components found")
+
     # ── Bootstrap script generation ──────────────────────────────────
     click.echo("🎬  Generating bootstrap script …")
     bootstrap_source = _generate_bootstrap_script(parsed_scenes, guid_index, transpilation)

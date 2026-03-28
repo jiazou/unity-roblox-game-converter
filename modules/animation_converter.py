@@ -64,6 +64,21 @@ UNITY_TO_R15_BONE_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 @dataclass
+class AnimKeyframe:
+    """A single keyframe in a transform curve."""
+    time: float
+    value: tuple[float, ...]  # (x,y,z) for pos/euler/scale, (x,y,z,w) for quat
+
+
+@dataclass
+class TransformCurve:
+    """A curve animating a single property (position, rotation, etc.) on a path."""
+    path: str  # "" = self, "Child/Name" = relative child
+    curve_type: str  # "position", "rotation", "euler", "scale"
+    keyframes: list[AnimKeyframe] = field(default_factory=list)
+
+
+@dataclass
 class AnimationClipInfo:
     """Metadata extracted from a Unity .anim file."""
     name: str
@@ -73,6 +88,8 @@ class AnimationClipInfo:
     loop: bool = False
     # bone_paths found in the clip (for mapping validation)
     bone_paths: list[str] = field(default_factory=list)
+    # Full keyframe data for transform curves
+    transform_curves: list[TransformCurve] = field(default_factory=list)
 
 
 @dataclass
@@ -161,6 +178,34 @@ class AnimationConversionResult:
 # .anim file parsing
 # ---------------------------------------------------------------------------
 
+def _extract_keyframes(m_curve: Any) -> list[AnimKeyframe]:
+    """Extract keyframe time/value pairs from a Unity m_Curve list."""
+    if not isinstance(m_curve, list):
+        return []
+    keyframes: list[AnimKeyframe] = []
+    for entry in m_curve:
+        if not isinstance(entry, dict):
+            continue
+        time = float(entry.get("time", 0))
+        value_raw = entry.get("value", {})
+        if isinstance(value_raw, dict):
+            x = float(value_raw.get("x", 0))
+            y = float(value_raw.get("y", 0))
+            z = float(value_raw.get("z", 0))
+            w = value_raw.get("w")
+            if w is not None:
+                value = (x, y, z, float(w))
+            else:
+                value = (x, y, z)
+        else:
+            try:
+                value = (float(value_raw),)
+            except (TypeError, ValueError):
+                continue
+        keyframes.append(AnimKeyframe(time=time, value=value))
+    return keyframes
+
+
 def parse_anim_file(anim_path: Path) -> AnimationClipInfo | None:
     """Parse a Unity .anim file (Force Text YAML) and extract clip metadata.
 
@@ -190,18 +235,40 @@ def parse_anim_file(anim_path: Path) -> AnimationClipInfo | None:
 
         sample_rate = float(body.get("m_SampleRate", 60))
 
-        # Collect bone paths from curve bindings
+        # Collect bone paths and keyframe data from curve bindings
         bone_paths: list[str] = []
-        for curve_type in ("m_RotationCurves", "m_PositionCurves", "m_ScaleCurves",
+        transform_curves: list[TransformCurve] = []
+
+        _CURVE_TYPE_MAP = {
+            "m_RotationCurves": "rotation",
+            "m_PositionCurves": "position",
+            "m_ScaleCurves": "scale",
+            "m_EulerCurves": "euler",
+        }
+
+        for unity_key in ("m_RotationCurves", "m_PositionCurves", "m_ScaleCurves",
                            "m_FloatCurves", "m_EulerCurves"):
-            curves = body.get(curve_type, [])
+            curves = body.get(unity_key, [])
             if not isinstance(curves, list):
                 continue
             for curve in curves:
-                if isinstance(curve, dict):
-                    path = curve.get("path", "")
-                    if path and path not in bone_paths:
-                        bone_paths.append(path)
+                if not isinstance(curve, dict):
+                    continue
+                # YAML `path: ` (empty value) parses as Python None
+                path = curve.get("path") or ""
+                if path and path not in bone_paths:
+                    bone_paths.append(path)
+
+                # Extract keyframe data for transform curves
+                if unity_key in _CURVE_TYPE_MAP:
+                    curve_type = _CURVE_TYPE_MAP[unity_key]
+                    keyframes = _extract_keyframes(curve.get("curve", {}).get("m_Curve", []))
+                    if keyframes:
+                        transform_curves.append(TransformCurve(
+                            path=path,
+                            curve_type=curve_type,
+                            keyframes=keyframes,
+                        ))
 
         return AnimationClipInfo(
             name=clip_name,
@@ -210,6 +277,7 @@ def parse_anim_file(anim_path: Path) -> AnimationClipInfo | None:
             sample_rate=sample_rate,
             loop=loop_time,
             bone_paths=bone_paths,
+            transform_curves=transform_curves,
         )
 
     return None
@@ -732,3 +800,235 @@ def _find_anim_file(project_root: Path, clip_name: str) -> Path | None:
     if matches:
         return matches[0]
     return None
+
+
+# ---------------------------------------------------------------------------
+# Transform animation support (Legacy Animation → TransformAnimator configs)
+# ---------------------------------------------------------------------------
+
+def is_transform_only_anim(clip: AnimationClipInfo) -> bool:
+    """Return True when the clip animates only transforms (not humanoid bones).
+
+    Transform-only animations (spin, bob, tilt) drive position/rotation/scale
+    on the object itself or simple children, with no humanoid bone references.
+    These are converted to TransformAnimator configs instead of AnimatorBridge.
+    """
+    if not clip.transform_curves:
+        return False
+
+    humanoid_bone_names = set(UNITY_TO_R15_BONE_MAP.keys())
+
+    for curve in clip.transform_curves:
+        # Check if any path segment matches a humanoid bone name
+        path_parts = curve.path.split("/") if curve.path else [""]
+        for part in path_parts:
+            # Strip common prefixes like "Armature|"
+            clean = part.split("|")[-1] if "|" in part else part
+            if clean in humanoid_bone_names:
+                return False
+
+    return True
+
+
+def generate_transform_anim_config(clip: AnimationClipInfo) -> str:
+    """Generate a Luau ModuleScript config table for TransformAnimator.lua.
+
+    Converts parsed .anim keyframe data into a Luau table consumed by
+    bridge/TransformAnimator.lua at runtime.
+    """
+    lines: list[str] = []
+    lines.append(f"-- Auto-generated transform animation config for {clip.name}")
+    lines.append(f"-- Source: {clip.path.name}")
+    lines.append("")
+    lines.append("return {")
+    lines.append(f"\tloop = {_lua_value(clip.loop)},")
+    lines.append(f"\tduration = {_lua_value(clip.duration)},")
+    lines.append("\tcurves = {")
+
+    # Group curves by type (only self-targeting curves, path="" or first child)
+    curves_by_type: dict[str, list[TransformCurve]] = {}
+    for curve in clip.transform_curves:
+        ctype = curve.curve_type
+        if ctype not in curves_by_type:
+            curves_by_type[ctype] = []
+        curves_by_type[ctype].append(curve)
+
+    for ctype in ("position", "euler", "rotation", "scale"):
+        curves = curves_by_type.get(ctype)
+        if not curves:
+            continue
+
+        lines.append(f"\t\t{ctype} = {{")
+        for curve in curves:
+            for kf in curve.keyframes:
+                if len(kf.value) >= 3:
+                    x, y, z = kf.value[0], kf.value[1], kf.value[2]
+                    lines.append(f"\t\t\t{{ time = {kf.time}, value = Vector3.new({x}, {y}, {z}) }},")
+                elif len(kf.value) == 1:
+                    v = kf.value[0]
+                    lines.append(f"\t\t\t{{ time = {kf.time}, value = Vector3.new({v}, {v}, {v}) }},")
+        lines.append("\t\t},")
+
+    lines.append("\t},")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+@dataclass
+class TransformAnimationResult:
+    """Result of converting Legacy Animation components to TransformAnimator configs."""
+    config_modules: list[tuple[str, str]] = field(default_factory=list)
+    bridge_needed: bool = False
+    warnings: list[str] = field(default_factory=list)
+    anims_found: int = 0
+    anims_converted: int = 0
+
+
+def convert_transform_animations(
+    parsed_scenes: list[scene_parser.ParsedScene],
+    guid_index: guid_resolver.GuidIndex,
+    project_root: Path,
+    prefab_library: Any = None,
+) -> TransformAnimationResult:
+    """Convert Legacy Animation components to TransformAnimator configs.
+
+    Scans scenes AND prefabs for Animation components (classID 111), resolves
+    their referenced .anim files, classifies them as transform-only, and
+    generates Luau config ModuleScripts for TransformAnimator.lua.
+
+    Args:
+        parsed_scenes: Parsed Unity scene data.
+        guid_index: GUID resolution index for the Unity project.
+        project_root: Root path of the Unity project.
+        prefab_library: Optional parsed prefab library (from prefab_parser).
+
+    Returns:
+        TransformAnimationResult with generated config modules and warnings.
+    """
+    result = TransformAnimationResult()
+
+    # Collect all Animation components (Legacy Animation, classID 111)
+    # from both scenes and prefabs
+    anim_instances: list[tuple[str, dict[str, Any]]] = []
+    seen_names: set[str] = set()
+
+    for scene in parsed_scenes:
+        for node in scene.all_nodes.values():
+            for comp in node.components:
+                if comp.component_type == "Animation":
+                    anim_instances.append((node.name, comp.properties))
+                    seen_names.add(node.name)
+
+    # Also scan prefab nodes (PrefabComponent has same interface)
+    if prefab_library is not None:
+        prefabs = getattr(prefab_library, "prefabs", [])
+        for pf in prefabs:
+            for node in pf.all_nodes.values():
+                for comp in node.components:
+                    if comp.component_type == "Animation":
+                        key = f"{pf.name}/{node.name}"
+                        if key not in seen_names:
+                            anim_instances.append((node.name, comp.properties))
+                            seen_names.add(key)
+
+    result.anims_found = len(anim_instances)
+    if not anim_instances:
+        return result
+
+    clip_cache: dict[str, AnimationClipInfo | None] = {}
+
+    for go_name, props in anim_instances:
+        # Resolve animation clip references
+        # Unity Animation component stores clips in m_Animation (default clip)
+        # and m_Animations (array of additional clips)
+        clip_guids: list[str] = []
+
+        # Default clip
+        default_clip = props.get("m_Animation", {})
+        if isinstance(default_clip, dict):
+            guid = _ref_guid(default_clip)
+            if guid:
+                clip_guids.append(guid)
+
+        # Additional clips array
+        animations_arr = props.get("m_Animations", [])
+        if isinstance(animations_arr, list):
+            for anim_ref in animations_arr:
+                if isinstance(anim_ref, dict):
+                    guid = _ref_guid(anim_ref)
+                    if guid:
+                        clip_guids.append(guid)
+
+        if not clip_guids:
+            # Try searching by name as fallback
+            anim_path = _find_anim_file(project_root, go_name)
+            if anim_path:
+                cache_key = str(anim_path)
+                if cache_key not in clip_cache:
+                    clip_cache[cache_key] = parse_anim_file(anim_path)
+                clip = clip_cache[cache_key]
+                if clip and is_transform_only_anim(clip):
+                    config_source = generate_transform_anim_config(clip)
+                    module_name = f"{go_name}_TransformAnimConfig"
+                    result.config_modules.append((module_name, config_source))
+                    result.anims_converted += 1
+                elif clip:
+                    result.warnings.append(f"{go_name}: Animation clip is not transform-only (may use FloatCurves or bones)")
+            else:
+                result.warnings.append(f"{go_name}: Animation component has no clip references")
+            continue
+
+        for guid in clip_guids:
+            clip_path = guid_index.resolve(guid)
+            if not clip_path:
+                result.warnings.append(f"{go_name}: Cannot resolve animation clip GUID {guid}")
+                continue
+
+            cache_key = str(clip_path)
+            if cache_key not in clip_cache:
+                clip_cache[cache_key] = parse_anim_file(clip_path)
+            clip = clip_cache[cache_key]
+            if not clip:
+                result.warnings.append(f"{go_name}: Failed to parse {clip_path.name}")
+                continue
+
+            if is_transform_only_anim(clip):
+                config_source = generate_transform_anim_config(clip)
+                module_name = f"{go_name}_{clip.name}_TransformAnimConfig"
+                result.config_modules.append((module_name, config_source))
+                result.anims_converted += 1
+            else:
+                if clip.transform_curves:
+                    result.warnings.append(
+                        f"{go_name}: {clip.name} has humanoid bone references, skipping "
+                        "(use AnimatorBridge for skeletal animations)"
+                    )
+                else:
+                    result.warnings.append(
+                        f"{go_name}: {clip.name} has no transform curves "
+                        "(may use FloatCurves, embedded FBX animation, or be UI-only)"
+                    )
+
+    # Scan all standalone .anim files in the project that weren't already
+    # processed via Animation components. This catches clips like Fishbones.anim
+    # that exist in the project but aren't referenced by any Animation or
+    # Animator component (applied via script at runtime in Unity).
+    converted_clip_paths: set[str] = set(clip_cache.keys())
+    for anim_path in project_root.rglob("*.anim"):
+        cache_key = str(anim_path)
+        if cache_key in converted_clip_paths:
+            continue
+        if cache_key not in clip_cache:
+            clip_cache[cache_key] = parse_anim_file(anim_path)
+        clip = clip_cache[cache_key]
+        if not clip:
+            continue
+        if is_transform_only_anim(clip):
+            config_source = generate_transform_anim_config(clip)
+            module_name = f"{clip.name}_TransformAnimConfig"
+            result.config_modules.append((module_name, config_source))
+            result.anims_converted += 1
+            result.anims_found += 1
+
+    result.bridge_needed = result.anims_converted > 0
+    return result

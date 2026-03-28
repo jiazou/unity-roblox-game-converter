@@ -124,7 +124,11 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
 
 6. **Implementability check** — For each Unity system, assess whether it can be ported as-is or needs simplification. A working simple version beats a broken complex one. If a system (e.g., procedural track segments, spline evaluation) cannot be ported, implement an approximation and document what's missing so it can be improved later.
 
-**Decision point:** Present the architecture map (items 1–6) to the user. Include the platform divergence table. Ask: "Does this match your understanding of the game? For each pillar where Unity and Roblox diverge, which approach do you want?"
+7. **Transform animation detection** — Scan for Legacy Animation components (classID 111) and `.anim` files that drive simple looping transform animations (spin, bob, tilt) on non-skeletal objects like collectibles, power-up icons, and obstacles. These are distinct from Mecanim Animator clips — they animate position/rotation/scale on the object itself, not humanoid bones. The converter's `convert_transform_animations()` auto-generates TransformAnimator configs from parsed `.anim` keyframe data. Verify the generated configs match the intended animation behaviour (axis, speed, loop).
+
+8. **Particle emission classification** — For each ParticleSystem, determine if it's continuous (ambient trails, auras) or burst-triggered (collection sparkles, death explosions, power-up pickup effects). Burst particles have `rateOverTime ≈ 0` with burst entries (`m_Bursts` array or old-format `cnt0`-`cnt3` fields) or are non-looping. The converter sets burst ParticleEmitters to `Enabled = false` with a `BurstCount` IntValue child. Game scripts must call `emitter:Emit(burstCount)` at the right moment (e.g., on coin collection, on character death). Wire these `:Emit()` calls in the appropriate game scripts during porting.
+
+**Decision point:** Present the architecture map (items 1–8) to the user. Include the platform divergence table. Ask: "Does this match your understanding of the game? For each pillar where Unity and Roblox diverge, which approach do you want?"
 
 #### Phase B: Module-per-Component Rewrite
 
@@ -136,6 +140,8 @@ For each major game system, write a **separate Luau module** that mirrors its Un
 | `TrackManager` | `TrackManager.lua` | `GameObjectUtil`, `Time` |
 | `CharacterInputController` | `CharacterController.lua` | `Input`, `Physics` |
 | Game-specific MonoBehaviours | One module per behaviour | `MonoBehaviour` |
+| Legacy Animation on non-skeletal objects (collectibles, power-ups) | Auto-generated `*_TransformAnimConfig` ModuleScript | `TransformAnimator` |
+| ParticleSystem (burst effects) | ParticleEmitter with `Enabled=false` + `BurstCount` tag | Game scripts call `:Emit()` |
 
 **Rules for each module:**
 - Preserve the same public API shape as the Unity class (methods, properties)

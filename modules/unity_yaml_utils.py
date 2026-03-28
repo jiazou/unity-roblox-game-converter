@@ -50,6 +50,7 @@ CID_ANIMATION_CLIP = 74
 CID_ANIMATOR_CONTROLLER = 91
 CID_ANIMATOR = 95
 CID_LIGHT = 108
+CID_LEGACY_ANIMATION = 111
 CID_SPHERE_COLLIDER = 135
 CID_CAPSULE_COLLIDER = 136
 CID_MESH_COLLIDER = 64
@@ -139,6 +140,7 @@ KNOWN_COMPONENT_CIDS: frozenset[int] = frozenset({
     CID_AUDIO_LISTENER,
     CID_VIDEO_PLAYER,
     CID_PLAYABLE_DIRECTOR,
+    CID_LEGACY_ANIMATION,
 })
 
 COMPONENT_CID_TO_NAME: dict[int, str] = {
@@ -155,6 +157,7 @@ COMPONENT_CID_TO_NAME: dict[int, str] = {
     CID_LIGHT: "Light",
     CID_PARTICLE_SYSTEM: "ParticleSystem",
     CID_ANIMATOR: "Animator",
+    CID_LEGACY_ANIMATION: "Animation",
     CID_CHARACTER_CONTROLLER: "CharacterController",
     CID_CAMERA: "Camera",
     # Additional components for broader game support
