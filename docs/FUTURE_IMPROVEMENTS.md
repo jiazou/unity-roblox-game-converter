@@ -2,17 +2,9 @@
 
 ## Quick Wins
 
-### QW-1. Conversion report with warnings for silently dropped components (high impact)
+### ~~QW-1. Conversion report with warnings for silently dropped components~~ — DONE
 
-**Problem:** The pipeline recognizes 30+ Unity component types (Animator, NavMeshAgent, Terrain, CharacterController, LineRenderer, TrailRenderer, Cloth, WindZone, etc.) but silently drops them during conversion. Users have no way to know what's missing from their converted game.
-
-**Fix:** Generate a structured conversion report at the end of assembly that lists:
-- Every component type encountered and how it was handled (converted / partially converted / dropped)
-- Per-object warnings: "GameObject 'Enemy' has NavMeshAgent — AI navigation not converted"
-- Summary counts: "147 components converted, 23 dropped (12 Animator, 8 NavMeshAgent, 3 Terrain)"
-- Actionable suggestions: "Consider porting Animator behavior manually via Roblox AnimationController"
-
-**Files affected:** `modules/conversion_helpers.py` (collect warnings during `node_to_part`), `modules/report_generator.py` (format report), `convert_interactive.py` / `converter.py` (surface report)
+**Resolution:** `conversion_helpers.py` now collects `ComponentWarning` objects during `node_to_part()` for every unrecognized component type. Each warning includes the GameObject name, component type, and an actionable suggestion from `_COMPONENT_SUGGESTIONS`. The report includes per-type counts and suggestions. The conversion report's `components` section shows `total_encountered`, `converted`, `dropped`, `dropped_by_type`, and `dropped_details`.
 
 ### QW-2. Transpiler warnings for networking attributes and object pooling (high impact)
 
@@ -84,16 +76,18 @@
 
 **Strategy:** Embedded state machine generation (Strategy A). Parse Unity animation assets, generate Luau config tables describing the state machine, and pair them with a runtime `AnimatorBridge.lua` that drives Roblox `AnimationController`/`AnimationTrack`. All output is self-contained in the `.rbxl` — no external tools required at runtime.
 
+**Status:** Phases 0–1 implemented in `modules/animation_converter.py` (66 tests). Parses `.controller` and `.anim` YAML, generates per-Animator Luau config tables, includes bone name mapping (Unity Humanoid → Roblox R15). `bridge/AnimatorBridge.lua` exists as the runtime consumer. Remaining: Phases 2–5 (animation upload, pipeline integration into convert_interactive.py, API mapping updates).
+
 #### Implementation Phases
 
-**Phase 0 — Expand Discovery** (scene_parser + asset_extractor)
+**Phase 0 — Expand Discovery** (scene_parser + asset_extractor) — DONE
 - Add classID 91 (AnimatorController) and 74 (AnimationClip) to `unity_yaml_utils.py`
 - Extract from Animator components: `m_Controller` GUID, `m_Avatar` GUID, `m_ApplyRootMotion`
 - Parse `.controller` YAML → state machine graph (states, transitions, parameters, blend trees)
 - Parse `.anim` YAML → keyframe curves (time, value, inTangent, outTangent per bone per property)
 - Tool: `unityparser` (PyPI) for Force Text YAML, or `UnityPy` for binary assets
 
-**Phase 1 — New module: `modules/animation_converter.py`**
+**Phase 1 — New module: `modules/animation_converter.py`** — DONE
 
 Produces two outputs from parsed animation data:
 
@@ -240,7 +234,7 @@ Add transpiler prompt rule: "If the script references an Animator, assume `anima
 
 **Files affected:** `modules/roblox_uploader.py` (patching logic), `convert_interactive.py` (upload command)
 
-### IP-2. Monolithic roblox_uploader.py (1076 lines doing 6 jobs)
+### IP-2. Monolithic roblox_uploader.py (1456 lines doing 6 jobs)
 
 **Problem:** One file handles FBX→GLB conversion, texture injection, API uploading, .rbxl XML patching (4 strategies), Unity YAML parsing for mesh→material mapping, MeshLoader script generation, and username resolution.
 

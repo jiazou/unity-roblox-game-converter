@@ -41,18 +41,36 @@ don't need to review intermediate results.
 
 ## Module Overview
 
+### Pipeline modules
+
 | Module | Main Function | Description |
 |---|---|---|
-| `asset_extractor` | `extract_assets(unity_project_path)` | Discovers textures, meshes, audio, materials, and animations; returns an `AssetManifest`. |
-| `guid_resolver` | `build_guid_index(unity_project_path)` | Builds a full bidirectional GUID ↔ asset-path index from `.meta` files. Detects orphans and duplicates. |
 | `scene_parser` | `parse_scene(scene_path)` | Parses a `.unity` scene YAML file into a tree of `SceneNode` objects. |
 | `prefab_parser` | `parse_prefabs(unity_project_path)` | Finds and parses all `.prefab` files; returns a `PrefabLibrary`. |
+| `asset_extractor` | `extract_assets(unity_project_path)` | Discovers textures, meshes, audio, materials, and animations; returns an `AssetManifest`. |
+| `guid_resolver` | `build_guid_index(unity_project_path)` | Builds a full bidirectional GUID ↔ asset-path index from `.meta` files. Detects orphans and duplicates. |
 | `material_mapper` | `map_materials(unity_path, out_dir)` | Parses Unity `.mat` files, resolves shaders/textures, produces Roblox materials. |
 | `code_transpiler` | `transpile_scripts(unity_project_path, ...)` | Converts C# scripts to Luau via Claude AI (requires Anthropic API key). |
+| `code_validator` | `validate_luau(source, filename)` | Validates generated Luau for syntax errors (block balance, residual C#). |
 | `mesh_decimator` | `decimate_meshes(mesh_paths, output_dir)` | Conservative mesh decimation — only reduces faces when above the Roblox 10k limit. |
-| `roblox_uploader` | `upload_to_roblox(rbxl_path, ...)` | Uploads `.rbxl` and textures to Roblox via Open Cloud API. Requires a Roblox API key. |
+| `vertex_color_baker` | `bake_vertex_colors(mesh_paths, out_dir)` | Rasterises mesh vertex colors to UV-space textures (OBJ/PLY/GLB). |
+| `scriptable_object_converter` | `convert_asset_files(unity_path)` | Converts Unity `.asset` ScriptableObjects to Luau data table ModuleScripts. |
+| `animation_converter` | `convert_animations(scenes, guid_index, path)` | Parses Animator controllers/clips, generates Luau config tables and AnimatorBridge. |
+| `ui_translator` | `translate_ui_hierarchy(roots)` | Converts Unity Canvas/RectTransform UI to Roblox ScreenGui/UDim2 hierarchy. |
+| `conversion_helpers` | `scene_nodes_to_parts(...)`, `generate_bootstrap_script(...)` | Transforms parsed Unity nodes to Roblox parts; generates GameBootstrap lifecycle script. |
 | `rbxl_writer` | `write_rbxl(parts, scripts, output_path)` | Serialises geometry and scripts into a valid `.rbxl` XML place file. |
+| `rbxl_binary_writer` | `xml_to_binary(xml_path, binary_path)` | Converts XML `.rbxl` to Roblox binary format for Open Cloud upload. |
+| `roblox_uploader` | `upload_to_roblox(rbxl_path, ...)` | Uploads assets and `.rbxl` to Roblox via Open Cloud API. Injects MeshLoader script. |
 | `report_generator` | `generate_report(report, output_path)` | Writes a JSON conversion report and prints a human-readable summary. |
+
+### Infrastructure modules
+
+| Module | Description |
+|---|---|
+| `unity_yaml_utils` | Shared YAML parsing for scene/prefab files (document separators, classIDs, vector/quaternion extraction). |
+| `api_mappings` | Unity C# → Roblox Luau API mapping tables (130+ call mappings, 15 lifecycle hooks). |
+| `llm_cache` | SHA-256-based disk cache for LLM responses with TTL-based eviction. |
+| `retry` | Exponential backoff retry decorator for transient network failures. |
 
 ### Entry points
 
@@ -141,9 +159,13 @@ python converter.py ./MyUnityProject ./roblox_output \
 
 ```
 roblox_output/
-├── converted_place.rbxl    ← Open in Roblox Studio
-├── meshes/                 ← Decimated meshes (when --decimate is on)
-└── conversion_report.json  ← Full conversion summary
+├── converted_place.rbxl          ← Open in Roblox Studio
+├── converted_place_binary.rbxl   ← Binary format (generated during upload for Open Cloud)
+├── scripts/                      ← Transpiled Luau scripts (standalone copies for reference/editing)
+├── meshes/                       ← Decimated meshes (when --decimate is on)
+├── asset_id_map.json             ← Cached Roblox asset IDs from upload
+├── .convert_state.json           ← Interactive conversion state (resume support)
+└── conversion_report.json        ← Full conversion summary
 ```
 
 ### Portal Upload

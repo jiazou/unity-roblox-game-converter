@@ -15,16 +15,13 @@ The bridge is NOT a full Unity emulator. It provides the 20% of Unity APIs that 
 | Module | Unity Concept | Roblox Implementation |
 |--------|--------------|----------------------|
 | `MonoBehaviour` | Start/Update/OnDestroy lifecycle | Connect to RunService.Heartbeat, table of callbacks |
-| `GameObject` | Instantiate, Destroy, Find, GetComponent | InsertService:LoadAsset, Instance.new, FindFirstChild |
+| `GameObjectUtil` | Instantiate, Destroy, Find, GetComponent | InsertService:LoadAsset, Instance.new, FindFirstChild |
 | `Input` | GetKey, GetAxis, touch/swipe | UserInputService mapped to Unity key names |
-| `Transform` | position, rotation, Translate, Rotate | CFrame wrappers |
 | `Physics` | Raycast, CheckSphere, OnTriggerEnter | workspace:Raycast, GetTouchingParts, Touched event |
 | `Coroutine` | StartCoroutine, yield, WaitForSeconds | task.spawn, task.wait |
 | `Time` | deltaTime, time, timeScale | RunService.Heartbeat delta, os.clock |
 | `StateMachine` | GameManager + AState (stack-based state machine) | Enter/Exit/Tick lifecycle, PushState/PopState/SwitchState |
-| `Random` | Range, InitState | Random.new, math.random |
-| `Addressables` | InstantiateAsync, LoadAssetAsync | InsertService:LoadAsset (with asset ID manifest) |
-| `PlayerPrefs` | GetInt, SetInt, Save | DataStoreService or player:SetAttribute |
+| `AnimatorBridge` | Animator state machine, blend trees, parameters | AnimationTrack crossfades, parameter-driven transitions |
 
 The bridge API should match Unity's naming so transpiled code needs minimal changes:
 ```lua
@@ -75,9 +72,9 @@ Unity C# Scripts
 | Bootstrap script generator | `modules/conversion_helpers.py: generate_bootstrap_script()` | GameManager state machine wiring |
 | AI transpiler (Claude) | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality |
 
-**Status**: Bridge Luau modules exist in `bridge/` (Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
+**Status**: Bridge Luau modules exist in `bridge/` (AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
 
-**Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below.
+**Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below. Currently, the AI transpiler inlines bridge patterns directly into transpiled scripts rather than requiring the bridge modules at runtime.
 
 ## Implementation plan
 
@@ -104,6 +101,27 @@ Game-specific scripts (e.g., GameBootstrap, CharacterController) are **not** par
 - `bridge/` — reusable Unity API shims (injected into every conversion)
 - `modules/` — Python pipeline code
 - `.claude/skills/` — skills that orchestrate the LLM rewriting
+
+## Known limitations of the bootstrap generator
+
+### Generic Init() calls
+
+The bootstrap template calls `Init()` on all instantiated modules generically:
+```lua
+for _, mod in ipairs({characterController, trackManager}) do
+    if mod and type(mod.Init) == "function" then mod:Init() end
+end
+```
+
+In Unity, Init() calls are explicit and ordered — e.g., `TrackManager.Begin()` calls `characterController.Init()`. The converter cannot statically trace C# cross-class call graphs, so it calls Init() on every module after references are wired. This works as long as Init() methods are idempotent (safe to call multiple times), which they are for all modules encountered so far.
+
+### MeshLoader dependency
+
+Roblox Studio ignores `MeshPart.MeshId` set in XML. The only way to load mesh geometry is via `InsertService:LoadAsset()` at runtime. The upload phase injects a `MeshLoader` server Script that downloads each mesh Model from Roblox's servers, replaces placeholder MeshParts, and signals completion via a `MeshLoaderDone` BoolValue. The bootstrap **must wait** for this signal before proceeding. If the .rbxl is re-assembled after upload, MeshLoader must be re-injected.
+
+### Scene reload vs persistent runtime
+
+Unity reloads the scene between game states (destroying and recreating all GameObjects). Roblox keeps the runtime persistent. Any state that Unity resets implicitly via scene reload must be reset explicitly in the Roblox port. The bootstrap's `Begin()` method must call `Init()` to reset position, lane, life, and state between runs.
 
 ## Lessons learned (Trash Dash port)
 

@@ -1,7 +1,7 @@
 # Unsupported Conversions & Known Limitations
 
-> Last updated: 2026-03-03
-> Converter version: 0.2.0 (pre-release)
+> Last updated: 2026-03-28
+> Converter version: 0.3.0 (pre-release)
 > Status: Living document — shrinks as converter improves
 
 This document catalogs everything the Unity-to-Roblox converter **cannot currently handle**,
@@ -103,8 +103,8 @@ correctly skipped for plain Parts (Roblox platform limitation).
 ### ~~Rotation Not Converted~~ — FIXED
 
 Quaternion `(x, y, z, w)` from `m_LocalRotation` is now converted to a full CFrame
-rotation matrix via `_quat_to_rotation_matrix()` in `rbxl_writer.py`. Identity rotations
-emit a simpler `Position` property for cleaner output.
+rotation matrix via `_quat_to_rotation_matrix()` in `rbxl_writer.py`. All parts use
+CFrame (CoordinateFrame) — Roblox ignores the Position property in XML.
 
 ### ~~Prefab Instances Not Instantiated~~ — FIXED
 
@@ -518,25 +518,31 @@ only processed materials, not all `.mat` files found.
 
 ## Test Coverage
 
-**Current**: 811 automated tests across 16 test files covering:
+**Current**: 972 automated tests across 33 test files covering:
 - `test_unity_yaml_utils.py` — YAML parsing, vector/quaternion extraction, references
 - `test_conversion_helpers.py` — All component conversion helpers (colliders, lights, audio, particles, materials)
-- `test_converter.py` — End-to-end node-to-part, prefab resolution, scene conversion, report building
-- `test_scene_parser.py` — Scene YAML parsing, hierarchy building
-- `test_prefab_parser.py` — Prefab YAML parsing
-- `test_material_mapper.py` — Shader property mapping, pipeline detection
-- `test_code_transpiler.py` — C# → Luau AI transpilation
+- `test_converter.py` / `test_converter_detailed.py` / `test_converter_e2e.py` — End-to-end node-to-part, prefab resolution, scene conversion, report building
+- `test_scene_parser.py` / `test_scene_parser_detailed.py` — Scene YAML parsing, hierarchy building
+- `test_prefab_parser.py` / `test_prefab_parser_detailed.py` — Prefab YAML parsing
+- `test_material_mapper.py` / `test_material_mapper_detailed.py` — Shader property mapping, pipeline detection
+- `test_code_transpiler.py` / `test_code_transpiler_detailed.py` — C# → Luau AI transpilation
 - `test_api_mappings.py` — API call/type/lifecycle mapping tables
 - `test_llm_cache.py` — LLM response caching, TTL, eviction
 - `test_retry.py` — Retry logic, backoff, exception handling
 - `test_asset_extractor.py` — Asset file discovery
 - `test_code_validator.py` — Luau syntax validation
+- `test_guid_resolver.py` / `test_guid_resolver_detailed.py` — GUID index building
+- `test_rbxl_writer.py` / `test_rbxl_writer_detailed.py` — .rbxl XML serialization
+- `test_mesh_decimator.py` / `test_mesh_decimator_detailed.py` — Mesh decimation
+- `test_animation_converter.py` — Animator controller/clip parsing, config generation
+- `test_scriptable_object_converter.py` — ScriptableObject → Luau data tables
+- `test_ui_translator.py` — Canvas → ScreenGui conversion
+- `test_vertex_color_baker.py` — Vertex color baking to UV textures
+- `test_roblox_uploader.py` — Upload, patching, MeshLoader injection
+- `test_report_generator.py` — Report generation
+- `test_package_generation.py` — .rbxm prefab package generation
+- `test_generic_game_support.py` — Multi-game converter genericity
 
 **Still needed**:
 - Integration test: full pipeline on synthetic project, assert output structure
 - Regression test: known-good .rbxl output comparison
-
-**Infrastructure modules** (implemented, not yet listed in test coverage section above):
-- `modules/code_validator.py` — Luau syntax validation (block balance, C# residue, bracket balance)
-- `modules/retry.py` — Exponential backoff retry decorator and callable wrapper
-- `modules/llm_cache.py` — Hash-based disk cache for LLM responses (SHA-256 keyed, TTL-based eviction)
