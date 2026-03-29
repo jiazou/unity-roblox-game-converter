@@ -23,7 +23,7 @@
 | [11](#11-scriptableobject-conversion) | ScriptableObject Conversion | Fully implemented (1 medium gap) |
 | [12](#12-roblox-platform-limitations) | Roblox Platform Limitations | 12 permanent engine-level restrictions |
 | [13](#13-deferred-features) | Deferred Features | 12 features tracked (P1–P3) |
-| [14](#14-test-coverage) | Test Coverage | 972 tests across 33 files |
+| [14](#14-test-coverage) | Test Coverage | 1003 tests across 33 files |
 
 ### Related Documents (Not Consolidated)
 
@@ -332,7 +332,7 @@ Handles RectTransform anchor/pivot/sizeDelta → UDim2 conversion with Y-axis in
 
 ### Status: Fully Implemented
 
-- Canvas → ScreenGui (placed in StarterGui)
+- Canvas → ScreenGui (placed in ReplicatedStorage with Enabled=false; bootstrap manages parenting to PlayerGui)
 - Text → TextLabel (with content, size, colour, alignment)
 - Image / RawImage → ImageLabel (with sprite GUID, colour tint)
 - Button → TextButton
@@ -568,7 +568,7 @@ Features not yet implemented, tracked for future work:
 
 ## 14. Test Coverage
 
-**972 automated tests** across 33 test files:
+**1003 automated tests** across 33 test files:
 
 | Test File | Coverage Area |
 |-----------|--------------|

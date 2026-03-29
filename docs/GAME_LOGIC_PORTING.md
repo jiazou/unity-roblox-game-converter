@@ -59,7 +59,7 @@ Unity C# Scripts
 
 ## Related docs
 
-- `.claude/skills/review-csharp-lua-conversion/` — archived skill (rule-based and AST transpilers removed; all transpilation now uses Claude AI)
+- `.claude/skills/review-csharp-lua-conversion/` — **archived** skill (rule-based and AST transpilers removed; all transpilation now uses Claude AI via `code_transpiler.py`)
 - `docs/FUTURE_IMPROVEMENTS.md` — caching, module splitting, serializer improvements
 - `docs/MODULE_STATUS.md` — status of all pipeline modules
 - `docs/UNSUPPORTED.md` — platform limitations catalog
@@ -90,9 +90,10 @@ The `/convert-unity` skill's Step 4.5 (Game Logic Porting) uses a three-phase ap
 
 The skill explicitly prevents the "monolithic flattening" anti-pattern where all game systems get merged into one script. Game-specific output scripts are written to `<output_dir>/scripts/`.
 
-### Phase 3: Assembly integration — TODO
-- Assembly phase injects bridge modules from `bridge/` into `ReplicatedStorage/UnityBridge/` in the .rbxl
-- `rbxl_writer.py` needs folder creation logic for the UnityBridge subfolder
+### Phase 3: Assembly integration — PARTIALLY DONE
+- TransformAnimator is injected into `ReplicatedStorage/UnityBridge/` when the animation pipeline detects non-skeletal animations that need it
+- Full auto-injection of all bridge modules is not yet implemented — only TransformAnimator is injected on demand
+- `rbxl_writer.py` needs folder creation logic for the remaining UnityBridge modules
 - LLM-rewritten scripts are placed in `<output_dir>/scripts/` and assembled normally
 - Bootstrap script wires everything together
 

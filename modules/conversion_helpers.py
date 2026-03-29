@@ -810,35 +810,39 @@ def apply_prefab_modifications(
         if not target_node:
             continue
 
+        # Non-numeric properties — handle before the float parse.
+        if prop_path == "m_Name":
+            target_node.name = str(value)
+            continue
+        if prop_path == "m_IsActive":
+            target_node.active = str(value) == "1"
+            continue
+
         try:
             fval = float(value)
         except (ValueError, TypeError):
-            fval = None
+            continue
 
-        if prop_path == "m_LocalPosition.x" and fval is not None:
+        if prop_path == "m_LocalPosition.x":
             target_node.position = (fval, target_node.position[1], target_node.position[2])
-        elif prop_path == "m_LocalPosition.y" and fval is not None:
+        elif prop_path == "m_LocalPosition.y":
             target_node.position = (target_node.position[0], fval, target_node.position[2])
-        elif prop_path == "m_LocalPosition.z" and fval is not None:
+        elif prop_path == "m_LocalPosition.z":
             target_node.position = (target_node.position[0], target_node.position[1], fval)
-        elif prop_path == "m_LocalRotation.x" and fval is not None:
+        elif prop_path == "m_LocalRotation.x":
             target_node.rotation = (fval, target_node.rotation[1], target_node.rotation[2], target_node.rotation[3])
-        elif prop_path == "m_LocalRotation.y" and fval is not None:
+        elif prop_path == "m_LocalRotation.y":
             target_node.rotation = (target_node.rotation[0], fval, target_node.rotation[2], target_node.rotation[3])
-        elif prop_path == "m_LocalRotation.z" and fval is not None:
+        elif prop_path == "m_LocalRotation.z":
             target_node.rotation = (target_node.rotation[0], target_node.rotation[1], fval, target_node.rotation[3])
-        elif prop_path == "m_LocalRotation.w" and fval is not None:
+        elif prop_path == "m_LocalRotation.w":
             target_node.rotation = (target_node.rotation[0], target_node.rotation[1], target_node.rotation[2], fval)
-        elif prop_path == "m_LocalScale.x" and fval is not None:
+        elif prop_path == "m_LocalScale.x":
             target_node.scale = (fval, target_node.scale[1], target_node.scale[2])
-        elif prop_path == "m_LocalScale.y" and fval is not None:
+        elif prop_path == "m_LocalScale.y":
             target_node.scale = (target_node.scale[0], fval, target_node.scale[2])
-        elif prop_path == "m_LocalScale.z" and fval is not None:
+        elif prop_path == "m_LocalScale.z":
             target_node.scale = (target_node.scale[0], target_node.scale[1], fval)
-        elif prop_path == "m_Name":
-            target_node.name = str(value)
-        elif prop_path == "m_IsActive":
-            target_node.active = str(value) == "1"
 
 
 # ---------------------------------------------------------------------------

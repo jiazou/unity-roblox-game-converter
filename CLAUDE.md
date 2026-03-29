@@ -9,21 +9,21 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 - `converter.py` — Full end-to-end CLI (non-interactive, runs all phases)
 - `convert_interactive.py` — Phase-based CLI for the `/convert-unity` skill (interactive, one phase at a time)
 - `config.py` — All configuration constants (paths, API keys, thresholds)
-- `modules/` — Individual pipeline modules (22 modules; no cross-imports except `conversion_helpers` which imports data types from `rbxl_writer`)
-- `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). Not yet auto-injected into .rbxl — assembly integration is TODO.
+- `modules/` — Individual pipeline modules (21 modules + `__init__.py`). `conversion_helpers` imports multiple pipeline modules (`scene_parser`, `prefab_parser`, `material_mapper`, `code_transpiler`, `guid_resolver`, `mesh_decimator`, `report_generator`, `rbxl_writer`) for data composition.
+- `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). TransformAnimator is auto-injected when transform animations or root motion are detected; remaining modules are not yet auto-injected.
 
 ### Pipeline Phases
 
 1. **Discovery**: `scene_parser` + `prefab_parser` — parse .unity/.prefab YAML
 2. **Inventory**: `asset_extractor` + `guid_resolver` — catalog assets, build GUID index
-3. **Processing**: `material_mapper` + `code_transpiler` + `mesh_decimator` + `scriptable_object_converter` + `animation_converter` + `vertex_color_baker`
+3. **Processing**: `material_mapper` + `code_transpiler` + `code_validator` + `mesh_decimator` + `scriptable_object_converter` + `animation_converter` + `vertex_color_baker`
 4. **Assembly**: `rbxl_writer` + `ui_translator` + `conversion_helpers` — build .rbxl XML, generate bootstrap
 5. **Upload**: `roblox_uploader` + `report_generator` — upload assets, inject MeshLoader, patch asset IDs, upload to Roblox Cloud, generate report
 
 ### Key Design Principles
 
 - Data flows linearly: each module's output is passed explicitly to the next
-- No pipeline module imports another pipeline module — all wiring happens in the orchestrators (`converter.py`, `convert_interactive.py`). The exception is `conversion_helpers.py`, which imports data types from `rbxl_writer.py` to construct `RbxPartEntry` objects.
+- No pipeline module imports another pipeline module — all wiring happens in the orchestrators (`converter.py`, `convert_interactive.py`). The exception is `conversion_helpers.py`, which imports multiple pipeline modules for data composition.
 - State between interactive phases is stored in `<output_dir>/.convert_state.json`
 - Roblox Studio ignores `MeshPart.MeshId` set in XML — mesh assets must be loaded at runtime via `InsertService:LoadAsset()`. The upload phase injects a `MeshLoader` server Script that handles this.
 

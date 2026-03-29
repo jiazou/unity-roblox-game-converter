@@ -1,7 +1,6 @@
 # Unsupported Conversions & Known Limitations
 
 > Last updated: 2026-03-28
-> Converter version: 0.3.0 (pre-release)
 > Status: Living document — shrinks as converter improves
 
 This document catalogs everything the Unity-to-Roblox converter **cannot currently handle**,
@@ -229,7 +228,7 @@ near/far clip plane configuration. See Recently Fixed.
 ~~**Status**: Not implemented~~
 
 Unity Canvas / RectTransform UI hierarchy is now converted to Roblox ScreenGui:
-- `Canvas` → `ScreenGui` (placed in `StarterGui`)
+- `Canvas` → `ScreenGui` (placed in `ReplicatedStorage` with `Enabled=false`; bootstrap manages parenting to `PlayerGui`)
 - `Text` → `TextLabel` (with text content, size, colour, alignment)
 - `Image` / `RawImage` → `ImageLabel` (with sprite GUID, colour tint)
 - `Button` → `TextButton` (with text from associated Text component)
@@ -518,7 +517,7 @@ only processed materials, not all `.mat` files found.
 
 ## Test Coverage
 
-**Current**: 972 automated tests across 33 test files covering:
+**Current**: 1003 automated tests across 33 test files covering:
 - `test_unity_yaml_utils.py` — YAML parsing, vector/quaternion extraction, references
 - `test_conversion_helpers.py` — All component conversion helpers (colliders, lights, audio, particles, materials)
 - `test_converter.py` / `test_converter_detailed.py` / `test_converter_e2e.py` — End-to-end node-to-part, prefab resolution, scene conversion, report building

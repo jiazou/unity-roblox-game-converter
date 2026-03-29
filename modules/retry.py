@@ -19,22 +19,16 @@ logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+import urllib.error
+
 # Exceptions that are considered transient and worth retrying.
 _TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = (
     ConnectionError,
     TimeoutError,
     OSError,
+    urllib.error.URLError,
+    urllib.error.HTTPError,  # covers HTTP 429, 500, 502, 503, etc.
 )
-
-# Try to include urllib errors if available (includes HTTP 429 rate limits)
-try:
-    import urllib.error
-    _TRANSIENT_EXCEPTIONS = _TRANSIENT_EXCEPTIONS + (
-        urllib.error.URLError,
-        urllib.error.HTTPError,  # covers HTTP 429, 500, 502, 503, etc.
-    )
-except ImportError:
-    pass
 
 
 def retry_with_backoff(

@@ -166,7 +166,7 @@ class TestResolveRobloxUsername:
 
     def test_returns_none_on_network_error(self) -> None:
         with patch("urllib.request.urlopen") as mock:
-            mock.side_effect = Exception("network error")
+            mock.side_effect = OSError("network error")
             result = resolve_roblox_username("nonexistent_user_xyz")
             assert result is None
 

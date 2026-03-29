@@ -102,7 +102,7 @@ def resolve_roblox_username(username: str) -> int | None:
         users = data.get("data", [])
         if users:
             return users[0].get("id")
-    except Exception:  # noqa: BLE001
+    except (urllib.error.URLError, json.JSONDecodeError, OSError):
         logger.warning("Failed to resolve Roblox username %r", username)
 
     return None

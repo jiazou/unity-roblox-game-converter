@@ -239,8 +239,9 @@ def discover(unity_project_path: str, output_dir: str) -> None:
 
     errors: list[str] = []
 
-    # Parse scenes
+    # Parse scenes and collect referenced material GUIDs in a single pass
     parsed_scenes_info: list[dict] = []
+    all_mat_guids: set[str] = set()
     scene_files = sorted(unity_path.rglob("*.unity"))
     for scene_file in scene_files:
         try:
@@ -254,6 +255,7 @@ def discover(unity_project_path: str, output_dir: str) -> None:
                 "referenced_material_guids": len(ps.referenced_material_guids),
                 "referenced_mesh_guids": len(ps.referenced_mesh_guids),
             })
+            all_mat_guids |= ps.referenced_material_guids
         except Exception as exc:
             errors.append(f"Scene parse error ({scene_file.name}): {exc}")
 
@@ -268,21 +270,9 @@ def discover(unity_project_path: str, output_dir: str) -> None:
         }
         if len(prefabs.prefabs) > 20:
             prefab_info["names_truncated"] = True
+        all_mat_guids |= prefabs.referenced_material_guids
     except FileNotFoundError as exc:
         errors.append(str(exc))
-
-    # Collect total referenced material GUIDs
-    all_mat_guids: set[str] = set()
-    for scene_file in scene_files:
-        try:
-            ps = scene_parser.parse_scene(scene_file)
-            all_mat_guids |= ps.referenced_material_guids
-        except Exception:
-            pass
-    try:
-        all_mat_guids |= prefabs.referenced_material_guids
-    except Exception:
-        pass
 
     # Save state for subsequent phases
     state["scene_files"] = [str(f) for f in scene_files]
