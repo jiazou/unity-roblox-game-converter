@@ -1,6 +1,6 @@
 # Unsupported Conversions & Known Limitations
 
-> Last updated: 2026-03-28
+> Last updated: 2026-03-29
 > Status: Living document — shrinks as converter improves
 
 This document catalogs everything the Unity-to-Roblox converter **cannot currently handle**,
@@ -75,181 +75,12 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Multi-material meshes | **HIGH** | Future | [Multi-Material Meshes](#multi-material-meshes) |
 | UV tiling ≠ (1,1) | **HIGH** | Partial | [UV Tiling](#uv-tiling-and-offset) |
 | Terrain / splat maps | **HIGH** | Future | [Terrain](#terrain-conversion) |
-| ~~Height/parallax maps~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Height Maps](#heightparallax-maps)~~ FIXED |
-| ~~Detail maps~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[Detail Maps](#detail-maps)~~ FIXED |
 | Custom Shader Graph | MEDIUM | Partial | [Shader Graph](#custom-shader-graph) |
-| ~~Canvas / UI~~ | ~~MEDIUM~~ | ~~Yes~~ | ~~[UI Canvas](#ui-canvas)~~ FIXED |
 | SSS / anisotropy / iridescence | LOW | No | [HDRP Advanced](#hdrp-advanced-features) |
 
 ---
 
-## Recently Fixed (Previously Critical)
-
-These issues were listed as critical or high-severity in earlier versions but have since
-been resolved. Kept here for historical reference.
-
-### ~~Transform Scale Not Applied~~ — FIXED
-
-Previously all parts received a hardcoded `(4.0, 1.0, 4.0)` size. Now `node_to_part()`
-in `conversion_helpers.py` multiplies `node.scale` (from `m_LocalScale`) into part size.
-
-### ~~Materials Not Applied to Plain Parts~~ — FIXED
-
-`apply_materials()` now runs for all parts regardless of mesh presence. `BasePart.Color3`
-and `BasePart.Transparency` are set from the material definition. `SurfaceAppearance` is
-correctly skipped for plain Parts (Roblox platform limitation).
-
-### ~~Rotation Not Converted~~ — FIXED
-
-Quaternion `(x, y, z, w)` from `m_LocalRotation` is now converted to a full CFrame
-rotation matrix via `_quat_to_rotation_matrix()` in `rbxl_writer.py`. All parts use
-CFrame (CoordinateFrame) — Roblox ignores the Position property in XML.
-
-### ~~Prefab Instances Not Instantiated~~ — FIXED
-
-`resolve_prefab_instances()` in `conversion_helpers.py` resolves `PrefabInstance`
-references, inserts prefab node subtrees into the scene, and applies property
-modifications from `m_Modifications`.
-
-### ~~Particle Systems Not Converted~~ — FIXED
-
-`convert_particle_components()` extracts rate, lifetime, speed, size, and color from
-`ParticleSystem` components and writes `ParticleEmitter` children in the .rbxl output.
-
-### ~~Audio Sources Not Handled~~ — FIXED
-
-`convert_audio_components()` extracts clip path, volume, pitch, loop, play-on-awake,
-and distance properties from `AudioSource` components and writes `Sound` children.
-
-### ~~Part Sizing From Transform~~ — FIXED
-
-Part size is now derived from `m_LocalScale`. Collider dimensions (Box, Sphere, Capsule)
-override the size when present.
-
-### ~~Directional Light Not Handled~~ — FIXED
-
-`convert_light_components()` now collects directional lights (type 1) and
-`directional_lights_to_lighting()` builds a `RbxLightingConfig` that maps Unity's
-directional light color and intensity to Roblox `Lighting` service properties
-(Brightness, ColorShift_Top, OutdoorAmbient).
-
-### ~~Unity Primitives Not Mapped to Roblox Shapes~~ — FIXED
-
-`_detect_primitive_shape()` identifies Unity built-in primitives (Cube, Sphere,
-Cylinder, Capsule, Plane) via their MeshFilter `m_Mesh` reference (GUID
-`0000000000000000e000000000000000` + known fileIDs) and sets the Roblox `shape`
-property (Block, Ball, Cylinder).
-
-### ~~Normal Map Scale Not Baked~~ — FIXED
-
-When `_BumpScale ≠ 1.0`, the texture processor now bakes the scale into the
-normal map by scaling XY components and renormalizing Z, matching the formula
-from the material mapping research doc.
-
-### ~~Standard (Specular) Not Converted to Metallic~~ — FIXED
-
-`_convert_material()` now applies the luminance-based specular-to-metallic heuristic
-from the research doc: `spec_luminance > 0.5 → metallic=1.0, else 0.0`.
-
-### ~~URP Alpha Mode Not Handled~~ — FIXED
-
-`_parse_material()` now reads URP's `_Surface` + `_AlphaClip` properties when
-`_Mode` is absent, correctly mapping `_Surface=0 → Opaque`, `_Surface=1 + _AlphaClip=1
-→ Cutout`, `_Surface=1 + _AlphaClip=0 → Transparent`.
-
-### ~~Smoothness from Albedo Alpha Not Supported~~ — FIXED
-
-When `_SmoothnessTextureChannel == 1`, roughness is now extracted from the albedo
-texture's alpha channel instead of the metallic texture, matching Unity's behavior.
-
-### ~~HDRP MaskMap Not Parsed~~ — FIXED
-
-`_identify_shader()` now detects HDRP shaders by checking for `_BaseColorMap` and
-`_MaskMap` properties. `_parse_material()` handles the MODS packing (R=Metallic,
-G=AO, A=Smoothness), and `_convert_material()` extracts each channel correctly.
-
-### ~~Legacy Bumped/Specular Shaders Treated as Simple~~ — FIXED
-
-Legacy Bumped Diffuse and Legacy Specular shaders are now routed through the PBR
-pipeline, extracting normal maps and converting specular values to metallic.
-
-### ~~Texture Offset Not Applied~~ — FIXED
-
-When `_MainTex_ST` has non-zero offset values, the texture processor now applies
-pixel-level shifting using `PIL.ImageChops.offset()`.
-
-### ~~parts_written Only Counted Root Parts~~ — FIXED
-
-`write_rbxl()` now uses `_count_parts()` to recursively count all parts including
-nested children, giving accurate part counts in the conversion report.
-
----
-
 ## Remaining Gaps
-
-### Geometry & Transform
-
-#### ~~Mesh-Based Part Sizing~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-~~**Status**: Not implemented~~
-
-Mesh bounding box sizing is now implemented using trimesh AABB. See Recently Fixed.
-
-#### ~~Unity Primitive to Roblox Shape Mapping~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-~~**Status**: Not implemented~~
-
-Unity built-in primitives now map to Roblox shape equivalents. See Recently Fixed.
-
----
-
-### Scene & Object Type Gaps
-
-#### ~~Directional Lights~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-~~**Status**: Not implemented~~
-
-Directional lights now map to Roblox `Lighting` service properties. See Recently Fixed.
-
-#### ~~Cameras~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-~~**Status**: Not implemented~~
-
-Camera objects are now mapped to `Workspace.CurrentCamera` with FOV, CFrame, and
-near/far clip plane configuration. See Recently Fixed.
-
-#### ~~UI Canvas~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-~~**Status**: Not implemented~~
-
-Unity Canvas / RectTransform UI hierarchy is now converted to Roblox ScreenGui:
-- `Canvas` → `ScreenGui` (placed in `ReplicatedStorage` with `Enabled=false`; bootstrap manages parenting to `PlayerGui`)
-- `Text` → `TextLabel` (with text content, size, colour, alignment)
-- `Image` / `RawImage` → `ImageLabel` (with sprite GUID, colour tint)
-- `Button` → `TextButton` (with text from associated Text component)
-- `InputField` → `TextBox`
-- `ScrollRect` → `ScrollingFrame`
-- Other RectTransform nodes → `Frame`
-- Full anchor/pivot/SizeDelta → UDim2 position/size conversion
-- Nested hierarchy preserved (parent Frame → child TextLabel etc.)
-- Background color extracted from Image components on Frame nodes
-
-See `modules/ui_translator.py` and `modules/rbxl_writer.py`.
-
-#### ~~Skybox and Atmosphere~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-~~**Status**: Not converted~~
-
-Unity Skybox materials (6-sided) are now mapped to Roblox `Sky` + `Atmosphere`
-objects in Lighting. See Recently Fixed.
-
----
 
 ### Material & Shader Gaps
 
@@ -317,30 +148,6 @@ the texture will appear un-tiled.
 and `_process_textures()` now fully executes them, including offset pixel shifting.
 Tiling factors ≤ 4x are pre-tiled automatically; factors > 4x are logged to UNCONVERTED.md.
 
-#### ~~Height/Parallax Maps~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-
-Height maps are now converted to normal detail via Sobel filter:
-- `_ParallaxMap` / `_HeightMap` → Sobel X/Y gradients → normal vectors
-- Strength scaled by `_Parallax` value (typically 0.02–0.1)
-- When a base normal map exists, the height-derived normals are UDN-blended in
-- When no base normal exists, a new normal map is generated from the height map
-
-The `heightmap_to_normal` texture operation handles both standalone and blend modes.
-
-#### ~~Detail Maps~~ — FIXED
-
-~~**Severity**: MEDIUM~~
-
-Detail maps are now composited into the base textures:
-- `_DetailAlbedoMap` → overlay-blended into `ColorMap` (with tiling + mask support)
-- `_DetailNormalMap` → UDN-blended into `NormalMap` (with tiling + mask + scale support)
-- `_DetailMask` → used as blend weight for both operations
-
-The `composite_detail` and `blend_normal_detail` texture operations handle tiling
-(pre-tiling the detail texture) and masking (R channel of `_DetailMask`).
-
 #### Custom Shader Graph
 
 **Severity**: MEDIUM (variable per game)
@@ -352,22 +159,6 @@ and `#include` resolution.
 
 For Shader Graph materials, the converter falls back to checking if standard property
 names (`_BaseMap`, `_Color`) exist in the material's saved properties.
-
-#### ~~Normal Map Scale~~ — FIXED
-
-~~**Severity**: LOW~~
-~~**Status**: Not implemented~~
-
-Normal map scale baking is now implemented. See Recently Fixed.
-
-#### ~~Unlit Materials~~ — FIXED
-
-~~**Severity**: LOW~~
-
-Unlit game detection is now implemented. When >70% of materials use unlit shaders
-(URP Unlit, Legacy Diffuse, Particle Unlit, etc.), the converter auto-adjusts
-`Lighting.Brightness` low and `Lighting.Ambient` high in the .rbxl output.
-See Recently Fixed.
 
 ---
 
@@ -394,22 +185,6 @@ adaptation, not just syntax translation:
 **Post-transpilation validation**: `code_validator.py` checks generated Luau for
 block keyword balance, residual C# syntax, curly braces, trailing semicolons, and
 bracket balance. Scripts with validation errors are flagged for review.
-
----
-
-### ~~`Instantiate()` → `Clone()` Is a Naive Text Substitution~~ — RESOLVED
-
-**Severity**: ~~MEDIUM~~ → RESOLVED
-
-The AI transpiler structurally rewrites `Instantiate()` calls:
-
-| Unity C# | What the transpiler produces |
-|---|---|
-| `Instantiate(prefab)` | `prefab:Clone()` |
-| `var x = Instantiate(prefab, pos, rot)` | `local x = prefab:Clone() --[[ TODO: set CFrame from pos, rot ]]` |
-
-Position/rotation/parent arguments are flagged with TODO comments for manual
-assignment, since the Roblox API requires separate property assignments.
 
 ---
 
@@ -467,12 +242,6 @@ This is a significant implementation effort and is tracked as a Phase 3 feature.
 
 ## Report Accuracy Notes
 
-### Parts Written Count
-
-~~Previously root-only.~~ **FIXED**: `_count_parts()` now recursively counts all parts
-including nested children. The `parts_written` field accurately reflects every Part and
-MeshPart written to the .rbxl.
-
 ### Materials Processed Count
 
 Materials are only processed if their GUID appears in a scene's or prefab's
@@ -484,34 +253,9 @@ only processed materials, not all `.mat` files found.
 
 ## Future Roadmap
 
-### Phase 1 — Next Release (Remaining Bugs)
-1. ~~Apply Transform scale to Part size~~ — Done
-2. ~~Apply material Color3/Transparency to plain Parts~~ — Done
-3. ~~Map Unity primitives (Cube/Sphere/Cylinder/Plane) to Roblox shape equivalents~~ — Done
-4. ~~Convert rotation quaternion to CFrame~~ — Done
-5. ~~Map Directional Light → Roblox `Lighting` properties~~ — Done
-6. ~~Instantiate prefabs in scene tree~~ — Done
-7. ~~Fix parts_written counting to include children~~ — Done
-
-### Phase 2 — Near Term (Feature Gaps)
-8. ~~UV pre-tiling texture processor~~ — Done (offset also implemented)
-9. ~~Normal map scale baking~~ — Done
-10. ~~Unlit game detection + Lighting configuration~~ — Done
-11. ~~Skybox/Atmosphere generation~~ — Done
-12. ~~C# transpiler~~ — Done (AI transpilation via Claude API)
-13. ~~Camera → `Workspace.CurrentCamera` mapping~~ — Done
-14. ~~Mesh bounding box → Part size for MeshParts~~ — Done
-
-### Phase 2.5 — Recently Completed
-15. ~~Detail map compositing~~ — Done (overlay blend albedo + UDN blend normal + mask + tiling)
-16. ~~Height map → normal detail~~ — Done (Sobel filter + optional base normal blend)
-17. ~~Vertex color baking~~ — Done (trimesh + barycentric raster + albedo multiply; OBJ/PLY/GLB)
-18. ~~UI Canvas → ScreenGui~~ — Done (Text/Image/Button → TextLabel/ImageLabel/TextButton + UDim2)
-
-### Phase 3 — Long Term (Major Features)
-19. Multi-material mesh splitting
-20. Terrain splat map → MaterialVariant conversion
-21. Custom Shader Graph analysis (.shadergraph parsing)
+1. Multi-material mesh splitting
+2. Terrain splat map → MaterialVariant conversion
+3. Custom Shader Graph analysis (.shadergraph parsing)
 
 ---
 

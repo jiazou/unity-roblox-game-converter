@@ -33,7 +33,7 @@
 | `docs/material_mapping_research.md` | Design specification — full Unity→Roblox property mapping reference (862 lines) |
 | `docs/smartdown_template.md` | Template specification — UNCONVERTED.md file structure and data contracts |
 | `docs/trash_dash_full_gap_analysis.md` | End-to-end gap analysis of converter vs Trash Dash game requirements |
-| `docs/trash_dash_UNCONVERTED.md` | Per-material conversion analysis for Trash Dash (72 materials, 13 shaders) |
+| `docs/local/trash_dash_UNCONVERTED.md` | Per-material conversion analysis for Trash Dash (72 materials, 13 shaders) — gitignored, local only |
 
 ---
 

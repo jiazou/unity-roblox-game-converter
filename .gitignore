@@ -23,6 +23,9 @@ output/
 *.rbxl
 *.rbxlx
 
+# Local docs (game-specific reports, not part of the converter)
+docs/local/
+
 # macOS
 .DS_Store
 
