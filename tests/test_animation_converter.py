@@ -17,6 +17,7 @@ from modules.animation_converter import (
     AnimatorState,
     BlendTree,
     BlendTreeEntry,
+    FbxRootMotion,
     StateTransition,
     TransformAnimationResult,
     TransformCurve,
@@ -26,9 +27,11 @@ from modules.animation_converter import (
     _lua_string,
     _extract_keyframes,
     _find_anim_file,
+    _quat_to_euler,
     convert_animations,
     convert_transform_animations,
     generate_animator_config,
+    generate_root_motion_config,
     generate_transform_anim_config,
     is_transform_only_anim,
     parse_anim_file,
@@ -476,6 +479,105 @@ class TestSceneParserAnimator:
 
         result = scene_parser.parse_scene(scene_file)
         assert "aabbccdd00112233aabbccdd00112233" in result.referenced_animator_controller_guids
+
+
+# ---------------------------------------------------------------------------
+# Tests: quaternion → euler conversion
+# ---------------------------------------------------------------------------
+
+class TestQuatToEuler:
+    def test_identity_quaternion(self) -> None:
+        """Identity quaternion (0,0,0,1) should produce zero euler angles."""
+        rx, ry, rz = _quat_to_euler(0.0, 0.0, 0.0, 1.0)
+        assert abs(rx) < 0.01
+        assert abs(ry) < 0.01
+        assert abs(rz) < 0.01
+
+    def test_90_degree_yaw(self) -> None:
+        """90° rotation around Z axis → rz ≈ 90."""
+        import math
+        # Quaternion for 90° around Z: (0, 0, sin(45°), cos(45°))
+        s = math.sin(math.radians(45))
+        c = math.cos(math.radians(45))
+        rx, ry, rz = _quat_to_euler(0.0, 0.0, s, c)
+        assert abs(rz - 90.0) < 0.1
+        assert abs(rx) < 0.1
+        assert abs(ry) < 0.1
+
+    def test_negative_pitch(self) -> None:
+        """45° rotation around Y axis."""
+        import math
+        s = math.sin(math.radians(22.5))
+        c = math.cos(math.radians(22.5))
+        rx, ry, rz = _quat_to_euler(0.0, s, 0.0, c)
+        assert abs(ry - 45.0) < 0.1
+
+
+# ---------------------------------------------------------------------------
+# Tests: FbxRootMotion + generate_root_motion_config
+# ---------------------------------------------------------------------------
+
+class TestFbxRootMotion:
+    def _make_motion(self) -> FbxRootMotion:
+        return FbxRootMotion(
+            duration=2.0,
+            position_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=0.5, value=(0.0, 0.1, 0.0)),
+                AnimKeyframe(time=1.0, value=(0.0, 0.2, 0.0)),
+                AnimKeyframe(time=1.5, value=(0.0, 0.1, 0.0)),
+                AnimKeyframe(time=2.0, value=(0.0, 0.0, 0.0)),
+            ],
+            euler_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=1.0, value=(5.0, 0.0, 2.0)),
+                AnimKeyframe(time=2.0, value=(0.0, 0.0, 0.0)),
+            ],
+        )
+
+    def test_generate_root_motion_config_structure(self) -> None:
+        config = generate_root_motion_config(self._make_motion(), "TestMesh")
+        assert "return {" in config
+        assert "loop = true" in config
+        assert "duration = 2.000000" in config
+        assert "position = {" in config
+        assert "euler = {" in config
+        assert "Vector3.new(" in config
+
+    def test_generate_root_motion_config_name_in_comment(self) -> None:
+        config = generate_root_motion_config(self._make_motion(), "Rat")
+        assert "Rat" in config
+        assert "Auto-generated" in config
+
+    def test_generate_root_motion_config_keyframe_count(self) -> None:
+        motion = self._make_motion()
+        config = generate_root_motion_config(motion, "Rat")
+        # 5 position keyframes + 3 euler keyframes = 8 Vector3.new lines
+        assert config.count("Vector3.new(") == 8
+
+    def test_generate_root_motion_config_position_only(self) -> None:
+        motion = FbxRootMotion(
+            duration=1.0,
+            position_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=1.0, value=(0.0, 0.5, 0.0)),
+            ],
+        )
+        config = generate_root_motion_config(motion, "Bounce")
+        assert "position = {" in config
+        assert "euler" not in config
+
+    def test_generate_root_motion_config_euler_only(self) -> None:
+        motion = FbxRootMotion(
+            duration=1.0,
+            euler_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=1.0, value=(10.0, 0.0, 0.0)),
+            ],
+        )
+        config = generate_root_motion_config(motion, "Spin")
+        assert "euler = {" in config
+        assert "position" not in config
 
     def test_animator_component_attached_to_node(self, tmp_path: Path) -> None:
         scene_file = tmp_path / "test.unity"

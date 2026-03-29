@@ -543,6 +543,62 @@ def convert(
             click.echo(f"    ✗ {err}")
             errors.append(err)
 
+    # ── Root motion for skinned meshes ──────────────────────────────
+    # When FBX→GLB strips skinning data, extract root bone motion from
+    # associated animation FBXes and generate TransformAnimator configs.
+    if upload_result.skinned_meshes:
+        meshes_out = out_dir / "meshes"
+        click.echo(f"🦴  Extracting root motion for {len(upload_result.skinned_meshes)} skinned mesh(es)…")
+        anim_suffixes = ["_Run", "_Walk", "_Idle", "_Anim"]
+        root_motion_count = 0
+        for mesh_stem in sorted(upload_result.skinned_meshes):
+            anim_fbx = None
+            for suffix in anim_suffixes:
+                candidate = meshes_out / f"{mesh_stem}{suffix}.fbx"
+                if candidate.exists():
+                    anim_fbx = candidate
+                    break
+            if not anim_fbx:
+                click.echo(f"    ⚠ {mesh_stem}: no animation FBX found (tried {anim_suffixes})")
+                continue
+            motion = animation_converter.extract_fbx_root_motion(anim_fbx)
+            if not motion:
+                click.echo(f"    ⚠ {mesh_stem}: failed to extract root motion from {anim_fbx.name}")
+                continue
+            config_source = animation_converter.generate_root_motion_config(motion, mesh_stem)
+            module_name = f"{mesh_stem}_RootMotionConfig"
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path("(generated)"),
+                output_filename=f"{module_name}.lua",
+                csharp_source="",
+                luau_source=config_source,
+                strategy="ai",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
+            root_motion_count += 1
+            click.echo(f"    → {module_name}.lua generated from {anim_fbx.name}")
+        if root_motion_count > 0:
+            # Ensure TransformAnimator bridge is included
+            bridge_path = Path(__file__).parent / "bridge" / "TransformAnimator.lua"
+            if bridge_path.exists():
+                # Check if already added by transform animation step
+                already_added = any(
+                    s.output_filename == "TransformAnimator.lua"
+                    for s in transpilation.scripts
+                )
+                if not already_added:
+                    transpilation.scripts.append(code_transpiler.TranspiledScript(
+                        source_path=Path("(generated)"),
+                        output_filename="TransformAnimator.lua",
+                        csharp_source="",
+                        luau_source=bridge_path.read_text(encoding="utf-8"),
+                        strategy="ai",
+                        confidence=1.0,
+                        script_type="ModuleScript",
+                    ))
+                    click.echo("    → TransformAnimator.lua added (ModuleScript in ReplicatedStorage)")
+
     duration = time.monotonic() - t_start
 
     rpt = _build_report(

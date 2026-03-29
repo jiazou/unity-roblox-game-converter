@@ -1032,3 +1032,205 @@ def convert_transform_animations(
 
     result.bridge_needed = result.anims_converted > 0
     return result
+
+
+# ---------------------------------------------------------------------------
+# FBX root motion extraction (for skinned meshes stripped of skeleton data)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FbxRootMotion:
+    """Root bone (Hips) motion extracted from an animation FBX file."""
+    duration: float
+    position_keyframes: list[AnimKeyframe] = field(default_factory=list)
+    euler_keyframes: list[AnimKeyframe] = field(default_factory=list)
+
+
+def _quat_to_euler(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
+    """Convert quaternion (x, y, z, w) to Euler angles (degrees) in XYZ order."""
+    import math
+    # Roll (X)
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    rx = math.atan2(sinr_cosp, cosr_cosp)
+    # Pitch (Y)
+    sinp = 2.0 * (w * y - z * x)
+    sinp = max(-1.0, min(1.0, sinp))
+    ry = math.asin(sinp)
+    # Yaw (Z)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    rz = math.atan2(siny_cosp, cosy_cosp)
+    return (math.degrees(rx), math.degrees(ry), math.degrees(rz))
+
+
+def extract_fbx_root_motion(fbx_path: Path) -> FbxRootMotion | None:
+    """Extract root bone (Hips) motion from an animation FBX file.
+
+    Uses assimp CLI to convert FBX → glTF, then reads the Hips bone's
+    translation and rotation keyframes from the glTF binary buffer.
+    Positions are converted from FBX centimetres to Roblox studs (÷100)
+    and made relative to the first keyframe.
+
+    Returns None if extraction fails or no Hips bone is found.
+    """
+    import base64
+    import json
+    import shutil
+    import struct
+    import subprocess
+    import tempfile
+
+    assimp_cli = shutil.which("assimp")
+    if not assimp_cli:
+        return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        gltf_path = Path(tmpdir) / "anim.gltf"
+        result = subprocess.run(
+            [assimp_cli, "export", str(fbx_path), str(gltf_path)],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode != 0 or not gltf_path.exists():
+            return None
+
+        gltf_data = json.loads(gltf_path.read_text())
+
+        animations = gltf_data.get("animations", [])
+        if not animations:
+            return None
+
+        anim = animations[0]
+        nodes = gltf_data.get("nodes", [])
+        accessors = gltf_data.get("accessors", [])
+        buffer_views = gltf_data.get("bufferViews", [])
+
+        # Read binary buffer
+        buf_uri = gltf_data["buffers"][0]["uri"]
+        if buf_uri.startswith("data:"):
+            buf_data = base64.b64decode(buf_uri.split(",", 1)[1])
+        else:
+            buf_file = Path(tmpdir) / buf_uri
+            buf_data = buf_file.read_bytes()
+
+        def _read_accessor(acc_idx: int) -> list:
+            acc = accessors[acc_idx]
+            bv = buffer_views[acc["bufferView"]]
+            offset = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+            count = acc["count"]
+            acc_type = acc["type"]
+            values = []
+            for i in range(count):
+                if acc_type == "SCALAR":
+                    pos = offset + i * 4
+                    values.append(struct.unpack_from("<f", buf_data, pos)[0])
+                elif acc_type == "VEC3":
+                    pos = offset + i * 12
+                    values.append(struct.unpack_from("<3f", buf_data, pos))
+                elif acc_type == "VEC4":
+                    pos = offset + i * 16
+                    values.append(struct.unpack_from("<4f", buf_data, pos))
+            return values
+
+        # Find Hips translation and rotation channels
+        # Assimp splits FBX transforms into separate nodes:
+        #   Hips_$AssimpFbx$_Translation (translation channel)
+        #   Hips_$AssimpFbx$_Rotation (rotation channel)
+        trans_times: list[float] = []
+        trans_values: list[tuple[float, ...]] = []
+        rot_times: list[float] = []
+        rot_values: list[tuple[float, ...]] = []
+        duration = 0.0
+
+        for ch in anim.get("channels", []):
+            target = ch.get("target", {})
+            node_idx = target.get("node")
+            if node_idx is None:
+                continue
+            node_name = nodes[node_idx].get("name", "")
+            sampler = anim["samplers"][ch["sampler"]]
+
+            # Track max duration from any sampler
+            input_acc = accessors[sampler["input"]]
+            if input_acc.get("max"):
+                duration = max(duration, input_acc["max"][0])
+
+            if "Hips" not in node_name:
+                continue
+
+            path = target.get("path", "")
+
+            if "Translation" in node_name and path == "translation":
+                trans_times = _read_accessor(sampler["input"])
+                trans_values = _read_accessor(sampler["output"])
+            elif "Rotation" in node_name and path == "rotation":
+                rot_times = _read_accessor(sampler["input"])
+                rot_values = _read_accessor(sampler["output"])
+
+        if not trans_values and not rot_values:
+            return None
+
+        motion = FbxRootMotion(duration=duration)
+
+        # Convert translation: FBX cm → studs, relative to first frame
+        if trans_values:
+            base_x, base_y, base_z = trans_values[0]
+            for i, t in enumerate(trans_times):
+                x, y, z = trans_values[i]
+                motion.position_keyframes.append(AnimKeyframe(
+                    time=t,
+                    value=(
+                        (x - base_x) * 0.01,
+                        (y - base_y) * 0.01,
+                        (z - base_z) * 0.01,
+                    ),
+                ))
+
+        # Convert rotation: quaternion → euler degrees, relative to first frame
+        if rot_values:
+            base_euler = _quat_to_euler(*rot_values[0])
+            for i, t in enumerate(rot_times):
+                euler = _quat_to_euler(*rot_values[i])
+                motion.euler_keyframes.append(AnimKeyframe(
+                    time=t,
+                    value=(
+                        euler[0] - base_euler[0],
+                        euler[1] - base_euler[1],
+                        euler[2] - base_euler[2],
+                    ),
+                ))
+
+        return motion
+
+
+def generate_root_motion_config(motion: FbxRootMotion, name: str) -> str:
+    """Generate a Luau TransformAnimator config from extracted FBX root motion.
+
+    Output format matches bridge/TransformAnimator.lua expectations.
+    """
+    lines: list[str] = []
+    lines.append(f"-- Auto-generated root motion config for {name}")
+    lines.append("-- Extracted from FBX Hips bone keyframes")
+    lines.append("")
+    lines.append("return {")
+    lines.append("\tloop = true,")
+    lines.append(f"\tduration = {motion.duration:.6f},")
+    lines.append("\tcurves = {")
+
+    if motion.position_keyframes:
+        lines.append("\t\tposition = {")
+        for kf in motion.position_keyframes:
+            x, y, z = kf.value
+            lines.append(f"\t\t\t{{ time = {kf.time:.6f}, value = Vector3.new({x:.6f}, {y:.6f}, {z:.6f}) }},")
+        lines.append("\t\t},")
+
+    if motion.euler_keyframes:
+        lines.append("\t\teuler = {")
+        for kf in motion.euler_keyframes:
+            x, y, z = kf.value
+            lines.append(f"\t\t\t{{ time = {kf.time:.6f}, value = Vector3.new({x:.4f}, {y:.4f}, {z:.4f}) }},")
+        lines.append("\t\t},")
+
+    lines.append("\t},")
+    lines.append("}")
+    return "\n".join(lines)
