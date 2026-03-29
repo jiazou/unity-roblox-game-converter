@@ -118,7 +118,21 @@ Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce an arc
 
    **This is a design decision, not a checklist.** Present the divergence table to the user and ask which approach they want for each pillar.
 
-5. **Scale & positioning** — Unity uses 1 unit ≈ 1 meter. Roblox characters are ~5.5 studs tall vs Unity's ~1.8 units. Determine the scale relationship between the imported scene geometry and Roblox's defaults, and decide whether to scale the world up, scale the character down, or apply a conversion factor to gameplay values. Present the tradeoffs to the user.
+5. **Scale & positioning** — Unity uses 1 unit ≈ 1 meter. Roblox characters are ~5.5 studs tall vs Unity's ~1.8 units. The converter passes Unity positions 1:1 to Roblox (no coordinate transform), so all scene geometry and obstacles are at Unity scale. The Roblox avatar is ~4x larger than a typical Unity character. Determine the correct approach:
+
+   **Decision framework — pick one:**
+   - **Scale character down** (preferred for games with dense scene geometry like endless runners): Use Humanoid scale NumberValues (`BodyHeightScale`, `BodyWidthScale`, `BodyDepthScale`, `HeadScale`) to shrink the avatar to match the Unity character's proportions. Calculate scale factor as `unity_character_height / roblox_avatar_height`. Also adjust: `laneOffset` (use Unity's original value, not 3.0), `groundY` (HRP standing height = default_ground_y × scale_factor), camera offset, and road/lane stripe geometry. The character controller must use the configurable `groundY` instead of a hardcoded value.
+   - **Scale world up**: Multiply all positions and sizes by a uniform factor during conversion. Simpler conceptually but expensive — requires re-running the converter and may break mesh proportions.
+   - **Hybrid**: Scale gameplay values (lane offset, jump height, speeds) without changing visual scale. Quickest hack but produces visual mismatch.
+
+   **Implementation checklist for "scale character down":**
+   1. Measure Unity character height from collider or mesh bounds
+   2. Compute `SCALE = unity_height / roblox_height` (typically 0.2–0.3)
+   3. In bootstrap: call `character:ScaleTo(SCALE)` (engine-level Model API, works on any rig), wait a frame (`task.wait(0.1)`) for physics to apply, then anchor HRP
+   4. Set `GROUND_Y = default_hrp_height × SCALE` (e.g., 2.5 × 0.25 = 0.625)
+   5. Pass `groundY` to the character controller; pass Unity's original `laneOffset` to TrackManager
+   6. Scale camera offset proportionally
+   7. Scale road/lane stripe widths to match Unity lane geometry
 
    **Important pipeline detail:** Unity stores all transforms as local-space (relative to parent). The converter automatically computes world-space positions for Roblox CFrames by recursively applying `world_pos = parent_pos + parent_rot * local_pos`. If objects appear clustered at the origin in the converted game, the world-space transform computation may have a bug — check `conversion_helpers.py:_compute_world_transform()` and the recursive `node_to_part()` calls.
 
@@ -260,7 +274,7 @@ Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
 - Starts the state machine with the initial state
 - Does NOT contain game logic — it's pure wiring
 - To determine what to wire: read the `.unity` scene file for serialized field references (e.g., `characterController: {fileID: XXXX}` tells you TrackManager needs a reference to CharacterInputController)
-- **Uses the player's Roblox avatar** as the game character when appropriate (e.g., endless runners, platformers). Wait for `player.Character`, get `HumanoidRootPart`, anchor it, disable default movement (`WalkSpeed=0`, `JumpPower=0`, `JumpHeight=0`), set initial `CFrame` on the track, and pass HRP as the `transform` to the character controller. Only create a placeholder Part if the game uses a non-humanoid avatar.
+- **Uses the player's Roblox avatar** as the game character when appropriate (e.g., endless runners, platformers). Wait for `player.Character`, get `HumanoidRootPart`, disable default movement (`WalkSpeed=0`, `JumpPower=0`, `JumpHeight=0`). If Phase A item 5 chose "scale character down", call `character:ScaleTo(SCALE)` **before** anchoring (scaling requires a brief physics settle — `task.wait(0.1)` after scaling). Then anchor HRP, set initial `CFrame` using the computed `GROUND_Y`, and pass both `transform` and `groundY` to the character controller. Only create a placeholder Part if the game uses a non-humanoid avatar.
 - **Wires input** via `UserInputService.InputBegan` — the transpiler does NOT create input bindings. Map Unity's `Input.GetKeyDown` keycodes to Roblox `Enum.KeyCode` and dispatch to controller methods (`ChangeLane`, `Jump`, `Slide`, etc.).
 - **Wires collision signals** for any module that defines `OnTriggerEnter`, `OnTriggerExit`, `OnCollisionEnter`, or `OnCollisionExit`. Unity's engine calls these implicitly on any MonoBehaviour attached to a GameObject with a collider. Roblox requires explicit collision wiring. **Choose the right mechanism based on how the part moves:**
   - **Physics-driven parts** (unanchored, moved by forces): use `.Touched`/`.TouchEnded` signals.
