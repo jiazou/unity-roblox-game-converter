@@ -418,13 +418,21 @@ def _make_particle_emitter(
     texture_path: str | None,
     light_emission: float,
     transparency: float,
+    emission_mode: str = "continuous",
+    burst_count: int = 0,
 ) -> ET.Element:
-    """Emit a ParticleEmitter child item under a Part."""
+    """Emit a ParticleEmitter child item under a Part.
+
+    For burst particles (emission_mode="burst"), Rate is set to 0 and Enabled
+    to false.  A BurstCount IntValue child is added so game scripts can call
+    emitter:Emit(burstCount) at the right moment.
+    """
+    is_burst = emission_mode == "burst"
     item = ET.SubElement(parent, "Item", **{"class": "ParticleEmitter"})
     props = ET.SubElement(item, "Properties")
     _make_property(props, "string", "Name", name)
-    _make_property(props, "float", "Rate", f"{rate:.2f}")
-    _make_property(props, "bool", "Enabled", "true")
+    _make_property(props, "float", "Rate", "0" if is_burst else f"{rate:.2f}")
+    _make_property(props, "bool", "Enabled", "false" if is_burst else "true")
     # Lifetime as NumberRange
     lr = ET.SubElement(props, "NumberRange", name="Lifetime")
     lr.text = f"{lifetime_min:.4f} {lifetime_max:.4f}"
@@ -464,6 +472,12 @@ def _make_particle_emitter(
     tk2.set("time", "1")
     tk2.set("value", "1")  # fade out at end of lifetime
     tk2.set("envelope", "0")
+    # Burst particles: add BurstCount IntValue so scripts know how many to emit
+    if is_burst and burst_count > 0:
+        bc_item = ET.SubElement(item, "Item", **{"class": "IntValue"})
+        bc_props = ET.SubElement(bc_item, "Properties")
+        _make_property(bc_props, "string", "Name", "BurstCount")
+        _make_property(bc_props, "int", "Value", str(burst_count))
     return item
 
 
@@ -577,7 +591,13 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
     for sc in part.sound_children:
         _make_sound(item, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7])
     for pc in part.particle_children:
-        _make_particle_emitter(item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7], pc[8], pc[9], pc[10])
+        # Support both 11-element (legacy) and 13-element (with burst info) tuples
+        emission_mode = pc[11] if len(pc) > 11 else "continuous"
+        burst_count = pc[12] if len(pc) > 12 else 0
+        _make_particle_emitter(
+            item, pc[0], pc[1], pc[2], pc[3], pc[4], pc[5], pc[6], pc[7],
+            pc[8], pc[9], pc[10], emission_mode, burst_count,
+        )
 
     for script in part.scripts:
         script_item = ET.SubElement(item, "Item", **{"class": script.script_type})

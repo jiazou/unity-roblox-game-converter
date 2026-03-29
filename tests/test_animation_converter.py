@@ -10,20 +10,30 @@ import pytest
 from modules.animation_converter import (
     AnimationClipInfo,
     AnimationConversionResult,
+    AnimKeyframe,
     AnimatorControllerData,
     AnimatorInstance,
     AnimatorParameter,
     AnimatorState,
     BlendTree,
     BlendTreeEntry,
+    FbxRootMotion,
     StateTransition,
+    TransformAnimationResult,
+    TransformCurve,
     TransitionCondition,
     UNITY_TO_R15_BONE_MAP,
     _lua_value,
     _lua_string,
+    _extract_keyframes,
     _find_anim_file,
+    _quat_to_euler,
     convert_animations,
+    convert_transform_animations,
     generate_animator_config,
+    generate_root_motion_config,
+    generate_transform_anim_config,
+    is_transform_only_anim,
     parse_anim_file,
     parse_controller_file,
 )
@@ -469,6 +479,105 @@ class TestSceneParserAnimator:
 
         result = scene_parser.parse_scene(scene_file)
         assert "aabbccdd00112233aabbccdd00112233" in result.referenced_animator_controller_guids
+
+
+# ---------------------------------------------------------------------------
+# Tests: quaternion → euler conversion
+# ---------------------------------------------------------------------------
+
+class TestQuatToEuler:
+    def test_identity_quaternion(self) -> None:
+        """Identity quaternion (0,0,0,1) should produce zero euler angles."""
+        rx, ry, rz = _quat_to_euler(0.0, 0.0, 0.0, 1.0)
+        assert abs(rx) < 0.01
+        assert abs(ry) < 0.01
+        assert abs(rz) < 0.01
+
+    def test_90_degree_yaw(self) -> None:
+        """90° rotation around Z axis → rz ≈ 90."""
+        import math
+        # Quaternion for 90° around Z: (0, 0, sin(45°), cos(45°))
+        s = math.sin(math.radians(45))
+        c = math.cos(math.radians(45))
+        rx, ry, rz = _quat_to_euler(0.0, 0.0, s, c)
+        assert abs(rz - 90.0) < 0.1
+        assert abs(rx) < 0.1
+        assert abs(ry) < 0.1
+
+    def test_negative_pitch(self) -> None:
+        """45° rotation around Y axis."""
+        import math
+        s = math.sin(math.radians(22.5))
+        c = math.cos(math.radians(22.5))
+        rx, ry, rz = _quat_to_euler(0.0, s, 0.0, c)
+        assert abs(ry - 45.0) < 0.1
+
+
+# ---------------------------------------------------------------------------
+# Tests: FbxRootMotion + generate_root_motion_config
+# ---------------------------------------------------------------------------
+
+class TestFbxRootMotion:
+    def _make_motion(self) -> FbxRootMotion:
+        return FbxRootMotion(
+            duration=2.0,
+            position_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=0.5, value=(0.0, 0.1, 0.0)),
+                AnimKeyframe(time=1.0, value=(0.0, 0.2, 0.0)),
+                AnimKeyframe(time=1.5, value=(0.0, 0.1, 0.0)),
+                AnimKeyframe(time=2.0, value=(0.0, 0.0, 0.0)),
+            ],
+            euler_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=1.0, value=(5.0, 0.0, 2.0)),
+                AnimKeyframe(time=2.0, value=(0.0, 0.0, 0.0)),
+            ],
+        )
+
+    def test_generate_root_motion_config_structure(self) -> None:
+        config = generate_root_motion_config(self._make_motion(), "TestMesh")
+        assert "return {" in config
+        assert "loop = true" in config
+        assert "duration = 2.000000" in config
+        assert "position = {" in config
+        assert "euler = {" in config
+        assert "Vector3.new(" in config
+
+    def test_generate_root_motion_config_name_in_comment(self) -> None:
+        config = generate_root_motion_config(self._make_motion(), "Rat")
+        assert "Rat" in config
+        assert "Auto-generated" in config
+
+    def test_generate_root_motion_config_keyframe_count(self) -> None:
+        motion = self._make_motion()
+        config = generate_root_motion_config(motion, "Rat")
+        # 5 position keyframes + 3 euler keyframes = 8 Vector3.new lines
+        assert config.count("Vector3.new(") == 8
+
+    def test_generate_root_motion_config_position_only(self) -> None:
+        motion = FbxRootMotion(
+            duration=1.0,
+            position_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=1.0, value=(0.0, 0.5, 0.0)),
+            ],
+        )
+        config = generate_root_motion_config(motion, "Bounce")
+        assert "position = {" in config
+        assert "euler" not in config
+
+    def test_generate_root_motion_config_euler_only(self) -> None:
+        motion = FbxRootMotion(
+            duration=1.0,
+            euler_keyframes=[
+                AnimKeyframe(time=0.0, value=(0.0, 0.0, 0.0)),
+                AnimKeyframe(time=1.0, value=(10.0, 0.0, 0.0)),
+            ],
+        )
+        config = generate_root_motion_config(motion, "Spin")
+        assert "euler = {" in config
+        assert "position" not in config
 
     def test_animator_component_attached_to_node(self, tmp_path: Path) -> None:
         scene_file = tmp_path / "test.unity"
@@ -1402,3 +1511,285 @@ class TestAnimatorBridgeLua:
 
     def test_uses_animation_track(self) -> None:
         assert "AnimationTrack" in self.source or "LoadAnimation" in self.source
+
+
+# ---------------------------------------------------------------------------
+# Tests: TransformAnimator bridge module
+# ---------------------------------------------------------------------------
+
+class TestTransformAnimatorBridgeLua:
+    """Verify that bridge/TransformAnimator.lua has the expected API surface."""
+
+    @pytest.fixture(autouse=True)
+    def _load_bridge(self) -> None:
+        bridge_path = Path(__file__).parent.parent / "bridge" / "TransformAnimator.lua"
+        assert bridge_path.exists(), "bridge/TransformAnimator.lua must exist"
+        self.source = bridge_path.read_text(encoding="utf-8")
+
+    def test_has_new_constructor(self) -> None:
+        assert "function TransformAnimator.new(" in self.source
+
+    def test_has_update(self) -> None:
+        assert "function TransformAnimator:Update(" in self.source
+
+    def test_has_destroy(self) -> None:
+        assert "function TransformAnimator:Destroy(" in self.source
+
+    def test_returns_module(self) -> None:
+        assert "return TransformAnimator" in self.source
+
+    def test_uses_heartbeat(self) -> None:
+        assert "Heartbeat" in self.source
+
+    def test_evaluates_keyframes(self) -> None:
+        assert "evaluateCurve" in self.source
+
+    def test_handles_loop(self) -> None:
+        assert "duration" in self.source
+
+
+# ---------------------------------------------------------------------------
+# Tests: keyframe extraction
+# ---------------------------------------------------------------------------
+
+class TestExtractKeyframes:
+    def test_extracts_xyz_keyframes(self) -> None:
+        m_curve = [
+            {"time": 0, "value": {"x": 1, "y": 2, "z": 3}},
+            {"time": 1, "value": {"x": 4, "y": 5, "z": 6}},
+        ]
+        kfs = _extract_keyframes(m_curve)
+        assert len(kfs) == 2
+        assert kfs[0].time == 0
+        assert kfs[0].value == (1.0, 2.0, 3.0)
+        assert kfs[1].time == 1
+        assert kfs[1].value == (4.0, 5.0, 6.0)
+
+    def test_extracts_quaternion_keyframes(self) -> None:
+        m_curve = [
+            {"time": 0, "value": {"x": 0, "y": 0, "z": 0, "w": 1}},
+        ]
+        kfs = _extract_keyframes(m_curve)
+        assert len(kfs) == 1
+        assert kfs[0].value == (0.0, 0.0, 0.0, 1.0)
+
+    def test_empty_list(self) -> None:
+        assert _extract_keyframes([]) == []
+
+    def test_non_list_returns_empty(self) -> None:
+        assert _extract_keyframes("not a list") == []
+
+    def test_malformed_entries_skipped(self) -> None:
+        m_curve = [
+            {"time": 0, "value": {"x": 1, "y": 2, "z": 3}},
+            "bad entry",
+            {"time": 1},  # missing value — uses default
+        ]
+        kfs = _extract_keyframes(m_curve)
+        assert len(kfs) >= 1  # at least the good entry
+
+
+# ---------------------------------------------------------------------------
+# Tests: is_transform_only_anim
+# ---------------------------------------------------------------------------
+
+class TestIsTransformOnlyAnim:
+    def test_self_targeting_curves_are_transform_only(self) -> None:
+        clip = AnimationClipInfo(
+            name="Spin",
+            path=Path("Spin.anim"),
+            duration=2.0,
+            loop=True,
+            transform_curves=[
+                TransformCurve(path="", curve_type="euler", keyframes=[
+                    AnimKeyframe(time=0, value=(0, 0, 0)),
+                    AnimKeyframe(time=2, value=(0, 360, 0)),
+                ]),
+            ],
+        )
+        assert is_transform_only_anim(clip) is True
+
+    def test_humanoid_bone_curves_are_not_transform_only(self) -> None:
+        clip = AnimationClipInfo(
+            name="Walk",
+            path=Path("Walk.anim"),
+            duration=1.0,
+            transform_curves=[
+                TransformCurve(path="Hips", curve_type="position", keyframes=[
+                    AnimKeyframe(time=0, value=(0, 1, 0)),
+                ]),
+                TransformCurve(path="LeftUpperArm", curve_type="rotation", keyframes=[
+                    AnimKeyframe(time=0, value=(0, 0, 0, 1)),
+                ]),
+            ],
+        )
+        assert is_transform_only_anim(clip) is False
+
+    def test_no_curves_returns_false(self) -> None:
+        clip = AnimationClipInfo(
+            name="Empty",
+            path=Path("Empty.anim"),
+            transform_curves=[],
+        )
+        assert is_transform_only_anim(clip) is False
+
+    def test_child_path_non_bone_is_transform_only(self) -> None:
+        clip = AnimationClipInfo(
+            name="ChildSpin",
+            path=Path("ChildSpin.anim"),
+            duration=1.0,
+            transform_curves=[
+                TransformCurve(path="Meshes/Fishbone", curve_type="euler", keyframes=[
+                    AnimKeyframe(time=0, value=(0, 0, 0)),
+                ]),
+            ],
+        )
+        assert is_transform_only_anim(clip) is True
+
+
+# ---------------------------------------------------------------------------
+# Tests: generate_transform_anim_config
+# ---------------------------------------------------------------------------
+
+class TestGenerateTransformAnimConfig:
+    def test_generates_valid_lua_table(self) -> None:
+        clip = AnimationClipInfo(
+            name="Fishbones",
+            path=Path("Fishbones.anim"),
+            duration=2.0,
+            loop=True,
+            transform_curves=[
+                TransformCurve(path="", curve_type="position", keyframes=[
+                    AnimKeyframe(time=0, value=(0, 0.5, 0)),
+                    AnimKeyframe(time=1, value=(0, 0.4, 0)),
+                    AnimKeyframe(time=2, value=(0, 0.5, 0)),
+                ]),
+                TransformCurve(path="", curve_type="euler", keyframes=[
+                    AnimKeyframe(time=0, value=(0, 0, 33.458)),
+                    AnimKeyframe(time=2, value=(0, 360, 33.458)),
+                ]),
+            ],
+        )
+        config = generate_transform_anim_config(clip)
+        assert "return {" in config
+        assert "loop = true" in config
+        assert "duration = 2.0" in config
+        assert "position" in config
+        assert "euler" in config
+        assert "Vector3.new(0, 0.5, 0)" in config
+        assert "Vector3.new(0, 360, 33.458)" in config
+
+    def test_includes_scale_curves(self) -> None:
+        clip = AnimationClipInfo(
+            name="PopIn",
+            path=Path("PopIn.anim"),
+            duration=0.5,
+            loop=False,
+            transform_curves=[
+                TransformCurve(path="", curve_type="scale", keyframes=[
+                    AnimKeyframe(time=0, value=(0.001, 0.001, 0.001)),
+                    AnimKeyframe(time=0.5, value=(0.707, 0.707, 0.707)),
+                ]),
+            ],
+        )
+        config = generate_transform_anim_config(clip)
+        assert "loop = false" in config
+        assert "scale" in config
+        assert "Vector3.new(0.001, 0.001, 0.001)" in config
+
+
+# ---------------------------------------------------------------------------
+# Tests: parse_anim_file keyframe extraction
+# ---------------------------------------------------------------------------
+
+class TestParseAnimFileKeyframes:
+    def test_extracts_transform_curves_from_anim(self, tmp_path: Path) -> None:
+        yaml_text = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!74 &7400000
+            AnimationClip:
+              m_Name: Fishbones
+              m_SampleRate: 60
+              m_AnimationClipSettings:
+                m_StartTime: 0
+                m_StopTime: 2
+                m_LoopTime: 1
+              m_RotationCurves: []
+              m_PositionCurves:
+                - path: ""
+                  curve:
+                    m_Curve:
+                      - time: 0
+                        value: {x: 0, y: 0.5, z: 0}
+                      - time: 1
+                        value: {x: 0, y: 0.4, z: 0}
+                      - time: 2
+                        value: {x: 0, y: 0.5, z: 0}
+              m_ScaleCurves: []
+              m_FloatCurves: []
+              m_EulerCurves:
+                - path: ""
+                  curve:
+                    m_Curve:
+                      - time: 0
+                        value: {x: 0, y: 0, z: 33.458}
+                      - time: 2
+                        value: {x: 0, y: 360, z: 33.458}
+        """)
+        anim_file = tmp_path / "Fishbones.anim"
+        anim_file.write_text(yaml_text, encoding="utf-8")
+
+        clip = parse_anim_file(anim_file)
+        assert clip is not None
+        assert clip.name == "Fishbones"
+        assert clip.duration == pytest.approx(2.0)
+        assert clip.loop is True
+        assert len(clip.transform_curves) == 2
+
+        # Position curve
+        pos_curves = [c for c in clip.transform_curves if c.curve_type == "position"]
+        assert len(pos_curves) == 1
+        assert pos_curves[0].path == ""
+        assert len(pos_curves[0].keyframes) == 3
+        assert pos_curves[0].keyframes[0].value == (0.0, 0.5, 0.0)
+        assert pos_curves[0].keyframes[1].value == (0.0, 0.4, 0.0)
+
+        # Euler curve
+        euler_curves = [c for c in clip.transform_curves if c.curve_type == "euler"]
+        assert len(euler_curves) == 1
+        assert len(euler_curves[0].keyframes) == 2
+        assert euler_curves[0].keyframes[1].value == (0.0, 360.0, 33.458)
+
+    def test_is_transform_only(self, tmp_path: Path) -> None:
+        """Fishbones-style anim (self-targeting) should be transform-only."""
+        yaml_text = textwrap.dedent("""\
+            %YAML 1.1
+            %TAG !u! tag:unity3d.com,2011:
+            --- !u!74 &7400000
+            AnimationClip:
+              m_Name: Spin
+              m_SampleRate: 30
+              m_AnimationClipSettings:
+                m_StartTime: 0
+                m_StopTime: 1
+                m_LoopTime: 1
+              m_RotationCurves: []
+              m_PositionCurves: []
+              m_ScaleCurves: []
+              m_FloatCurves: []
+              m_EulerCurves:
+                - path: ""
+                  curve:
+                    m_Curve:
+                      - time: 0
+                        value: {x: 0, y: 0, z: 0}
+                      - time: 1
+                        value: {x: 0, y: 360, z: 0}
+        """)
+        anim_file = tmp_path / "Spin.anim"
+        anim_file.write_text(yaml_text, encoding="utf-8")
+
+        clip = parse_anim_file(anim_file)
+        assert clip is not None
+        assert is_transform_only_anim(clip) is True

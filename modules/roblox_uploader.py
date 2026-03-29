@@ -44,6 +44,7 @@ class UploadResult:
     skipped: bool = False  # True when upload was not attempted (no API key)
     error_type: str | None = None  # Structured error classification
     suggestion: str | None = None  # Actionable suggestion for the caller
+    skinned_meshes: set[str] = field(default_factory=set)  # mesh stems that had skinning stripped
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ def resolve_roblox_username(username: str) -> int | None:
         users = data.get("data", [])
         if users:
             return users[0].get("id")
-    except Exception:  # noqa: BLE001
+    except (urllib.error.URLError, json.JSONDecodeError, OSError):
         logger.warning("Failed to resolve Roblox username %r", username)
 
     return None
@@ -258,18 +259,26 @@ def _upload_place(
     return json.loads(resp.read().decode("utf-8"))
 
 
+@dataclass
+class GlbConversionResult:
+    """Result of FBX → GLB conversion."""
+    glb_path: Path | None = None
+    had_skinning: bool = False
+
+
 def _convert_fbx_to_glb(
     fbx_path: Path,
     texture_path: Path | None,
     output_dir: Path,
-) -> Path | None:
+) -> GlbConversionResult:
     """Convert an FBX file to GLB with an embedded texture.
 
     Uses assimp CLI to convert FBX → glTF (preserving sub-meshes and UVs),
-    injects the texture PNG as a base64 data URI in the glTF material,
-    then converts glTF → GLB.
+    strips skinning/skeleton data (Roblox MeshParts are static), injects
+    the texture PNG as a base64 data URI in the glTF material, then
+    converts glTF → GLB.
 
-    Returns the path to the GLB file, or None if conversion fails.
+    Returns GlbConversionResult with glb_path and whether skinning was stripped.
     """
     import base64
     import subprocess
@@ -280,7 +289,7 @@ def _convert_fbx_to_glb(
 
     # Skip if GLB already exists and is newer
     if glb_output.exists() and glb_output.stat().st_mtime > fbx_path.stat().st_mtime:
-        return glb_output
+        return GlbConversionResult(glb_path=glb_output)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
@@ -292,7 +301,7 @@ def _convert_fbx_to_glb(
             capture_output=True, timeout=30,
         )
         if result.returncode != 0 or not gltf_path.exists():
-            return None
+            return GlbConversionResult()
 
         # Inject textures into glTF — one per material slot.
         # FBX material names (e.g. "Bin", "Plaster", "VCOL") map to
@@ -300,6 +309,23 @@ def _convert_fbx_to_glb(
         textures_dir_for_glb = output_dir.parent / "textures"
         try:
             gltf_data = json.loads(gltf_path.read_text())
+
+            # Strip skinning/skeleton data — Roblox MeshParts are static
+            # and can't render skinned meshes. Vertices are already in bind
+            # pose, so removing skins leaves valid static geometry.
+            _had_skinning = False
+            if "skins" in gltf_data:
+                _had_skinning = True
+                del gltf_data["skins"]
+                for node in gltf_data.get("nodes", []):
+                    node.pop("skin", None)
+                for mesh_entry in gltf_data.get("meshes", []):
+                    for prim in mesh_entry.get("primitives", []):
+                        attrs = prim.get("attributes", {})
+                        for k in [k for k in attrs if k.startswith(("JOINTS_", "WEIGHTS_"))]:
+                            del attrs[k]
+                logger.info("FBX→GLB %s: stripped skinning data (static mesh)", stem)
+
             images_list = []
             textures_list = []
 
@@ -364,9 +390,9 @@ def _convert_fbx_to_glb(
             capture_output=True, timeout=30,
         )
         if result2.returncode != 0 or not glb_output.exists():
-            return None
+            return GlbConversionResult(had_skinning=_had_skinning)
 
-    return glb_output
+    return GlbConversionResult(glb_path=glb_output, had_skinning=_had_skinning)
 
 
 def _find_assimp_cli() -> str | None:
@@ -934,81 +960,129 @@ local function loadOneAsset(asset)
             return InsertService:LoadAsset(asset.id)
         end)
         if ok and model then
-            local sourceMeshPart = nil
+            -- Collect ALL source MeshParts from the loaded asset.
+            -- A multi-mesh FBX returns a Model with one MeshPart per sub-mesh.
+            local sourceParts = {{}}
             for _, desc in ipairs(model:GetDescendants()) do
                 if desc:IsA("MeshPart") then
-                    sourceMeshPart = desc
-                    break
+                    table.insert(sourceParts, desc)
                 end
             end
 
-            if sourceMeshPart then
-                -- Replace matching placeholder MeshParts everywhere:
-                -- Workspace (scene objects) and ReplicatedStorage (prefab
-                -- templates used for runtime spawning).
-                -- Note: template is created AFTER this loop to avoid self-match.
+            if #sourceParts > 0 then
+                -- Find all placeholder MeshParts in Workspace and ReplicatedStorage
+                -- whose MeshId matches this asset's ID.
                 local allParts = findMeshParts(Workspace)
                 for _, p in ipairs(findMeshParts(ReplicatedStorage)) do
                     table.insert(allParts, p)
                 end
                 local matchCount = 0
-                for _, part in ipairs(allParts) do
-                    if baseName(part.Name) == asset.name then
-                        local replacement = sourceMeshPart:Clone()
-                        replacement.Name = part.Name
-                        replacement.CFrame = part.CFrame
-                        replacement.Anchored = true
-                        replacement.CanCollide = part.CanCollide
-                        replacement.Transparency = part.Transparency
-                        replacement.Color = part.Color
-                        replacement.Size = part.Size
+                local expectedMeshId = "rbxassetid://" .. tostring(asset.id)
 
-                        -- Count placeholder SAs and gather them
-                        local placeholderSAs = {{}}
-                        for _, child in ipairs(part:GetChildren()) do
+                local function findBestSource(placeholderName)
+                    -- Try to match a source MeshPart by name for multi-mesh FBXs
+                    for _, src in ipairs(sourceParts) do
+                        if src.Name == placeholderName then
+                            return src
+                        end
+                    end
+                    -- Fallback to the first source
+                    return sourceParts[1]
+                end
+
+                local function replacePart(part)
+                    local src = findBestSource(part.Name)
+                    local replacement = src:Clone()
+                    replacement.Name = part.Name
+                    replacement.CFrame = part.CFrame
+                    replacement.Anchored = true
+                    replacement.CanCollide = part.CanCollide
+                    replacement.Transparency = part.Transparency
+                    replacement.Color = part.Color
+                    replacement.Size = part.Size
+
+                    local placeholderSAs = {{}}
+                    for _, child in ipairs(part:GetChildren()) do
+                        if child:IsA("SurfaceAppearance") then
+                            table.insert(placeholderSAs, child)
+                        end
+                    end
+
+                    if #placeholderSAs > 0 then
+                        for _, child in ipairs(replacement:GetChildren()) do
                             if child:IsA("SurfaceAppearance") then
-                                table.insert(placeholderSAs, child)
+                                child:Destroy()
                             end
                         end
+                    end
 
-                        -- If placeholder has SAs, remove the loaded mesh's SA first
-                        -- to prevent duplicate/conflicting SAs on the replacement.
-                        -- The placeholder SA (from rbxl XML) has the correct
-                        -- rbxassetid ColorMap; the loaded mesh's SA may be empty.
-                        if #placeholderSAs > 0 then
-                            for _, child in ipairs(replacement:GetChildren()) do
-                                if child:IsA("SurfaceAppearance") then
-                                    child:Destroy()
-                                end
+                    for _, child in ipairs(part:GetChildren()) do
+                        child.Parent = replacement
+                    end
+
+                    if matchCount == 0 then
+                        local finalSACount = 0
+                        for _, child in ipairs(replacement:GetChildren()) do
+                            if child:IsA("SurfaceAppearance") then
+                                finalSACount = finalSACount + 1
                             end
                         end
+                        print("[MeshLoader]   " .. asset.name .. ": transferred " .. #placeholderSAs .. " SA(s) from placeholder, final SA count=" .. finalSACount)
+                    end
 
-                        -- Transfer all children from placeholder to replacement
-                        for _, child in ipairs(part:GetChildren()) do
-                            child.Parent = replacement
+                    replacement.Parent = part.Parent
+                    part:Destroy()
+                    matchCount = matchCount + 1
+                    replaced = replaced + 1
+                end
+
+                -- Match by MeshId — the asset ID in the MeshPart's MeshId property
+                -- (set by _patch_rbxl_asset_ids) is the same ID used to load via
+                -- InsertService, so this is a reliable 1:1 match.
+                --
+                -- De-duplicate: Unity prefabs often have multiple sub-mesh
+                -- MeshParts (BinBase, BinTop, TrashBag…) sharing the SAME
+                -- MeshId (one FBX → one Roblox asset). InsertService returns
+                -- a single combined MeshPart. Without de-dup, each sub-mesh
+                -- placeholder gets replaced with the full mesh, causing
+                -- 2-3x overlapping geometry.
+                --
+                -- Strategy: group matching parts by parent. If source has
+                -- fewer MeshParts than placeholders under one parent, replace
+                -- only the first placeholder and destroy the extras.
+                local partsByParent = {{}}
+                for _, part in ipairs(allParts) do
+                    if tostring(part.MeshId) == expectedMeshId then
+                        -- Use the actual Instance reference as key (not tostring,
+                        -- which returns just the Name and would incorrectly merge
+                        -- identically-named parents across different templates).
+                        local key = part.Parent or "NIL"
+                        if not partsByParent[key] then
+                            partsByParent[key] = {{}}
                         end
+                        table.insert(partsByParent[key], part)
+                    end
+                end
 
-                        if matchCount == 0 then
-                            local finalSACount = 0
-                            for _, child in ipairs(replacement:GetChildren()) do
-                                if child:IsA("SurfaceAppearance") then
-                                    finalSACount = finalSACount + 1
-                                end
-                            end
-                            print("[MeshLoader]   " .. asset.name .. ": transferred " .. #placeholderSAs .. " SA(s) from placeholder, final SA count=" .. finalSACount)
+                for _parentKey, parts in pairs(partsByParent) do
+                    if #sourceParts >= #parts then
+                        -- Enough source parts — try name matching per placeholder
+                        for _, part in ipairs(parts) do
+                            replacePart(part)
                         end
-
-                        replacement.Parent = part.Parent
-                        part:Destroy()
-                        matchCount = matchCount + 1
-                        replaced = replaced + 1
+                    else
+                        -- More placeholders than source parts = sub-meshes
+                        -- combined in the uploaded asset. Replace first, destroy rest.
+                        replacePart(parts[1])
+                        for ii = 2, #parts do
+                            parts[ii]:Destroy()
+                            replaced = replaced + 1
+                        end
                     end
                 end
 
                 -- Store template in ReplicatedStorage/Templates for TrackManager cloning.
-                -- If we found placeholders with SAs, apply the SA to the template too
-                -- so cloned segments inherit textures.
-                local template = sourceMeshPart:Clone()
+                local template = sourceParts[1]:Clone()
                 template.Name = asset.name
                 -- Remove loaded mesh's SA from template if we have a better one
                 if matchCount > 0 then
@@ -1017,6 +1091,14 @@ local function loadOneAsset(asset)
                     --  replacements in allParts have the transferred SAs)
                 end
                 template.Parent = Templates
+
+                -- Check for root motion config (generated for skinned meshes)
+                local configModule = ReplicatedStorage:FindFirstChild(asset.name .. "_RootMotionConfig")
+                if configModule and configModule:IsA("ModuleScript") then
+                    template:SetAttribute("HasRootMotion", true)
+                    template:SetAttribute("RootMotionConfig", asset.name .. "_RootMotionConfig")
+                    print("[MeshLoader]   " .. asset.name .. ": root motion config found, attribute set")
+                end
 
                 if matchCount > 0 then
                     print("[MeshLoader] ✓ " .. asset.name .. " — replaced " .. matchCount .. " placeholder(s)")
@@ -1104,6 +1186,31 @@ local function setPrimaryParts(container)
     end
 end
 setPrimaryParts(Workspace)
+
+-- Apply TransformAnimator to scene-placed parts with root motion
+local UnityBridge = ReplicatedStorage:FindFirstChild("UnityBridge")
+local TAModule = UnityBridge and UnityBridge:FindFirstChild("TransformAnimator")
+if TAModule then
+    local TransformAnimator = require(TAModule)
+    local function applyRootMotion(container)
+        for _, desc in ipairs(container:GetDescendants()) do
+            if desc:IsA("BasePart") and desc:GetAttribute("HasRootMotion") then
+                local configName = desc:GetAttribute("RootMotionConfig")
+                if configName then
+                    local cfgModule = ReplicatedStorage:FindFirstChild(configName)
+                    if cfgModule then
+                        local ok, cfg = pcall(require, cfgModule)
+                        if ok then
+                            TransformAnimator.new(desc, cfg)
+                            print("[MeshLoader] Applied root motion to " .. desc:GetFullName())
+                        end
+                    end
+                end
+            end
+        end
+    end
+    applyRootMotion(Workspace)
+end
 
 -- Signal completion so game scripts can proceed
 local done = Instance.new("BoolValue")
@@ -1271,8 +1378,11 @@ def upload_to_roblox(
                 logger.warning("Mesh %s: will be uploaded WITHOUT texture", mesh_path.name)
 
             # Convert FBX → GLB with embedded texture
-            glb_path = _convert_fbx_to_glb(mesh_path, tex_path, glb_dir)
+            glb_result = _convert_fbx_to_glb(mesh_path, tex_path, glb_dir)
+            glb_path = glb_result.glb_path
             upload_path = glb_path if glb_path else mesh_path
+            if glb_result.had_skinning:
+                result.skinned_meshes.add(mesh_path.stem)
 
             try:
                 resp = _upload_asset(

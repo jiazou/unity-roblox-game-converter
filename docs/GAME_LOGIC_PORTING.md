@@ -22,6 +22,7 @@ The bridge is NOT a full Unity emulator. It provides the 20% of Unity APIs that 
 | `Time` | deltaTime, time, timeScale | RunService.Heartbeat delta, os.clock |
 | `StateMachine` | GameManager + AState (stack-based state machine) | Enter/Exit/Tick lifecycle, PushState/PopState/SwitchState |
 | `AnimatorBridge` | Animator state machine, blend trees, parameters | AnimationTrack crossfades, parameter-driven transitions |
+| `TransformAnimator` | Legacy Animation on non-skeletal objects (spin, bob, tilt) | Shared Heartbeat-driven keyframe interpolation on CFrame/Size |
 
 The bridge API should match Unity's naming so transpiled code needs minimal changes:
 ```lua
@@ -58,7 +59,7 @@ Unity C# Scripts
 
 ## Related docs
 
-- `.claude/skills/review-csharp-lua-conversion/` — archived skill (rule-based and AST transpilers removed; all transpilation now uses Claude AI)
+- `.claude/skills/review-csharp-lua-conversion/` — **archived** skill (rule-based and AST transpilers removed; all transpilation now uses Claude AI via `code_transpiler.py`)
 - `docs/FUTURE_IMPROVEMENTS.md` — caching, module splitting, serializer improvements
 - `docs/MODULE_STATUS.md` — status of all pipeline modules
 - `docs/UNSUPPORTED.md` — platform limitations catalog
@@ -72,7 +73,7 @@ Unity C# Scripts
 | Bootstrap script generator | `modules/conversion_helpers.py: generate_bootstrap_script()` | GameManager state machine wiring |
 | AI transpiler (Claude) | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality |
 
-**Status**: Bridge Luau modules exist in `bridge/` (AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
+**Status**: Bridge Luau modules exist in `bridge/` (AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
 
 **Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below. Currently, the AI transpiler inlines bridge patterns directly into transpiled scripts rather than requiring the bridge modules at runtime.
 
@@ -89,9 +90,10 @@ The `/convert-unity` skill's Step 4.5 (Game Logic Porting) uses a three-phase ap
 
 The skill explicitly prevents the "monolithic flattening" anti-pattern where all game systems get merged into one script. Game-specific output scripts are written to `<output_dir>/scripts/`.
 
-### Phase 3: Assembly integration — TODO
-- Assembly phase injects bridge modules from `bridge/` into `ReplicatedStorage/UnityBridge/` in the .rbxl
-- `rbxl_writer.py` needs folder creation logic for the UnityBridge subfolder
+### Phase 3: Assembly integration — PARTIALLY DONE
+- TransformAnimator is injected into `ReplicatedStorage/UnityBridge/` when the animation pipeline detects non-skeletal animations that need it
+- Full auto-injection of all bridge modules is not yet implemented — only TransformAnimator is injected on demand
+- `rbxl_writer.py` needs folder creation logic for the remaining UnityBridge modules
 - LLM-rewritten scripts are placed in `<output_dir>/scripts/` and assembled normally
 - Bootstrap script wires everything together
 

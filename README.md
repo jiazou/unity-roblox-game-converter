@@ -53,10 +53,10 @@ don't need to review intermediate results.
 | `code_transpiler` | `transpile_scripts(unity_project_path, ...)` | Converts C# scripts to Luau via Claude AI (requires Anthropic API key). |
 | `code_validator` | `validate_luau(source, filename)` | Validates generated Luau for syntax errors (block balance, residual C#). |
 | `mesh_decimator` | `decimate_meshes(mesh_paths, output_dir)` | Conservative mesh decimation — only reduces faces when above the Roblox 10k limit. |
-| `vertex_color_baker` | `bake_vertex_colors(mesh_paths, out_dir)` | Rasterises mesh vertex colors to UV-space textures (OBJ/PLY/GLB). |
+| `vertex_color_baker` | `bake_vertex_colors_batch(mesh_albedo_pairs, output_dir)` | Rasterises mesh vertex colors to UV-space textures (OBJ/PLY/GLB). |
 | `scriptable_object_converter` | `convert_asset_files(unity_path)` | Converts Unity `.asset` ScriptableObjects to Luau data table ModuleScripts. |
 | `animation_converter` | `convert_animations(scenes, guid_index, path)` | Parses Animator controllers/clips, generates Luau config tables and AnimatorBridge. |
-| `ui_translator` | `translate_ui_hierarchy(roots)` | Converts Unity Canvas/RectTransform UI to Roblox ScreenGui/UDim2 hierarchy. |
+| `ui_translator` | `translate_ui_hierarchy(scene_nodes)` | Converts Unity Canvas/RectTransform UI to Roblox ScreenGui/UDim2 hierarchy. |
 | `conversion_helpers` | `scene_nodes_to_parts(...)`, `generate_bootstrap_script(...)` | Transforms parsed Unity nodes to Roblox parts; generates GameBootstrap lifecycle script. |
 | `rbxl_writer` | `write_rbxl(parts, scripts, output_path)` | Serialises geometry and scripts into a valid `.rbxl` XML place file. |
 | `rbxl_binary_writer` | `xml_to_binary(xml_path, binary_path)` | Converts XML `.rbxl` to Roblox binary format for Open Cloud upload. |
@@ -68,7 +68,7 @@ don't need to review intermediate results.
 | Module | Description |
 |---|---|
 | `unity_yaml_utils` | Shared YAML parsing for scene/prefab files (document separators, classIDs, vector/quaternion extraction). |
-| `api_mappings` | Unity C# → Roblox Luau API mapping tables (130+ call mappings, 15 lifecycle hooks). |
+| `api_mappings` | Unity C# → Roblox Luau API mapping tables (278+ call mappings, 18 lifecycle hooks). |
 | `llm_cache` | SHA-256-based disk cache for LLM responses with TTL-based eviction. |
 | `retry` | Exponential backoff retry decorator for transient network failures. |
 
