@@ -6,15 +6,9 @@
 
 **Resolution:** `conversion_helpers.py` now collects `ComponentWarning` objects during `node_to_part()` for every unrecognized component type. Each warning includes the GameObject name, component type, and an actionable suggestion from `_COMPONENT_SUGGESTIONS`. The report includes per-type counts and suggestions. The conversion report's `components` section shows `total_encountered`, `converted`, `dropped`, `dropped_by_type`, and `dropped_details`.
 
-### QW-2. Transpiler warnings for networking attributes and object pooling (high impact)
+### ~~QW-2. Transpiler warnings for networking attributes and object pooling~~ — DONE
 
-**Problem:** Networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`) are detected for script classification but not converted to RemoteEvent/RemoteFunction patterns. Object pooling structures require manual refactoring. Users don't know these patterns need follow-up work.
-
-**Fix:** During AI transpilation post-processing, detect and flag:
-- Networking attributes — warn that multiplayer logic needs RemoteEvent/RemoteFunction wiring
-- Object pooling patterns — warn that structural pool management needs manual review
-
-**Files affected:** `modules/code_transpiler.py` (detection + warning collection), transpilation result struct (add warnings field)
+**Resolution:** `_analyze_csharp_patterns()` now detects networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`, etc.) and object pooling patterns (`ObjectPool`, `PoolManager`, `Spawn/Despawn/Recycle`). Detected patterns are attached to `TranspiledScript.warnings` and surfaced in the interactive transpile phase output. Scripts with networking or pooling patterns have their confidence capped at 0.5, causing them to be flagged for manual review.
 
 ## Medium Builds
 

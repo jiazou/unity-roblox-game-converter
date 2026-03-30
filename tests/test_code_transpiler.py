@@ -181,3 +181,95 @@ class TestAnalyzeCsharpPatterns:
         )
         warnings = _analyze_csharp_patterns(source)
         assert warnings == []
+
+    # --- Object pooling ---
+
+    def test_object_pool_generic(self) -> None:
+        source = "ObjectPool<Bullet> bulletPool = new ObjectPool<Bullet>();"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("pooling" in w.lower() for w in warnings)
+
+    def test_pool_manager(self) -> None:
+        source = "PoolManager.Spawn(prefab, position, rotation);"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("pooling" in w.lower() for w in warnings)
+
+    def test_pool_get_return(self) -> None:
+        source = (
+            "var bullet = pool.Get();\n"
+            "pool.Return(bullet);\n"
+        )
+        warnings = _analyze_csharp_patterns(source)
+        assert any("pooling" in w.lower() for w in warnings)
+
+    def test_pool_release(self) -> None:
+        source = "pool.Release(obj);"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("pooling" in w.lower() for w in warnings)
+
+    def test_pool_despawn(self) -> None:
+        source = "PoolManager.Despawn(enemy);"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("pooling" in w.lower() for w in warnings)
+
+    def test_spawn_despawn_generic(self) -> None:
+        """Spawn/Despawn on any object should trigger (common pool API)."""
+        source = "manager.Spawn(prefab);\nmanager.Despawn(obj);"
+        warnings = _analyze_csharp_patterns(source)
+        assert any("pooling" in w.lower() for w in warnings)
+
+    def test_no_pool_false_positive(self) -> None:
+        """Regular method calls shouldn't trigger pooling detection."""
+        source = "var item = inventory.Get(0);\nDebug.Log(item);"
+        warnings = _analyze_csharp_patterns(source)
+        assert not any("pooling" in w.lower() for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# Flagging for review — networking/pooling scripts
+# ---------------------------------------------------------------------------
+
+from modules.code_transpiler import _FLAG_FOR_REVIEW_MARKERS
+
+
+class TestFlagForReviewMarkers:
+    def test_networking_warning_is_flaggable(self) -> None:
+        source = "[Command]\nvoid CmdFire() { }"
+        warnings = _analyze_csharp_patterns(source)
+        flaggable = any(
+            marker in w
+            for w in warnings
+            for marker in _FLAG_FOR_REVIEW_MARKERS
+        )
+        assert flaggable
+
+    def test_pooling_warning_is_flaggable(self) -> None:
+        source = "ObjectPool<Bullet> pool;"
+        warnings = _analyze_csharp_patterns(source)
+        flaggable = any(
+            marker in w
+            for w in warnings
+            for marker in _FLAG_FOR_REVIEW_MARKERS
+        )
+        assert flaggable
+
+    def test_linq_warning_not_flaggable(self) -> None:
+        """LINQ is annoying but the AI handles it reasonably — not flaggable."""
+        source = "var x = list.Where(i => i > 0).ToList();"
+        warnings = _analyze_csharp_patterns(source)
+        flaggable = any(
+            marker in w
+            for w in warnings
+            for marker in _FLAG_FOR_REVIEW_MARKERS
+        )
+        assert not flaggable
+
+    def test_clean_script_not_flaggable(self) -> None:
+        source = "public class Foo : MonoBehaviour { void Update() {} }"
+        warnings = _analyze_csharp_patterns(source)
+        flaggable = any(
+            marker in w
+            for w in warnings
+            for marker in _FLAG_FOR_REVIEW_MARKERS
+        )
+        assert not flaggable

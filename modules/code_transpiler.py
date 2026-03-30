@@ -72,6 +72,13 @@ _NETWORK_ATTRS = re.compile(
     r"ClientCallback|Server|Client)\s*[(\]]"
 )
 
+# Object pooling patterns — structural management needs manual refactoring
+_OBJECT_POOL_PATTERNS = re.compile(
+    r"\b(?:ObjectPool|PoolManager|Pool<"
+    r"|[Pp]ool\.(?:Get|Return|Release|Spawn|Despawn|Recycle)\s*\("
+    r"|\.(?:Spawn|Despawn|Recycle)\s*\()"
+)
+
 # Complex generic types (beyond simple GetComponent<T>)
 _COMPLEX_GENERICS = re.compile(
     r"(?:Dictionary|List|HashSet|Queue|Stack|IEnumerable|IReadOnlyList)"
@@ -129,6 +136,14 @@ def _analyze_csharp_patterns(source: str) -> list[str]:
             f"— Luau uses untyped tables, verify data structure conversion"
         )
 
+    # Object pooling patterns
+    pool_matches = _OBJECT_POOL_PATTERNS.findall(source)
+    if pool_matches:
+        warnings.append(
+            f"Object pooling pattern detected ({len(pool_matches)} occurrence{'s' if len(pool_matches) > 1 else ''}) "
+            f"— pool lifecycle (Get/Return/Spawn/Despawn) needs manual Roblox refactoring"
+        )
+
     # async/await (beyond simple coroutine patterns)
     if re.search(r"\basync\s+Task", source):
         warnings.append(
@@ -136,6 +151,14 @@ def _analyze_csharp_patterns(source: str) -> list[str]:
         )
 
     return warnings
+
+
+# Warnings containing these substrings indicate the script should be flagged
+# for manual review — the AI transpiler cannot handle them correctly.
+_FLAG_FOR_REVIEW_MARKERS: tuple[str, ...] = (
+    "Networking attributes detected",
+    "Object pooling pattern detected",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -711,9 +734,19 @@ def transpile_scripts(
             )
             strategy = "ai"
 
-        warnings.extend(_analyze_csharp_patterns(csharp_source))
+        pattern_warnings = _analyze_csharp_patterns(csharp_source)
+        warnings.extend(pattern_warnings)
         script_type = _classify_script_type(csharp_source, ast_info)
 
+        # Flag scripts with high-risk patterns (networking, pooling) for
+        # manual review — the AI can't handle these correctly.
+        has_flaggable = any(
+            marker in w
+            for w in pattern_warnings
+            for marker in _FLAG_FOR_REVIEW_MARKERS
+        )
+        if has_flaggable:
+            confidence = min(confidence, 0.5)
         flagged = confidence < confidence_threshold
         ts = TranspiledScript(
             source_path=cs_path,
