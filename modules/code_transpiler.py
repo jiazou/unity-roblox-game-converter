@@ -521,6 +521,18 @@ def _ai_transpile(
                 "- GameObject.SetActive(bool) → GameObjectUtil.SetActive(instance, bool). "
                 "Never emit obj.Parent = nil to hide objects — it detaches from the scene tree "
                 "and causes nil-parent cascading failures.\n"
+                "- Unity bridge modules are available in ReplicatedStorage. Use require() to "
+                "import them when the C# source uses the corresponding Unity API:\n"
+                '  * Input (GetKey/GetKeyDown/GetKeyUp/GetAxis) → require(...:WaitForChild("Input"))\n'
+                '  * Time (deltaTime/time/timeScale) → require(...:WaitForChild("Time"))\n'
+                '  * Coroutine (StartCoroutine/WaitForSeconds) → require(...:WaitForChild("Coroutine"))\n'
+                '  * Physics (Raycast/CheckSphere/OverlapSphere) → require(...:WaitForChild("Physics"))\n'
+                '  * MonoBehaviour (lifecycle: Start/Update/Awake/OnEnable) → require(...:WaitForChild("MonoBehaviour"))\n'
+                '  * GameObjectUtil (Instantiate/Destroy/Find/SetActive) → require(...:WaitForChild("GameObjectUtil"))\n'
+                '  * StateMachine (state machine pattern with Enter/Exit/Tick) → require(...:WaitForChild("StateMachine"))\n'
+                "  Use the module API exactly as named (e.g. Input.GetKey, Physics.Raycast, "
+                "Coroutine.Start, Time.deltaTime, GameObjectUtil.Destroy). "
+                "The require target is ReplicatedStorage.\n"
                 "- BinaryWriter/BinaryReader serialization → use Lua table fields. "
                 "Roblox persists data via DataStore (JSON), not binary streams. "
                 "Replace writer.Write(x)/reader.Read() with table.field = x / x = table.field.\n"

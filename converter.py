@@ -30,6 +30,7 @@ import config
 from modules import (
     animation_converter,
     asset_extractor,
+    bridge_injector,
     code_validator,
     guid_resolver,
     material_mapper,
@@ -329,6 +330,23 @@ def convert(
             click.echo(f"    ⚠ {w}")
     else:
         click.echo("    → No Legacy Animation components found")
+
+    # ── Auto-inject bridge modules based on transpiled code usage ─────
+    existing_scripts = {ts.output_filename for ts in transpilation.scripts}
+    all_luau = [ts.luau_source for ts in transpilation.scripts]
+    bridge_result = bridge_injector.detect_needed_bridges(all_luau, existing_scripts)
+    if bridge_result.needed:
+        for filename, source in bridge_injector.inject_bridges(bridge_result.needed):
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path("(generated)"),
+                output_filename=filename,
+                csharp_source="",
+                luau_source=source,
+                strategy="ai",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
+        click.echo(f"🔌  Bridge modules auto-injected: {', '.join(bridge_result.needed)}")
 
     # ── Bootstrap script generation ──────────────────────────────────
     click.echo("🎬  Generating bootstrap script …")
