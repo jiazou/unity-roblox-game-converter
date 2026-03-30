@@ -1,11 +1,7 @@
 """
-bridge_injector.py — Detect which Unity bridge modules are needed by transpiled
-Luau scripts and inject them into the transpilation result.
+bridge_injector.py — Detect and inject Unity bridge modules needed by transpiled Luau.
 
-Scans transpiled Luau source for ``require()`` calls and API usage patterns
-that indicate a bridge module dependency.  Returns the set of bridge module
-filenames that should be included in the .rbxl output.
-
+Scans for require() calls and API usage patterns to determine dependencies.
 No other pipeline module is imported here.
 """
 
@@ -15,35 +11,21 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Bridge module registry
-# ---------------------------------------------------------------------------
-
-# Each entry maps a bridge module filename to the patterns that indicate it's
-# needed.  Patterns are checked against the transpiled Luau source of each
-# script.  Both explicit require() calls and direct API usage are detected.
-
 _BRIDGE_DIR = Path(__file__).resolve().parent.parent / "bridge"
 
 
 @dataclass
 class _BridgeSpec:
-    """Describes how to detect that a bridge module is needed."""
-    filename: str                # e.g. "Input.lua"
-    module_name: str             # e.g. "Input" — the require target name
-    # Regex patterns that, if found in Luau source, indicate this bridge is
-    # needed.  Compiled at module load time for speed.
+    filename: str
+    module_name: str
     patterns: list[re.Pattern[str]]
 
 
 def _p(*args: str) -> list[re.Pattern[str]]:
-    """Compile one or more regex patterns."""
     return [re.compile(p) for p in args]
 
 
-# The bridge specs for the 6 modules that can be auto-detected.
-# AnimatorBridge and TransformAnimator are already handled by
-# animation_converter.py and are excluded here.
+# AnimatorBridge and TransformAnimator are handled by animation_converter.py.
 BRIDGE_SPECS: list[_BridgeSpec] = [
     _BridgeSpec(
         filename="Input.lua",
@@ -117,31 +99,17 @@ BRIDGE_SPECS: list[_BridgeSpec] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Detection API
-# ---------------------------------------------------------------------------
-
 @dataclass
 class BridgeInjectionResult:
-    """Result of scanning scripts for bridge dependencies."""
-    needed: list[str] = field(default_factory=list)     # filenames to inject
-    already_present: list[str] = field(default_factory=list)  # already in scripts
+    needed: list[str] = field(default_factory=list)
+    already_present: list[str] = field(default_factory=list)
 
 
 def detect_needed_bridges(
     luau_sources: list[str],
     existing_script_names: set[str] | None = None,
 ) -> BridgeInjectionResult:
-    """Scan transpiled Luau source code for bridge module dependencies.
-
-    Args:
-        luau_sources: List of Luau source code strings to scan.
-        existing_script_names: Set of script filenames already in the
-            transpilation result (to avoid duplicates).
-
-    Returns:
-        BridgeInjectionResult with the list of bridge filenames to inject.
-    """
+    """Scan Luau sources for bridge module dependencies."""
     existing = existing_script_names or set()
     result = BridgeInjectionResult()
 
@@ -169,16 +137,7 @@ def inject_bridges(
     needed_filenames: list[str],
     bridge_dir: Path | None = None,
 ) -> list[tuple[str, str]]:
-    """Read bridge module files and return (filename, source) pairs.
-
-    Args:
-        needed_filenames: List of bridge filenames to load (e.g. ["Input.lua"]).
-        bridge_dir: Directory containing bridge modules. Defaults to
-            the ``bridge/`` directory next to this package.
-
-    Returns:
-        List of (filename, luau_source) tuples for each bridge module found.
-    """
+    """Read bridge module files from disk and return (filename, source) pairs."""
     bdir = bridge_dir or _BRIDGE_DIR
     result: list[tuple[str, str]] = []
 

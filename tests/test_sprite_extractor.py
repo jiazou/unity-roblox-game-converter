@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Any, Literal
 
 import pytest
 
@@ -26,10 +25,6 @@ try:
 except ImportError:
     HAS_PILLOW = False
 
-
-# ---------------------------------------------------------------------------
-# Fixtures: sample .meta file contents
-# ---------------------------------------------------------------------------
 
 SINGLE_SPRITE_META = """\
 fileFormatVersion: 2
@@ -83,10 +78,6 @@ TextureImporter:
 """
 
 
-# ---------------------------------------------------------------------------
-# parse_spritesheet_meta
-# ---------------------------------------------------------------------------
-
 class TestParseSpritesheetMeta:
     def test_single_sprite_mode(self, tmp_path: Path) -> None:
         tex = tmp_path / "player.png"
@@ -136,10 +127,6 @@ class TestParseSpritesheetMeta:
         assert parse_spritesheet_meta(meta) is None
 
 
-# ---------------------------------------------------------------------------
-# _parse_sprite_entries
-# ---------------------------------------------------------------------------
-
 class TestParseSpriteEntries:
     def test_two_sprites(self) -> None:
         sprites = _parse_sprite_entries(MULTI_SPRITE_META)
@@ -154,10 +141,6 @@ class TestParseSpriteEntries:
         text = "  spriteSheet:\n    sprites:\nfoo: bar\n"
         assert _parse_sprite_entries(text) == []
 
-
-# ---------------------------------------------------------------------------
-# _parse_single_sprite
-# ---------------------------------------------------------------------------
 
 class TestParseSingleSprite:
     def test_full_entry(self) -> None:
@@ -188,10 +171,6 @@ class TestParseSingleSprite:
         assert _parse_single_sprite(entry) is None
 
 
-# ---------------------------------------------------------------------------
-# _slice_sprite (image cropping)
-# ---------------------------------------------------------------------------
-
 @pytest.mark.skipif(not HAS_PILLOW, reason="Pillow not installed")
 class TestSliceSprite:
     def test_full_image_sprite(self) -> None:
@@ -211,7 +190,6 @@ class TestSliceSprite:
         sprite = SpriteRect(name="BL", x=0, y=0, width=16, height=16)
         result = _slice_sprite(img, sprite)
         assert result.size == (16, 16)
-        # All pixels should be red
         assert result.getpixel((0, 0)) == (255, 0, 0, 255)
 
     def test_crop_top_right(self) -> None:
@@ -228,20 +206,13 @@ class TestSliceSprite:
         assert result.getpixel((0, 0)) == (0, 255, 0, 255)
 
     def test_clamps_to_bounds(self) -> None:
-        """Sprite extending past image edge gets clamped."""
         img = Image.new("RGBA", (32, 32), (128, 128, 128, 255))
         sprite = SpriteRect(name="OOB", x=20, y=0, width=100, height=100)
         result = _slice_sprite(img, sprite)
-        # Should be clamped to available area
         assert result.size[0] <= 32
         assert result.size[1] <= 32
 
 
-# ---------------------------------------------------------------------------
-# extract_sprites (integration)
-# ---------------------------------------------------------------------------
-
-# Minimal GuidIndex stub
 @dataclass
 class _FakeGuidEntry:
     guid: str
@@ -265,8 +236,6 @@ class _FakeGuidIndex:
 @pytest.mark.skipif(not HAS_PILLOW, reason="Pillow not installed")
 class TestExtractSprites:
     def test_single_sprite_extracted(self, tmp_path: Path) -> None:
-        """Single-sprite texture creates one output PNG."""
-        # Create a real 4x4 PNG
         img = Image.new("RGBA", (4, 4), (255, 0, 0, 255))
         tex_path = tmp_path / "Assets" / "icon.png"
         tex_path.parent.mkdir(parents=True)
@@ -304,7 +273,6 @@ class TestExtractSprites:
         assert "abcdef12345678900987654321fedcba" in result.sprite_guid_to_file
 
     def test_multi_sprite_extracted(self, tmp_path: Path) -> None:
-        """Multi-sprite spritesheet creates one PNG per sprite."""
         img = Image.new("RGBA", (64, 128), (0, 0, 255, 255))
         tex_path = tmp_path / "Assets" / "icons.png"
         tex_path.parent.mkdir(parents=True)
@@ -345,7 +313,6 @@ class TestExtractSprites:
         assert not (out_dir / "sprites").exists()
 
     def test_missing_texture_file_warns(self, tmp_path: Path) -> None:
-        """If texture file doesn't exist, a warning is produced."""
         tex_path = tmp_path / "Assets" / "gone.png"
         tex_path.parent.mkdir(parents=True)
         # Don't create the texture file, but create the .meta
@@ -376,7 +343,6 @@ class TestExtractSprites:
         assert any("missing" in w.lower() for w in result.warnings)
 
     def test_non_sprite_texture_skipped(self, tmp_path: Path) -> None:
-        """Textures with spriteMode 0 are not extracted."""
         tex_path = tmp_path / "Assets" / "ground.png"
         tex_path.parent.mkdir(parents=True)
         if HAS_PILLOW:

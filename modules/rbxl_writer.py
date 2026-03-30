@@ -141,9 +141,7 @@ class RbxUIElement:
     # Visibility
     visible: bool = True
     z_index: int = 1
-    # Layout children (UIListLayout, UIGridLayout)
     layout_children: list[dict[str, Any]] = field(default_factory=list)
-    # Children
     children: list["RbxUIElement"] = field(default_factory=list)
 
 
@@ -233,7 +231,6 @@ def _make_udim2(parent: ET.Element, name: str,
 
 def _make_udim(parent: ET.Element, name: str,
                scale: float, offset: int) -> ET.Element:
-    """Create a UDim property: UDim.new(scale, offset)."""
     el = ET.SubElement(parent, "UDim", name=name)
     ET.SubElement(el, "S").text = f"{scale:.6f}"
     ET.SubElement(el, "O").text = str(offset)

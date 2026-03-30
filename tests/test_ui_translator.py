@@ -473,11 +473,6 @@ class TestScreenGuiInRbxl:
         assert result.ui_elements_written == 3  # Panel + Title + Icon
 
 
-# ---------------------------------------------------------------------------
-# Layout group extraction  (MB-3)
-# ---------------------------------------------------------------------------
-
-
 class TestExtractLayoutGroups:
     def test_horizontal_layout_group(self) -> None:
         comps = [_FakeComp("HorizontalLayoutGroup", {
@@ -551,7 +546,6 @@ class TestExtractLayoutGroups:
 
 class TestLayoutGroupInHierarchy:
     def test_layout_children_populated_in_hierarchy(self) -> None:
-        """translate_ui_hierarchy should populate layout_children."""
         node = _FakeNode(
             name="VBox",
             components=[
@@ -568,7 +562,6 @@ class TestLayoutGroupInHierarchy:
 
 class TestLayoutGroupToRbx:
     def test_layout_children_converted_to_dicts(self) -> None:
-        """to_rbx_ui_element should convert RobloxLayoutChild → dict."""
         elem = RobloxUIElement(
             name="HBox",
             layout_children=[

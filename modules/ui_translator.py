@@ -26,19 +26,16 @@ from typing import Any
 
 @dataclass
 class RobloxLayoutChild:
-    """A Roblox layout object to be parented inside a UI element."""
-    class_name: str  # "UIListLayout" or "UIGridLayout"
-    # Shared properties
+    """A Roblox UIListLayout or UIGridLayout to parent inside a UI element."""
+    class_name: str
     padding_x_scale: float = 0.0
     padding_x_offset: int = 0
     padding_y_scale: float = 0.0
     padding_y_offset: int = 0
-    horizontal_alignment: str = "Left"   # Left | Center | Right
-    vertical_alignment: str = "Top"      # Top | Center | Bottom
-    sort_order: str = "LayoutOrder"      # LayoutOrder | Name | Custom
-    # UIListLayout only
-    fill_direction: str = "Vertical"     # Horizontal | Vertical
-    # UIGridLayout only
+    horizontal_alignment: str = "Left"
+    vertical_alignment: str = "Top"
+    sort_order: str = "LayoutOrder"
+    fill_direction: str = "Vertical"
     cell_size_x_scale: float = 0.0
     cell_size_x_offset: int = 100
     cell_size_y_scale: float = 0.0
@@ -289,7 +286,6 @@ def _extract_background_color(components: list[Any]) -> dict[str, Any]:
     return {}
 
 
-# Unity TextAnchor / child alignment → Roblox horizontal alignment
 _CHILD_ALIGN_H: dict[int, str] = {
     0: "Left",   1: "Center", 2: "Right",   # UpperLeft, UpperCenter, UpperRight
     3: "Left",   4: "Center", 5: "Right",   # MiddleLeft, MiddleCenter, MiddleRight
@@ -301,7 +297,6 @@ _CHILD_ALIGN_V: dict[int, str] = {
     6: "Bottom", 7: "Bottom", 8: "Bottom",
 }
 
-# Layout group component type names
 _LAYOUT_GROUP_TYPES: set[str] = {
     "HorizontalLayoutGroup",
     "VerticalLayoutGroup",
@@ -322,23 +317,15 @@ def _extract_layout_groups(components: list[Any]) -> list[RobloxLayoutChild]:
             continue
 
         props = getattr(comp, "properties", {})
-        short_type = ct.rsplit(".", 1)[-1]  # strip "UnityEngine.UI." prefix
+        short_type = ct.rsplit(".", 1)[-1]
 
-        # Common: child alignment (m_ChildAlignment is a TextAnchor enum)
         child_align = int(_safe_float(props.get("m_ChildAlignment", 0)))
         h_align = _CHILD_ALIGN_H.get(child_align, "Left")
         v_align = _CHILD_ALIGN_V.get(child_align, "Top")
-
-        # Common: spacing → Padding (UDim)
         spacing = _safe_float(props.get("m_Spacing", 0))
 
         if short_type in ("HorizontalLayoutGroup", "VerticalLayoutGroup"):
-            direction = (
-                "Horizontal" if short_type == "HorizontalLayoutGroup"
-                else "Vertical"
-            )
-            # Roblox UIListLayout.Padding is a single UDim (not per-axis).
-            # Store spacing in padding_x_offset (used as the single UDim offset).
+            direction = "Horizontal" if short_type == "HorizontalLayoutGroup" else "Vertical"
             layouts.append(RobloxLayoutChild(
                 class_name="UIListLayout",
                 fill_direction=direction,
@@ -348,12 +335,10 @@ def _extract_layout_groups(components: list[Any]) -> list[RobloxLayoutChild]:
             ))
 
         elif short_type == "GridLayoutGroup":
-            # Cell size
             cell_size = props.get("m_CellSize", {})
             cell_x = round(_safe_float(cell_size.get("x", 100) if isinstance(cell_size, dict) else 100))
             cell_y = round(_safe_float(cell_size.get("y", 100) if isinstance(cell_size, dict) else 100))
 
-            # Grid spacing → CellPadding
             grid_spacing = props.get("m_Spacing", {})
             if isinstance(grid_spacing, dict):
                 sp_x = round(_safe_float(grid_spacing.get("x", 0)))
@@ -361,10 +346,6 @@ def _extract_layout_groups(components: list[Any]) -> list[RobloxLayoutChild]:
             else:
                 sp_x = round(_safe_float(grid_spacing))
                 sp_y = sp_x
-
-            # Start axis: 0 = Horizontal (default), 1 = Vertical
-            # Roblox UIGridLayout has FillDirectionMaxCells but no start axis toggle.
-            # We use SortOrder to approximate the layout.
 
             layouts.append(RobloxLayoutChild(
                 class_name="UIGridLayout",
@@ -552,15 +533,9 @@ def translate_ui_hierarchy(
 
 
 def to_rbx_ui_element(elem: RobloxUIElement) -> Any:
-    """
-    Convert a RobloxUIElement to an RbxUIElement for rbxl_writer.
-
-    This bridges the ui_translator output to the rbxl_writer input format.
-    Import is deferred to avoid circular dependencies.
-    """
+    """Convert a RobloxUIElement to an RbxUIElement for rbxl_writer."""
     from modules.rbxl_writer import RbxUIElement
 
-    # Convert layout children (RobloxLayoutChild → dict)
     layout_dicts = []
     for lc in elem.layout_children:
         d: dict[str, Any] = {
@@ -615,15 +590,8 @@ def to_rbx_ui_element(elem: RobloxUIElement) -> Any:
     return rbx
 
 
-def to_rbx_screen_gui(
-    name: str,
-    elements: list[RobloxUIElement],
-) -> Any:
-    """
-    Create an RbxScreenGui from a list of translated UI elements.
-
-    Import is deferred to avoid circular dependencies.
-    """
+def to_rbx_screen_gui(name: str, elements: list[RobloxUIElement]) -> Any:
+    """Create an RbxScreenGui from translated UI elements."""
     from modules.rbxl_writer import RbxScreenGui
 
     return RbxScreenGui(
