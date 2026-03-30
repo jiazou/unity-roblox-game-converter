@@ -49,6 +49,7 @@ from modules import (
     roblox_uploader,
     scene_parser,
     scriptable_object_converter,
+    sprite_extractor,
     ui_translator,
     vertex_color_baker,
 )
@@ -1056,6 +1057,17 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                             shutil.copy2(audio_path, dest)
                             audio_copied += 1
 
+    # ── Extract sprites from spritesheets ────────────────────────────
+    sprite_result = sprite_extractor.extract_sprites(guid_index, out_dir)
+    sprite_info: dict = {}
+    if sprite_result.total_sprites_extracted:
+        sprite_info = {
+            "spritesheets_processed": sprite_result.total_spritesheets,
+            "sprites_extracted": sprite_result.total_sprites_extracted,
+        }
+    for w in sprite_result.warnings:
+        errors.append(w)
+
     # ── Auto-inject bridge modules based on transpiled code usage ─────
     existing_scripts = {ts.output_filename for ts in transpilation.scripts}
     all_luau = [ts.luau_source for ts in transpilation.scripts]
@@ -1264,6 +1276,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "dropped_components": comp_warning_summary,
         "decimation": decimation_info,
         "ui_translation": ui_info,
+        "sprites": sprite_info,
         "packages": package_info,
         "preview": preview_info,
         "errors": errors,

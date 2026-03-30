@@ -12,17 +12,9 @@
 
 ## Medium Builds
 
-### MB-1. Sprite extraction from spritesheets for UI (medium impact)
+### ~~MB-1. Sprite extraction from spritesheets for UI (medium impact)~~ — DONE
 
-**Problem:** UI Image components reference sprites by GUID, but the pipeline doesn't extract individual sprites from spritesheets (atlas textures). UI buttons, icons, and HUD elements appear blank in the converted game.
-
-**Fix:**
-- Parse `.meta` files for sprites to get atlas rect coordinates
-- Slice individual sprites from spritesheets during asset extraction
-- Upload sliced sprites as individual Decal assets
-- Wire sprite asset IDs into ScreenGui ImageLabel Image properties
-
-**Files affected:** `modules/asset_extractor.py` (sprite slicing), `modules/ui_translator.py` (sprite GUID → asset ID wiring), `modules/roblox_uploader.py` (sprite upload)
+**Resolution:** New `modules/sprite_extractor.py` parses `.meta` TextureImporter data for sprite rects (single and multi-sprite modes). Slices individual sprites from source textures using Pillow, handling Unity's bottom-left coordinate origin → Pillow top-left conversion. Writes extracted PNGs to `<output>/sprites/` which the existing `roblox_uploader.py` already picks up for upload. Wired into both `converter.py` (batch) and `convert_interactive.py` (assemble phase). Single-sprite textures map GUID → file directly; spritesheets use `guid:spritename` compound keys.
 
 ### MB-2. Terrain heightmap → Roblox Terrain conversion (high impact)
 

@@ -42,6 +42,7 @@ from modules import (
     rbxl_writer,
     report_generator,
     scriptable_object_converter,
+    sprite_extractor,
     ui_translator,
 )
 from modules.conversion_helpers import (
@@ -518,6 +519,15 @@ def convert(
     # ------------------------------------------------------------------
     # Phase 5 — Portal upload (requires Roblox API key)
     # ------------------------------------------------------------------
+
+    # ── Sprite extraction ─────────────────────────────────────────
+    click.echo("🖼️   Extracting sprites from spritesheets …")
+    sprite_result = sprite_extractor.extract_sprites(guid_index, out_dir)
+    if sprite_result.total_sprites_extracted:
+        click.echo(f"    → {sprite_result.total_sprites_extracted} sprites from "
+                   f"{sprite_result.total_spritesheets} spritesheet(s)")
+    for w in sprite_result.warnings:
+        warnings.append(w)
 
     click.echo("☁️   Checking Roblox upload …")
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None
