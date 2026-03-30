@@ -113,6 +113,7 @@ class ParsedScene:
     referenced_animator_controller_guids: set[str] = field(default_factory=set)
     skybox_material_guid: str | None = None  # from RenderSettings.m_SkyboxMaterial
     render_settings: dict[str, Any] = field(default_factory=dict)  # raw RenderSettings
+    parse_warnings: list[str] = field(default_factory=list)  # YAML parse errors, dropped docs
 
 
 
@@ -143,10 +144,18 @@ def parse_scene(scene_path: str | Path) -> ParsedScene:
         raise FileNotFoundError(f"Scene file not found: {scene_path}")
 
     raw_text = scene_path.read_text(encoding="utf-8", errors="replace")
-    triples = _parse_documents(raw_text)
+    error_counts: list[int] = []
+    triples = _parse_documents(raw_text, error_counts=error_counts)
 
     result = ParsedScene(scene_path=scene_path)
     result.raw_documents = [doc for _, _, doc in triples]
+
+    yaml_errors = error_counts[0] if error_counts else 0
+    if yaml_errors:
+        result.parse_warnings.append(
+            f"{yaml_errors} YAML document(s) in {scene_path.name} failed to parse "
+            f"and were dropped — some GameObjects may be missing"
+        )
 
     # ------------------------------------------------------------------
     # Pass 1: Index all documents by fileID and classify by classID

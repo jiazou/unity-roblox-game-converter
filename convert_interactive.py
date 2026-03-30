@@ -37,6 +37,7 @@ import config
 from modules import (
     animation_converter,
     asset_extractor,
+    bridge_injector,
     code_transpiler,
     code_validator,
     guid_resolver,
@@ -48,6 +49,7 @@ from modules import (
     roblox_uploader,
     scene_parser,
     scriptable_object_converter,
+    sprite_extractor,
     ui_translator,
     vertex_color_baker,
 )
@@ -691,38 +693,51 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         errors.append(f"Material mapping error: {exc}")
         mat_result = material_mapper.MaterialMapResult()
 
-    # Phase 3b: transpilation (re-run to get TranspilationResult)
+    # Phase 3b: transpilation — prefer scripts saved to disk during the
+    # transpile phase (which may have been user-edited) over re-running
+    # the AI API.  Only fall back to re-transpilation if no scripts exist.
     asm_serialized_refs = _extract_serialized_field_refs(
         parsed_scenes, prefabs, guid_index,
     ) or None
-    try:
-        transpilation = code_transpiler.transpile_scripts(
-            unity_path,
-            api_key=api_key,
-            confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
-            serialized_refs=asm_serialized_refs,
-        )
-    except (FileNotFoundError, Exception) as exc:
-        transpilation = code_transpiler.TranspilationResult()
-        # Fall back to scripts already on disk (from a previous transpile run)
-        scripts_dir = out_dir / "scripts"
-        meta_path = scripts_dir / "_meta.json"
-        if meta_path.exists():
-            import json as _json
-            meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-            for filename, info in meta.items():
-                lua_path = scripts_dir / filename
-                if lua_path.exists():
-                    transpilation.scripts.append(code_transpiler.TranspiledScript(
-                        source_path=Path("(cached)"),
-                        output_filename=filename,
-                        csharp_source="",
-                        luau_source=lua_path.read_text(encoding="utf-8"),
-                        strategy="ai",
-                        confidence=1.0,
-                        script_type=info.get("script_type", "ModuleScript"),
-                    ))
-            errors.append(f"Transpilation failed ({exc}); loaded {len(transpilation.scripts)} cached scripts from disk")
+
+    transpilation = code_transpiler.TranspilationResult()
+    scripts_dir = out_dir / "scripts"
+    meta_path = scripts_dir / "_meta.json"
+    if scripts_dir.is_dir() and (
+        any(scripts_dir.glob("*.lua")) or any(scripts_dir.glob("*.luau"))
+    ):
+        # Load from disk — these include any user edits from the transpile phase
+        script_meta: dict[str, dict] = {}
+        if meta_path.is_file():
+            script_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        for lua_file in sorted(
+            [*scripts_dir.glob("*.lua"), *scripts_dir.glob("*.luau")]
+        ):
+            if lua_file.name == "_meta.json":
+                continue
+            info = script_meta.get(lua_file.name, {})
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path(info.get("source_path", "(cached)")),
+                output_filename=lua_file.name,
+                csharp_source="",
+                luau_source=lua_file.read_text(encoding="utf-8"),
+                strategy="ai",
+                confidence=info.get("confidence", 1.0),
+                script_type=info.get("script_type", "ModuleScript"),
+            ))
+        transpilation.total = len(transpilation.scripts)
+        transpilation.succeeded = len(transpilation.scripts)
+    else:
+        # No scripts on disk — run transpilation
+        try:
+            transpilation = code_transpiler.transpile_scripts(
+                unity_path,
+                api_key=api_key,
+                confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
+                serialized_refs=asm_serialized_refs,
+            )
+        except Exception as exc:
+            errors.append(f"Transpilation failed: {exc}")
 
     # Luau validation pass
     for ts in transpilation.scripts:
@@ -999,6 +1014,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
         vc_baked_textures=vc_baked_textures,
+        split_output_dir=out_dir / "split_meshes",
     )
 
     # Record mesh→texture mapping for the upload patcher.
@@ -1034,15 +1050,42 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         for _script_path, refs in asm_serialized_refs.items():
             for _field, ref_value in refs.items():
                 if ref_value.startswith("audio:"):
-                    audio_filename = ref_value[len("audio:"):]
-                    # Find the source file in the Unity project
-                    matches = list(unity_path.rglob(audio_filename))
-                    if matches:
+                    audio_path = Path(ref_value[len("audio:"):])
+                    if audio_path.is_file():
                         audio_out.mkdir(parents=True, exist_ok=True)
-                        dest = audio_out / audio_filename
+                        dest = audio_out / audio_path.name
                         if not dest.exists():
-                            shutil.copy2(matches[0], dest)
+                            shutil.copy2(audio_path, dest)
                             audio_copied += 1
+
+    # ── Extract sprites from spritesheets ────────────────────────────
+    sprite_result = sprite_extractor.extract_sprites(guid_index, out_dir)
+    sprite_info: dict = {}
+    if sprite_result.total_sprites_extracted:
+        sprite_info = {
+            "spritesheets_processed": sprite_result.total_spritesheets,
+            "sprites_extracted": sprite_result.total_sprites_extracted,
+        }
+    for w in sprite_result.warnings:
+        errors.append(w)
+
+    # ── Auto-inject bridge modules based on transpiled code usage ─────
+    existing_scripts = {ts.output_filename for ts in transpilation.scripts}
+    all_luau = [ts.luau_source for ts in transpilation.scripts]
+    bridge_result = bridge_injector.detect_needed_bridges(all_luau, existing_scripts)
+    bridge_names: list[str] = []
+    if bridge_result.needed:
+        for filename, source in bridge_injector.inject_bridges(bridge_result.needed):
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path("(generated)"),
+                output_filename=filename,
+                csharp_source="",
+                luau_source=source,
+                strategy="ai",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
+            bridge_names.append(filename)
 
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)
 
@@ -1229,10 +1272,12 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "parts_written": write_result.parts_written,
         "scripts_written": write_result.scripts_written,
         "audio_files_staged": audio_copied,
+        "bridge_modules_injected": bridge_names,
         "warnings": write_result.warnings,
         "dropped_components": comp_warning_summary,
         "decimation": decimation_info,
         "ui_translation": ui_info,
+        "sprites": sprite_info,
         "packages": package_info,
         "preview": preview_info,
         "errors": errors,

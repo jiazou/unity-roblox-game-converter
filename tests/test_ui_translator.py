@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from modules.ui_translator import (
+    RobloxLayoutChild,
     RobloxUIElement,
     UITranslationResult,
     translate_rect_transform,
@@ -19,6 +20,7 @@ from modules.ui_translator import (
     to_rbx_ui_element,
     to_rbx_screen_gui,
     _detect_ui_class,
+    _extract_layout_groups,
     _extract_text_properties,
     _extract_image_properties,
     _safe_float,
@@ -469,3 +471,196 @@ class TestScreenGuiInRbxl:
         assert "Title" in content
         assert "Icon" in content
         assert result.ui_elements_written == 3  # Panel + Title + Icon
+
+
+class TestExtractLayoutGroups:
+    def test_horizontal_layout_group(self) -> None:
+        comps = [_FakeComp("HorizontalLayoutGroup", {
+            "m_Spacing": 10,
+            "m_ChildAlignment": 4,  # MiddleCenter
+        })]
+        layouts = _extract_layout_groups(comps)
+        assert len(layouts) == 1
+        lc = layouts[0]
+        assert lc.class_name == "UIListLayout"
+        assert lc.fill_direction == "Horizontal"
+        assert lc.padding_x_offset == 10
+        assert lc.horizontal_alignment == "Center"
+        assert lc.vertical_alignment == "Center"
+
+    def test_vertical_layout_group(self) -> None:
+        comps = [_FakeComp("VerticalLayoutGroup", {
+            "m_Spacing": 5,
+            "m_ChildAlignment": 0,  # UpperLeft
+        })]
+        layouts = _extract_layout_groups(comps)
+        assert len(layouts) == 1
+        lc = layouts[0]
+        assert lc.class_name == "UIListLayout"
+        assert lc.fill_direction == "Vertical"
+        assert lc.padding_x_offset == 5
+        assert lc.horizontal_alignment == "Left"
+        assert lc.vertical_alignment == "Top"
+
+    def test_grid_layout_group(self) -> None:
+        comps = [_FakeComp("GridLayoutGroup", {
+            "m_CellSize": {"x": 80, "y": 60},
+            "m_Spacing": {"x": 4, "y": 8},
+            "m_ChildAlignment": 1,  # UpperCenter
+        })]
+        layouts = _extract_layout_groups(comps)
+        assert len(layouts) == 1
+        lc = layouts[0]
+        assert lc.class_name == "UIGridLayout"
+        assert lc.cell_size_x_offset == 80
+        assert lc.cell_size_y_offset == 60
+        assert lc.cell_padding_x_offset == 4
+        assert lc.cell_padding_y_offset == 8
+        assert lc.horizontal_alignment == "Center"
+        assert lc.vertical_alignment == "Top"
+
+    def test_qualified_type_name(self) -> None:
+        comps = [_FakeComp("UnityEngine.UI.VerticalLayoutGroup", {
+            "m_Spacing": 3,
+        })]
+        layouts = _extract_layout_groups(comps)
+        assert len(layouts) == 1
+        assert layouts[0].fill_direction == "Vertical"
+
+    def test_no_layout_group(self) -> None:
+        comps = [_FakeComp("RectTransform", {}), _FakeComp("Image", {})]
+        layouts = _extract_layout_groups(comps)
+        assert layouts == []
+
+    def test_grid_spacing_scalar_fallback(self) -> None:
+        """When m_Spacing is a scalar instead of {x, y}, use it for both axes."""
+        comps = [_FakeComp("GridLayoutGroup", {
+            "m_CellSize": {"x": 50, "y": 50},
+            "m_Spacing": 6,
+        })]
+        layouts = _extract_layout_groups(comps)
+        lc = layouts[0]
+        assert lc.cell_padding_x_offset == 6
+        assert lc.cell_padding_y_offset == 6
+
+
+class TestLayoutGroupInHierarchy:
+    def test_layout_children_populated_in_hierarchy(self) -> None:
+        node = _FakeNode(
+            name="VBox",
+            components=[
+                _FakeComp("RectTransform", _rect_props()),
+                _FakeComp("VerticalLayoutGroup", {"m_Spacing": 8}),
+            ],
+        )
+        result = translate_ui_hierarchy([node])
+        elem = result.elements[0]
+        assert len(elem.layout_children) == 1
+        assert elem.layout_children[0].class_name == "UIListLayout"
+        assert elem.layout_children[0].fill_direction == "Vertical"
+
+
+class TestLayoutGroupToRbx:
+    def test_layout_children_converted_to_dicts(self) -> None:
+        elem = RobloxUIElement(
+            name="HBox",
+            layout_children=[
+                RobloxLayoutChild(
+                    class_name="UIListLayout",
+                    fill_direction="Horizontal",
+                    padding_x_offset=12,
+                    horizontal_alignment="Center",
+                    vertical_alignment="Top",
+                ),
+            ],
+        )
+        rbx = to_rbx_ui_element(elem)
+        assert len(rbx.layout_children) == 1
+        lc = rbx.layout_children[0]
+        assert isinstance(lc, dict)
+        assert lc["class_name"] == "UIListLayout"
+        assert lc["fill_direction"] == "Horizontal"
+        assert lc["padding_x_offset"] == 12
+        assert lc["horizontal_alignment"] == "Center"
+
+    def test_grid_layout_converted_to_dict(self) -> None:
+        elem = RobloxUIElement(
+            name="Grid",
+            layout_children=[
+                RobloxLayoutChild(
+                    class_name="UIGridLayout",
+                    cell_size_x_offset=64,
+                    cell_size_y_offset=64,
+                    cell_padding_x_offset=4,
+                    cell_padding_y_offset=4,
+                ),
+            ],
+        )
+        rbx = to_rbx_ui_element(elem)
+        lc = rbx.layout_children[0]
+        assert lc["class_name"] == "UIGridLayout"
+        assert lc["cell_size_x_offset"] == 64
+        assert lc["cell_padding_x_offset"] == 4
+
+
+class TestLayoutGroupInRbxl:
+    def test_list_layout_written_to_rbxl(self, tmp_path) -> None:
+        from modules.rbxl_writer import RbxUIElement, RbxScreenGui, write_rbxl
+
+        gui = RbxScreenGui(
+            name="LayoutTest",
+            elements=[
+                RbxUIElement(
+                    name="VBox",
+                    class_name="Frame",
+                    layout_children=[{
+                        "class_name": "UIListLayout",
+                        "fill_direction": "Vertical",
+                        "padding_x_scale": 0.0,
+                        "padding_x_offset": 8,
+                        "sort_order": "LayoutOrder",
+                        "horizontal_alignment": "Left",
+                        "vertical_alignment": "Top",
+                    }],
+                ),
+            ],
+        )
+        rbxl = tmp_path / "layout_test.rbxl"
+        write_rbxl([], [], rbxl, screen_guis=[gui])
+        content = rbxl.read_text()
+        assert "UIListLayout" in content
+        assert "FillDirection" in content
+        assert "Padding" in content
+
+    def test_grid_layout_written_to_rbxl(self, tmp_path) -> None:
+        from modules.rbxl_writer import RbxUIElement, RbxScreenGui, write_rbxl
+
+        gui = RbxScreenGui(
+            name="GridTest",
+            elements=[
+                RbxUIElement(
+                    name="Grid",
+                    class_name="Frame",
+                    layout_children=[{
+                        "class_name": "UIGridLayout",
+                        "cell_size_x_scale": 0.0,
+                        "cell_size_x_offset": 100,
+                        "cell_size_y_scale": 0.0,
+                        "cell_size_y_offset": 100,
+                        "cell_padding_x_scale": 0.0,
+                        "cell_padding_x_offset": 5,
+                        "cell_padding_y_scale": 0.0,
+                        "cell_padding_y_offset": 5,
+                        "sort_order": "LayoutOrder",
+                        "horizontal_alignment": "Center",
+                        "vertical_alignment": "Top",
+                    }],
+                ),
+            ],
+        )
+        rbxl = tmp_path / "grid_test.rbxl"
+        write_rbxl([], [], rbxl, screen_guis=[gui])
+        content = rbxl.read_text()
+        assert "UIGridLayout" in content
+        assert "CellSize" in content
+        assert "CellPadding" in content

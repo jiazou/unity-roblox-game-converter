@@ -6,29 +6,15 @@
 
 **Resolution:** `conversion_helpers.py` now collects `ComponentWarning` objects during `node_to_part()` for every unrecognized component type. Each warning includes the GameObject name, component type, and an actionable suggestion from `_COMPONENT_SUGGESTIONS`. The report includes per-type counts and suggestions. The conversion report's `components` section shows `total_encountered`, `converted`, `dropped`, `dropped_by_type`, and `dropped_details`.
 
-### QW-2. Transpiler warnings for networking attributes and object pooling (high impact)
+### ~~QW-2. Transpiler warnings for networking attributes and object pooling~~ — DONE
 
-**Problem:** Networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`) are detected for script classification but not converted to RemoteEvent/RemoteFunction patterns. Object pooling structures require manual refactoring. Users don't know these patterns need follow-up work.
-
-**Fix:** During AI transpilation post-processing, detect and flag:
-- Networking attributes — warn that multiplayer logic needs RemoteEvent/RemoteFunction wiring
-- Object pooling patterns — warn that structural pool management needs manual review
-
-**Files affected:** `modules/code_transpiler.py` (detection + warning collection), transpilation result struct (add warnings field)
+**Resolution:** `_analyze_csharp_patterns()` now detects networking attributes (`[Command]`, `[ClientRpc]`, `[SyncVar]`, etc.) and object pooling patterns (`ObjectPool`, `PoolManager`, `Spawn/Despawn/Recycle`). Detected patterns are attached to `TranspiledScript.warnings` and surfaced in the interactive transpile phase output. Scripts with networking or pooling patterns have their confidence capped at 0.5, causing them to be flagged for manual review.
 
 ## Medium Builds
 
-### MB-1. Sprite extraction from spritesheets for UI (medium impact)
+### ~~MB-1. Sprite extraction from spritesheets for UI (medium impact)~~ — DONE
 
-**Problem:** UI Image components reference sprites by GUID, but the pipeline doesn't extract individual sprites from spritesheets (atlas textures). UI buttons, icons, and HUD elements appear blank in the converted game.
-
-**Fix:**
-- Parse `.meta` files for sprites to get atlas rect coordinates
-- Slice individual sprites from spritesheets during asset extraction
-- Upload sliced sprites as individual Decal assets
-- Wire sprite asset IDs into ScreenGui ImageLabel Image properties
-
-**Files affected:** `modules/asset_extractor.py` (sprite slicing), `modules/ui_translator.py` (sprite GUID → asset ID wiring), `modules/roblox_uploader.py` (sprite upload)
+**Resolution:** New `modules/sprite_extractor.py` parses `.meta` TextureImporter data for sprite rects (single and multi-sprite modes). Slices individual sprites from source textures using Pillow, handling Unity's bottom-left coordinate origin → Pillow top-left conversion. Writes extracted PNGs to `<output>/sprites/` which the existing `roblox_uploader.py` already picks up for upload. Wired into both `converter.py` (batch) and `convert_interactive.py` (assemble phase). Single-sprite textures map GUID → file directly; spritesheets use `guid:spritename` compound keys.
 
 ### MB-2. Terrain heightmap → Roblox Terrain conversion (high impact)
 
@@ -43,32 +29,15 @@
 
 **Files affected:** New `modules/terrain_converter.py`, `modules/rbxl_writer.py` (Terrain instance), loader script generation
 
-### MB-3. Layout group support for UI (medium impact)
+### ~~MB-3. Layout group support for UI (medium impact)~~ — DONE
 
-**Problem:** Unity's `HorizontalLayoutGroup`, `VerticalLayoutGroup`, and `GridLayoutGroup` components are ignored. Complex UI layouts that rely on auto-layout break in Roblox.
-
-**Fix:**
-- Map `HorizontalLayoutGroup` → `UIListLayout` with `FillDirection = Horizontal`
-- Map `VerticalLayoutGroup` → `UIListLayout` with `FillDirection = Vertical`
-- Map `GridLayoutGroup` → `UIGridLayout`
-- Convert padding, spacing, and child alignment properties
-
-**Files affected:** `modules/ui_translator.py`
+**Resolution:** `_extract_layout_groups()` in `ui_translator.py` detects `HorizontalLayoutGroup`, `VerticalLayoutGroup`, and `GridLayoutGroup` components (including `UnityEngine.UI.` prefixed names). Maps them to `RobloxLayoutChild` dataclass objects: `HorizontalLayoutGroup` → `UIListLayout` with `FillDirection = Horizontal`, `VerticalLayoutGroup` → `UIListLayout` with `FillDirection = Vertical`, `GridLayoutGroup` → `UIGridLayout`. Converts spacing, cell size, cell padding, and child alignment (`m_ChildAlignment` enum → Roblox `HorizontalAlignment`/`VerticalAlignment`). `to_rbx_ui_element()` converts `RobloxLayoutChild` objects to dicts for `RbxUIElement.layout_children`. `_make_ui_element()` in `rbxl_writer.py` serializes layout children as XML child `<Item>` nodes with appropriate UDim/UDim2 properties.
 
 ## Hard / Architectural
 
-### HA-1. Multi-material mesh splitting (high impact)
+### ~~HA-1. Multi-material mesh splitting (high impact)~~ — DONE
 
-**Problem:** Roblox allows only 1 material per MeshPart. Unity meshes commonly have multiple sub-meshes with different materials (e.g., a character with separate body/clothes/skin materials). The converter uses only the first material and silently drops the rest.
-
-**Fix:**
-- During mesh processing, detect multi-material meshes (multiple material slots in MeshRenderer)
-- Split the mesh into separate sub-meshes per material using trimesh or assimp
-- Export each sub-mesh as a separate MeshPart
-- Group sub-meshes under a Model to preserve hierarchy
-- Apply correct material to each sub-mesh
-
-**Files affected:** `modules/mesh_decimator.py` (mesh splitting), `modules/conversion_helpers.py` (multi-part assembly), `modules/rbxl_writer.py` (Model grouping)
+**Resolution:** New `modules/mesh_splitter.py` loads multi-material meshes via trimesh (with GLB/FBX scene preservation), extracts per-material geometries, and exports each as a separate OBJ. `_try_split_multi_material()` in `conversion_helpers.py` detects multi-material MeshRenderers, calls the splitter, and creates child `RbxPartEntry` objects (one per submesh) each with its own `SurfaceAppearance`. The parent part becomes a grouping Model via `rbxl_writer._is_grouping_node()`. Falls back gracefully to single-material behavior when trimesh can't split.
 
 ### HA-2. Animation retargeting — Animator → Roblox animations (high impact)
 

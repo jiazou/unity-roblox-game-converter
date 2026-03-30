@@ -30,6 +30,7 @@ import config
 from modules import (
     animation_converter,
     asset_extractor,
+    bridge_injector,
     code_validator,
     guid_resolver,
     material_mapper,
@@ -41,6 +42,7 @@ from modules import (
     rbxl_writer,
     report_generator,
     scriptable_object_converter,
+    sprite_extractor,
     ui_translator,
 )
 from modules.conversion_helpers import (
@@ -330,6 +332,23 @@ def convert(
     else:
         click.echo("    → No Legacy Animation components found")
 
+    # ── Auto-inject bridge modules based on transpiled code usage ─────
+    existing_scripts = {ts.output_filename for ts in transpilation.scripts}
+    all_luau = [ts.luau_source for ts in transpilation.scripts]
+    bridge_result = bridge_injector.detect_needed_bridges(all_luau, existing_scripts)
+    if bridge_result.needed:
+        for filename, source in bridge_injector.inject_bridges(bridge_result.needed):
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path("(generated)"),
+                output_filename=filename,
+                csharp_source="",
+                luau_source=source,
+                strategy="ai",
+                confidence=1.0,
+                script_type="ModuleScript",
+            ))
+        click.echo(f"🔌  Bridge modules auto-injected: {', '.join(bridge_result.needed)}")
+
     # ── Bootstrap script generation ──────────────────────────────────
     click.echo("🎬  Generating bootstrap script …")
     bootstrap_source = _generate_bootstrap_script(parsed_scenes, guid_index, transpilation)
@@ -446,6 +465,7 @@ def convert(
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
         mat_results=mat_result.materials if mat_result else None,
+        split_output_dir=out_dir / "split_meshes",
     )
     if lighting_config:
         click.echo(f"    → Directional light → Lighting (brightness={lighting_config.brightness:.1f})")
@@ -471,13 +491,12 @@ def convert(
         for _script_path, refs in serialized_refs.items():
             for _field, ref_value in refs.items():
                 if ref_value.startswith("audio:"):
-                    audio_filename = ref_value[len("audio:"):]
-                    matches = list(unity_path.rglob(audio_filename))
-                    if matches:
+                    audio_path = Path(ref_value[len("audio:"):])
+                    if audio_path.is_file():
                         audio_out.mkdir(parents=True, exist_ok=True)
-                        dest = audio_out / audio_filename
+                        dest = audio_out / audio_path.name
                         if not dest.exists():
-                            shutil.copy2(matches[0], dest)
+                            shutil.copy2(audio_path, dest)
                             audio_copied += 1
     if audio_copied:
         click.echo(f"    → Staged {audio_copied} audio file(s) in {audio_out}")
@@ -501,6 +520,15 @@ def convert(
     # ------------------------------------------------------------------
     # Phase 5 — Portal upload (requires Roblox API key)
     # ------------------------------------------------------------------
+
+    # ── Sprite extraction ─────────────────────────────────────────
+    click.echo("🖼️   Extracting sprites from spritesheets …")
+    sprite_result = sprite_extractor.extract_sprites(guid_index, out_dir)
+    if sprite_result.total_sprites_extracted:
+        click.echo(f"    → {sprite_result.total_sprites_extracted} sprites from "
+                   f"{sprite_result.total_spritesheets} spritesheet(s)")
+    for w in sprite_result.warnings:
+        warnings.append(w)
 
     click.echo("☁️   Checking Roblox upload …")
     textures_dir = out_dir / "textures" if (out_dir / "textures").is_dir() else None

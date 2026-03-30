@@ -23,6 +23,7 @@ from modules import (
     guid_resolver,
     material_mapper,
     mesh_decimator,
+    mesh_splitter,
     prefab_parser,
     report_generator,
     scene_parser,
@@ -605,6 +606,79 @@ def _parse_fbx_vertex_colors(fbx_path: str) -> tuple[float, float, float] | None
     return (all_r / total, all_g / total, all_b / total)
 
 
+def _get_material_guids(
+    node: scene_parser.SceneNode,
+    guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
+) -> list[str]:
+    """Extract resolved material GUIDs from a node's MeshRenderer."""
+    if not guid_to_roblox_def:
+        return []
+    for comp in node.components:
+        if comp.component_type not in ("MeshRenderer", "SkinnedMeshRenderer"):
+            continue
+        mat_refs = comp.properties.get("m_Materials", []) or []
+        return [
+            mat_ref.get("guid", "")
+            for mat_ref in mat_refs
+            if isinstance(mat_ref, dict)
+            and mat_ref.get("guid", "") in guid_to_roblox_def
+        ]
+    return []
+
+
+def _try_split_multi_material(
+    part: rbxl_writer.RbxPartEntry,
+    node: scene_parser.SceneNode,
+    guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
+    guid_to_companion_scripts: dict[str, list[str]] | None,
+    split_output_dir: Path | None,
+) -> bool:
+    """Split a multi-material mesh into child parts. Returns True if split occurred."""
+    if not part.mesh_id or not split_output_dir or not guid_to_roblox_def:
+        return False
+
+    mat_guids = _get_material_guids(node, guid_to_roblox_def)
+    if len(mat_guids) <= 1:
+        return False
+
+    mesh_path = Path(part.mesh_id)
+    if not mesh_path.exists():
+        return False
+
+    split_result = mesh_splitter.split_mesh(mesh_path, len(mat_guids), split_output_dir)
+    if not split_result.was_split:
+        return False
+
+    # Create a child part per submesh, each with its own material
+    for entry in split_result.submeshes:
+        idx = entry.material_index
+        child = rbxl_writer.RbxPartEntry(
+            name=f"{node.name}_mat{idx}",
+            position=part.position,
+            rotation=part.rotation,
+            size=part.size,
+            anchored=part.anchored,
+            mesh_id=str(entry.output_path),
+        )
+        if idx < len(mat_guids):
+            rdef = guid_to_roblox_def[mat_guids[idx]]
+            child.surface_appearance = roblox_def_to_surface_appearance(rdef)
+            if rdef.base_part_color:
+                child.color3 = rdef.base_part_color
+            if rdef.base_part_transparency > 0:
+                child.transparency = rdef.base_part_transparency
+        part.children.append(child)
+
+    # Parent becomes a grouping Model (no mesh of its own)
+    part.mesh_id = None
+    part.surface_appearance = None
+    logger.info(
+        "Split %r into %d submeshes with separate materials",
+        node.name, len(split_result.submeshes),
+    )
+    return True
+
+
 def node_to_part(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
@@ -616,6 +690,7 @@ def node_to_part(
     parent_world_pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
     parent_world_rot: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
     vc_baked_textures: dict[str, str] | None = None,
+    split_output_dir: Path | None = None,
 ) -> rbxl_writer.RbxPartEntry:
     """Convert a SceneNode tree to an RbxPartEntry tree (recursive)."""
     if component_warnings is not None:
@@ -673,7 +748,14 @@ def node_to_part(
     convert_light_components(part, node.components, directional_lights)
     convert_audio_components(part, node.name, node.components, guid_index)
     convert_particle_components(part, node.name, node.components)
-    apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
+
+    # Try splitting multi-material meshes into per-material child parts
+    did_split = _try_split_multi_material(
+        part, node, guid_to_roblox_def, guid_to_companion_scripts,
+        split_output_dir,
+    )
+    if not did_split:
+        apply_materials(part, node, guid_to_roblox_def, guid_to_companion_scripts)
 
     # Apply baked vertex-color textures to parts with empty SurfaceAppearances.
     if vc_baked_textures and part.mesh_id and part.mesh_id in vc_baked_textures:
@@ -734,6 +816,7 @@ def node_to_part(
             mesh_path_remap, directional_lights, component_warnings,
             parent_world_pos=world_pos, parent_world_rot=world_rot,
             vc_baked_textures=vc_baked_textures,
+            split_output_dir=split_output_dir,
         ))
 
     return part
@@ -903,10 +986,10 @@ def _process_mono_properties(
             if key not in refs:
                 refs[key] = asset_name
         elif ref_path.suffix in _AUDIO_EXTENSIONS:
-            # AudioClip reference → audio:<filename> (prefixed to distinguish)
+            # AudioClip reference → audio:<full_path> (prefixed to distinguish)
             refs = result.setdefault(script_path, {})
             if key not in refs:
-                refs[key] = f"audio:{ref_path.name}"
+                refs[key] = f"audio:{ref_path}"
 
 
 def extract_serialized_field_refs(
@@ -1399,6 +1482,7 @@ def scene_nodes_to_parts(
     mesh_path_remap: dict[str, str] | None = None,
     mat_results: list | None = None,
     vc_baked_textures: dict[str, str] | None = None,
+    split_output_dir: Path | None = None,
 ) -> tuple[
     list[rbxl_writer.RbxPartEntry],
     rbxl_writer.RbxLightingConfig | None,
@@ -1434,6 +1518,7 @@ def scene_nodes_to_parts(
                 node, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
                 mesh_path_remap, directional_lights, component_warnings,
                 vc_baked_textures=vc_baked_textures,
+                split_output_dir=split_output_dir,
             ))
 
     lighting = directional_lights_to_lighting(directional_lights)
