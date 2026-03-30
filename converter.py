@@ -471,13 +471,12 @@ def convert(
         for _script_path, refs in serialized_refs.items():
             for _field, ref_value in refs.items():
                 if ref_value.startswith("audio:"):
-                    audio_filename = ref_value[len("audio:"):]
-                    matches = list(unity_path.rglob(audio_filename))
-                    if matches:
+                    audio_path = Path(ref_value[len("audio:"):])
+                    if audio_path.is_file():
                         audio_out.mkdir(parents=True, exist_ok=True)
-                        dest = audio_out / audio_filename
+                        dest = audio_out / audio_path.name
                         if not dest.exists():
-                            shutil.copy2(matches[0], dest)
+                            shutil.copy2(audio_path, dest)
                             audio_copied += 1
     if audio_copied:
         click.echo(f"    → Staged {audio_copied} audio file(s) in {audio_out}")

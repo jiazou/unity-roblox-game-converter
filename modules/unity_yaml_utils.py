@@ -16,10 +16,13 @@ No other module is imported here.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -229,12 +232,22 @@ def ref_guid(ref: Any) -> str | None:
     return None
 
 
-def parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
+def parse_documents(
+    raw_text: str,
+    error_counts: list[int] | None = None,
+) -> list[tuple[int, str, dict]]:
     """
     Parse a Unity YAML file into (classID, fileID, body_dict) triples.
 
     Pre-scans the document separators to capture classID and fileID before
     handing the cleaned text to PyYAML.
+
+    Args:
+        raw_text: Raw Unity YAML content.
+        error_counts: If provided, a single-element list whose first element
+            will be set to the number of YAML documents that failed to parse.
+            This allows callers to detect silent data loss without changing
+            the return type.
 
     **Hardened behaviour** (compared to the original implementation):
 
@@ -259,6 +272,7 @@ def parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
     # longer kills the entire file.
     chunks = _split_yaml_documents(cleaned)
     docs: list[dict | None] = []
+    parse_error_count = 0
     for chunk in chunks:
         chunk_stripped = chunk.strip()
         if not chunk_stripped or chunk_stripped == "---":
@@ -266,10 +280,25 @@ def parse_documents(raw_text: str) -> list[tuple[int, str, dict]]:
             continue
         try:
             parsed = yaml.safe_load(chunk)
-        except yaml.YAMLError:
+        except yaml.YAMLError as exc:
+            parse_error_count += 1
+            logger.warning("YAML parse error in document %d: %s", len(docs) + 1, exc)
             docs.append(None)
             continue
         docs.append(parsed)
+
+    if parse_error_count:
+        logger.warning(
+            "%d YAML document(s) failed to parse and were dropped "
+            "(out of %d total documents)",
+            parse_error_count,
+            len(chunks),
+        )
+    if error_counts is not None:
+        if error_counts:
+            error_counts[0] = parse_error_count
+        else:
+            error_counts.append(parse_error_count)
 
     # Step 4: pair each document with its header, filtering stripped docs
     result: list[tuple[int, str, dict]] = []

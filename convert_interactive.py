@@ -691,38 +691,51 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         errors.append(f"Material mapping error: {exc}")
         mat_result = material_mapper.MaterialMapResult()
 
-    # Phase 3b: transpilation (re-run to get TranspilationResult)
+    # Phase 3b: transpilation — prefer scripts saved to disk during the
+    # transpile phase (which may have been user-edited) over re-running
+    # the AI API.  Only fall back to re-transpilation if no scripts exist.
     asm_serialized_refs = _extract_serialized_field_refs(
         parsed_scenes, prefabs, guid_index,
     ) or None
-    try:
-        transpilation = code_transpiler.transpile_scripts(
-            unity_path,
-            api_key=api_key,
-            confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
-            serialized_refs=asm_serialized_refs,
-        )
-    except (FileNotFoundError, Exception) as exc:
-        transpilation = code_transpiler.TranspilationResult()
-        # Fall back to scripts already on disk (from a previous transpile run)
-        scripts_dir = out_dir / "scripts"
-        meta_path = scripts_dir / "_meta.json"
-        if meta_path.exists():
-            import json as _json
-            meta = _json.loads(meta_path.read_text(encoding="utf-8"))
-            for filename, info in meta.items():
-                lua_path = scripts_dir / filename
-                if lua_path.exists():
-                    transpilation.scripts.append(code_transpiler.TranspiledScript(
-                        source_path=Path("(cached)"),
-                        output_filename=filename,
-                        csharp_source="",
-                        luau_source=lua_path.read_text(encoding="utf-8"),
-                        strategy="ai",
-                        confidence=1.0,
-                        script_type=info.get("script_type", "ModuleScript"),
-                    ))
-            errors.append(f"Transpilation failed ({exc}); loaded {len(transpilation.scripts)} cached scripts from disk")
+
+    transpilation = code_transpiler.TranspilationResult()
+    scripts_dir = out_dir / "scripts"
+    meta_path = scripts_dir / "_meta.json"
+    if scripts_dir.is_dir() and (
+        any(scripts_dir.glob("*.lua")) or any(scripts_dir.glob("*.luau"))
+    ):
+        # Load from disk — these include any user edits from the transpile phase
+        script_meta: dict[str, dict] = {}
+        if meta_path.is_file():
+            script_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        for lua_file in sorted(
+            [*scripts_dir.glob("*.lua"), *scripts_dir.glob("*.luau")]
+        ):
+            if lua_file.name == "_meta.json":
+                continue
+            info = script_meta.get(lua_file.name, {})
+            transpilation.scripts.append(code_transpiler.TranspiledScript(
+                source_path=Path(info.get("source_path", "(cached)")),
+                output_filename=lua_file.name,
+                csharp_source="",
+                luau_source=lua_file.read_text(encoding="utf-8"),
+                strategy="ai",
+                confidence=info.get("confidence", 1.0),
+                script_type=info.get("script_type", "ModuleScript"),
+            ))
+        transpilation.total = len(transpilation.scripts)
+        transpilation.succeeded = len(transpilation.scripts)
+    else:
+        # No scripts on disk — run transpilation
+        try:
+            transpilation = code_transpiler.transpile_scripts(
+                unity_path,
+                api_key=api_key,
+                confidence_threshold=config.TRANSPILATION_CONFIDENCE_THRESHOLD,
+                serialized_refs=asm_serialized_refs,
+            )
+        except Exception as exc:
+            errors.append(f"Transpilation failed: {exc}")
 
     # Luau validation pass
     for ts in transpilation.scripts:
@@ -1034,14 +1047,12 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         for _script_path, refs in asm_serialized_refs.items():
             for _field, ref_value in refs.items():
                 if ref_value.startswith("audio:"):
-                    audio_filename = ref_value[len("audio:"):]
-                    # Find the source file in the Unity project
-                    matches = list(unity_path.rglob(audio_filename))
-                    if matches:
+                    audio_path = Path(ref_value[len("audio:"):])
+                    if audio_path.is_file():
                         audio_out.mkdir(parents=True, exist_ok=True)
-                        dest = audio_out / audio_filename
+                        dest = audio_out / audio_path.name
                         if not dest.exists():
-                            shutil.copy2(matches[0], dest)
+                            shutil.copy2(audio_path, dest)
                             audio_copied += 1
 
     rbx_scripts = _transpiled_to_rbx_scripts(transpilation)

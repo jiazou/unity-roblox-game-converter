@@ -903,10 +903,10 @@ def _process_mono_properties(
             if key not in refs:
                 refs[key] = asset_name
         elif ref_path.suffix in _AUDIO_EXTENSIONS:
-            # AudioClip reference → audio:<filename> (prefixed to distinguish)
+            # AudioClip reference → audio:<full_path> (prefixed to distinguish)
             refs = result.setdefault(script_path, {})
             if key not in refs:
-                refs[key] = f"audio:{ref_path.name}"
+                refs[key] = f"audio:{ref_path}"
 
 
 def extract_serialized_field_refs(
