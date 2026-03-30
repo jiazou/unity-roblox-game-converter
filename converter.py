@@ -465,6 +465,7 @@ def convert(
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
         mat_results=mat_result.materials if mat_result else None,
+        split_output_dir=out_dir / "split_meshes",
     )
     if lighting_config:
         click.echo(f"    → Directional light → Lighting (brightness={lighting_config.brightness:.1f})")

@@ -35,18 +35,9 @@
 
 ## Hard / Architectural
 
-### HA-1. Multi-material mesh splitting (high impact)
+### ~~HA-1. Multi-material mesh splitting (high impact)~~ — DONE
 
-**Problem:** Roblox allows only 1 material per MeshPart. Unity meshes commonly have multiple sub-meshes with different materials (e.g., a character with separate body/clothes/skin materials). The converter uses only the first material and silently drops the rest.
-
-**Fix:**
-- During mesh processing, detect multi-material meshes (multiple material slots in MeshRenderer)
-- Split the mesh into separate sub-meshes per material using trimesh or assimp
-- Export each sub-mesh as a separate MeshPart
-- Group sub-meshes under a Model to preserve hierarchy
-- Apply correct material to each sub-mesh
-
-**Files affected:** `modules/mesh_decimator.py` (mesh splitting), `modules/conversion_helpers.py` (multi-part assembly), `modules/rbxl_writer.py` (Model grouping)
+**Resolution:** New `modules/mesh_splitter.py` loads multi-material meshes via trimesh (with GLB/FBX scene preservation), extracts per-material geometries, and exports each as a separate OBJ. `_try_split_multi_material()` in `conversion_helpers.py` detects multi-material MeshRenderers, calls the splitter, and creates child `RbxPartEntry` objects (one per submesh) each with its own `SurfaceAppearance`. The parent part becomes a grouping Model via `rbxl_writer._is_grouping_node()`. Falls back gracefully to single-material behavior when trimesh can't split.
 
 ### HA-2. Animation retargeting — Animator → Roblox animations (high impact)
 

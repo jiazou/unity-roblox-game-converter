@@ -1014,6 +1014,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         guid_index=guid_index,
         mesh_path_remap=mesh_path_remap,
         vc_baked_textures=vc_baked_textures,
+        split_output_dir=out_dir / "split_meshes",
     )
 
     # Record mesh→texture mapping for the upload patcher.
