@@ -141,6 +141,8 @@ class RbxUIElement:
     # Visibility
     visible: bool = True
     z_index: int = 1
+    # Layout children (UIListLayout, UIGridLayout)
+    layout_children: list[dict[str, Any]] = field(default_factory=list)
     # Children
     children: list["RbxUIElement"] = field(default_factory=list)
 
@@ -229,6 +231,15 @@ def _make_udim2(parent: ET.Element, name: str,
     return el
 
 
+def _make_udim(parent: ET.Element, name: str,
+               scale: float, offset: int) -> ET.Element:
+    """Create a UDim property: UDim.new(scale, offset)."""
+    el = ET.SubElement(parent, "UDim", name=name)
+    ET.SubElement(el, "S").text = f"{scale:.6f}"
+    ET.SubElement(el, "O").text = str(offset)
+    return el
+
+
 def _make_vector2(parent: ET.Element, name: str, xy: tuple[float, float]) -> ET.Element:
     el = ET.SubElement(parent, "Vector2", name=name)
     ET.SubElement(el, "X").text = f"{xy[0]:.6f}"
@@ -283,6 +294,35 @@ def _make_ui_element(parent: ET.Element, elem: "RbxUIElement") -> None:
         _make_color3(props, "ImageColor3", elem.image_color)
         _make_property(props, "float", "ImageTransparency",
                        f"{elem.image_transparency:.4f}")
+
+    # Layout children (UIListLayout, UIGridLayout)
+    for layout in elem.layout_children:
+        layout_cls = layout.get("class_name", "UIListLayout")
+        layout_item = ET.SubElement(item, "Item", **{"class": layout_cls})
+        lprops = ET.SubElement(layout_item, "Properties")
+        _make_property(lprops, "token", "SortOrder", layout.get("sort_order", "LayoutOrder"))
+        _make_property(lprops, "token", "HorizontalAlignment",
+                       layout.get("horizontal_alignment", "Left"))
+        _make_property(lprops, "token", "VerticalAlignment",
+                       layout.get("vertical_alignment", "Top"))
+
+        if layout_cls == "UIListLayout":
+            _make_property(lprops, "token", "FillDirection",
+                           layout.get("fill_direction", "Vertical"))
+            _make_udim(lprops, "Padding",
+                       layout.get("padding_x_scale", 0.0),
+                       layout.get("padding_x_offset", 0))
+        elif layout_cls == "UIGridLayout":
+            _make_udim2(lprops, "CellSize",
+                        layout.get("cell_size_x_scale", 0.0),
+                        layout.get("cell_size_x_offset", 100),
+                        layout.get("cell_size_y_scale", 0.0),
+                        layout.get("cell_size_y_offset", 100))
+            _make_udim2(lprops, "CellPadding",
+                        layout.get("cell_padding_x_scale", 0.0),
+                        layout.get("cell_padding_x_offset", 0),
+                        layout.get("cell_padding_y_scale", 0.0),
+                        layout.get("cell_padding_y_offset", 0))
 
     # Recurse into children
     for child in elem.children:

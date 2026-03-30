@@ -37,17 +37,9 @@
 
 **Files affected:** New `modules/terrain_converter.py`, `modules/rbxl_writer.py` (Terrain instance), loader script generation
 
-### MB-3. Layout group support for UI (medium impact)
+### ~~MB-3. Layout group support for UI (medium impact)~~ — DONE
 
-**Problem:** Unity's `HorizontalLayoutGroup`, `VerticalLayoutGroup`, and `GridLayoutGroup` components are ignored. Complex UI layouts that rely on auto-layout break in Roblox.
-
-**Fix:**
-- Map `HorizontalLayoutGroup` → `UIListLayout` with `FillDirection = Horizontal`
-- Map `VerticalLayoutGroup` → `UIListLayout` with `FillDirection = Vertical`
-- Map `GridLayoutGroup` → `UIGridLayout`
-- Convert padding, spacing, and child alignment properties
-
-**Files affected:** `modules/ui_translator.py`
+**Resolution:** `_extract_layout_groups()` in `ui_translator.py` detects `HorizontalLayoutGroup`, `VerticalLayoutGroup`, and `GridLayoutGroup` components (including `UnityEngine.UI.` prefixed names). Maps them to `RobloxLayoutChild` dataclass objects: `HorizontalLayoutGroup` → `UIListLayout` with `FillDirection = Horizontal`, `VerticalLayoutGroup` → `UIListLayout` with `FillDirection = Vertical`, `GridLayoutGroup` → `UIGridLayout`. Converts spacing, cell size, cell padding, and child alignment (`m_ChildAlignment` enum → Roblox `HorizontalAlignment`/`VerticalAlignment`). `to_rbx_ui_element()` converts `RobloxLayoutChild` objects to dicts for `RbxUIElement.layout_children`. `_make_ui_element()` in `rbxl_writer.py` serializes layout children as XML child `<Item>` nodes with appropriate UDim/UDim2 properties.
 
 ## Hard / Architectural
 
