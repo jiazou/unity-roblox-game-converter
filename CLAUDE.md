@@ -10,7 +10,7 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 - `convert_interactive.py` — Phase-based CLI for the `/convert-unity` skill (interactive, one phase at a time)
 - `config.py` — All configuration constants (paths, API keys, thresholds)
 - `modules/` — Individual pipeline modules (21 modules + `__init__.py`). `conversion_helpers` imports multiple pipeline modules (`scene_parser`, `prefab_parser`, `material_mapper`, `code_transpiler`, `guid_resolver`, `mesh_decimator`, `report_generator`, `rbxl_writer`) for data composition.
-- `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). TransformAnimator is auto-injected when transform animations or root motion are detected; remaining modules are not yet auto-injected.
+- `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). All modules are auto-injected: AnimatorBridge and TransformAnimator by `animation_converter.py` when animation components are detected; the other 7 by `bridge_injector.py` which scans transpiled Luau for require() calls and API usage patterns.
 
 ### Pipeline Phases
 
