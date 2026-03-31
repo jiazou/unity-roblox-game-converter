@@ -346,7 +346,7 @@ Many Unity games generate gameplay content at runtime — spawned enemies, level
 
 **What DOES survive:**
 - **Template Models** in ReplicatedStorage/Templates preserve their Unity prefab names and visible mesh hierarchy. The converter names them from the prefab's root GameObject name.
-- **UnityLayer attributes** set by the converter on Parts (e.g., layer 8 for collectibles, layer 9 for obstacles). Use `part:GetAttribute("UnityLayer")` for collision classification — do NOT invent custom tagging systems (BoolValues, CollectionService tags) that duplicate what the converter already provides.
+- **UnityLayer attributes** set by the converter on scene-placed instances (e.g., layer 8 for collectibles, layer 9 for obstacles). Use `part:GetAttribute("UnityLayer")` for collision classification — do NOT invent custom tagging systems (BoolValues, CollectionService tags) that duplicate what the converter already provides. **Important:** UnityLayer attributes are set on scene instances, NOT on prefab templates in ReplicatedStorage/Templates. When cloning templates at runtime, the spawning code must set `UnityLayer` on the cloned parts explicitly (e.g., `desc:SetAttribute("UnityLayer", 9)` for obstacles, `8` for collectibles). Do not rely on auto-discovering templates by scanning for UnityLayer — use explicit template name lists instead.
 - **ScriptableObject data** converted to `_Data.lua` ModuleScripts — but contains raw GUIDs that must be resolved to Template names.
 
 **Porting pattern:**
