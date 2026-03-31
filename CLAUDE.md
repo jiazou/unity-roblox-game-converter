@@ -49,6 +49,15 @@ The `/convert-unity` skill (`.claude/skills/convert-unity.md`) provides an inter
 - Mesh decimation confirmation
 - Upload configuration
 
+## Bug Fix Protocol
+
+When a problem is found in converted output (e.g., the Trash Dash Roblox game), always fix **both**:
+
+1. **Fix the converter/skill first** — update the pipeline code (`modules/`), converter skill (`.claude/skills/convert-unity/SKILL.md`), or bridge modules (`bridge/`) so future conversions produce correct output.
+2. **Then fix the current output** — update the game scripts in the output directory (e.g., `trash-dash-roblox-v7/scripts/`) so the already-converted game works.
+
+Never do one without the other. A fix only to the output will regress on the next conversion. A fix only to the converter leaves the current game broken.
+
 ## Known Limitations
 
 See `docs/UNSUPPORTED.md` for the full list. Key ones:
