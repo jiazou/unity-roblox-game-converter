@@ -1215,7 +1215,9 @@ end
 -- Signal completion so game scripts can proceed
 local done = Instance.new("BoolValue")
 done.Name = "MeshLoaderDone"
+done.Value = false
 done.Parent = ReplicatedStorage
+done.Value = true
 print("[MeshLoader] MeshLoaderDone signal fired")
 '''
 
