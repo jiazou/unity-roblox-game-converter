@@ -390,13 +390,15 @@ def apply_materials(
 
         # Apply the first material (Roblox limitation: one material per MeshPart)
         rdef = guid_to_roblox_def[resolved_guids[0]]
-        sa = roblox_def_to_surface_appearance(rdef)
-        part.surface_appearance = sa
-        if sa.color_map:
+        # Only create SurfaceAppearance if the material has actual texture data.
+        # An empty SurfaceAppearance overrides Color3, making the part white.
+        if rdef.color_map or rdef.normal_map or rdef.metalness_map or rdef.roughness_map:
+            sa = roblox_def_to_surface_appearance(rdef)
+            part.surface_appearance = sa
             logger.debug("apply_materials: %r → color_map=%s", node.name, sa.color_map)
         else:
-            logger.warning(
-                "apply_materials: %r has material but SurfaceAppearance has no color_map",
+            logger.debug(
+                "apply_materials: %r has material with no textures, using Color3 only",
                 node.name,
             )
         if rdef.base_part_color:
@@ -662,7 +664,8 @@ def _try_split_multi_material(
         )
         if idx < len(mat_guids):
             rdef = guid_to_roblox_def[mat_guids[idx]]
-            child.surface_appearance = roblox_def_to_surface_appearance(rdef)
+            if rdef.color_map or rdef.normal_map or rdef.metalness_map or rdef.roughness_map:
+                child.surface_appearance = roblox_def_to_surface_appearance(rdef)
             if rdef.base_part_color:
                 child.color3 = rdef.base_part_color
             if rdef.base_part_transparency > 0:
