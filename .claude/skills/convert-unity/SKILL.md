@@ -145,6 +145,18 @@ Unity uses 1 unit ≈ 1 meter. Roblox avatars are ~5.5 studs tall vs Unity's ~1.
 
 **Pipeline detail:** Unity stores transforms as local-space. The converter computes world-space positions recursively (`world_pos = parent_pos + parent_rot * local_pos`). If objects cluster at the origin, check `conversion_helpers.py:_compute_world_transform()`.
 
+**Decoration positions are baked into Unity prefabs — preserve them faithfully.**
+Unity segment prefabs (e.g., IndustrialWarehouse01, SuburbsHouse01) have all decoration children (buildings, fences, props) pre-positioned by the artist at specific local offsets. There is no runtime repositioning of individual decorations in Unity — the only runtime effect is a random 50% chance to mirror the entire segment on X. Never override or "fix" these positions in the converter output. If decorations appear to block the road, the root cause is elsewhere (camera angle, character scale, mesh orientation) — not the positions.
+
+**Mesh facing direction.**
+The converter passes positions and rotations 1:1 from Unity to Roblox. FBX meshes are uploaded via assimp (FBX→GLB) with no coordinate system transform applied. Unity is left-handed Y-up (Z-forward); Roblox and glTF are right-handed Y-up. Mesh geometry baked into the FBX may face the wrong direction in Roblox. After conversion, visually verify decoration meshes (buildings, props). If roadside objects face into the road instead of away from it, apply a 180° Y-axis rotation to off-center decoration MeshParts at spawn time:
+```lua
+local Y_FLIP = CFrame.Angles(0, math.pi, 0)
+local rot = (desc.CFrame - desc.CFrame.Position) * Y_FLIP
+desc.CFrame = CFrame.new(pos) * rot
+```
+This is not always needed — it depends on how the original meshes were authored. Test visually before applying.
+
 **Decision point:** Present scale approach. Ask which strategy the user wants.
 
 #### Step 4.5d: Game Loop & Timing Rules
@@ -399,7 +411,7 @@ Unity scenes contain objects meant for different contexts: menu backgrounds, edi
 
 - **Menu/UI scene objects** (e.g., title screen backdrops, menu cameras, character preview platforms): hide by setting `Transparency=1, CanCollide=false` on all descendant BaseParts. Identify these by name patterns from the Unity scene hierarchy — they often contain "Menu", "UI", "Background", "Title" in their name. Read the Unity scene YAML to confirm which root GameObjects are menu-only.
 - **Editor preview instances** (prefab instances placed in the scene for the developer to see in the editor, but spawned dynamically at runtime): hide these too. Common pattern: a single instance of a collectible prefab (e.g., "Pickup") placed at the origin — this is a preview, not gameplay content.
-- **Gameplay environment** (buildings, terrain, decorations along the play area): keep visible. These form the visual backdrop of the game.
+- **Gameplay environment** (buildings, terrain, decorations along the play area): keep visible. These form the visual backdrop of the game. Decoration positions are baked into Unity prefabs — preserve them faithfully (see Scale & Positioning).
 - **Broken visual artifacts** (objects that render as white boxes or gray rectangles in Roblox due to missing textures, failed mesh loading, or stripped effects like LightCones/Glow planes): remove from both Workspace and Templates to prevent them from appearing in spawned segments.
 
 The bootstrap should handle cleanup by name — iterate over known menu object names and hide them, rather than using broad pattern matching that might catch gameplay objects.

@@ -22,7 +22,7 @@ TEMP_DIR: Path = Path(os.environ.get("TEMP_DIR", "./tmp"))
 
 ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "sk-ant-PLACEHOLDER")
 ANTHROPIC_MODEL: str = "claude-opus-4-5"
-ANTHROPIC_MAX_TOKENS: int = 4096
+ANTHROPIC_MAX_TOKENS: int = 16384
 
 # ---------------------------------------------------------------------------
 # Asset extraction options
