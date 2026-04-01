@@ -9,6 +9,11 @@ from modules.code_transpiler import (
     TranspilationResult,
     TranspiledScript,
     transpile_scripts,
+    _extract_class_names,
+    _extract_references,
+    _build_dependency_graph,
+    _topological_sort,
+    _build_scoped_context,
 )
 
 
@@ -273,3 +278,291 @@ class TestFlagForReviewMarkers:
             for marker in _FLAG_FOR_REVIEW_MARKERS
         )
         assert not flaggable
+
+
+# ---------------------------------------------------------------------------
+# Class name extraction
+# ---------------------------------------------------------------------------
+
+
+class TestExtractClassNames:
+    def test_single_class(self) -> None:
+        assert _extract_class_names("public class Player {}") == {"Player"}
+
+    def test_multiple_types(self) -> None:
+        source = "class Foo {}\nenum Bar {}\nstruct Baz {}\ninterface IQux {}"
+        assert _extract_class_names(source) == {"Foo", "Bar", "Baz", "IQux"}
+
+    def test_modifiers(self) -> None:
+        source = "public abstract class Base {}\ninternal sealed class Derived {}"
+        assert _extract_class_names(source) == {"Base", "Derived"}
+
+    def test_no_types(self) -> None:
+        assert _extract_class_names("int x = 5;") == set()
+
+    def test_partial_class(self) -> None:
+        assert _extract_class_names("public partial class Config {}") == {"Config"}
+
+
+# ---------------------------------------------------------------------------
+# Cross-file reference extraction
+# ---------------------------------------------------------------------------
+
+
+class TestExtractReferences:
+    def test_finds_referenced_class(self) -> None:
+        source = "class Controller { Player player; }"
+        refs = _extract_references(source, {"Player", "Controller", "Enemy"})
+        assert refs == {"Player"}
+
+    def test_excludes_self_defined(self) -> None:
+        source = "class Player { Player other; }"
+        refs = _extract_references(source, {"Player"})
+        assert refs == set()
+
+    def test_multiple_refs(self) -> None:
+        source = "class Game { Player p; Enemy e; }"
+        refs = _extract_references(source, {"Player", "Enemy", "Game"})
+        assert refs == {"Player", "Enemy"}
+
+    def test_no_refs(self) -> None:
+        source = "class Standalone { int x; }"
+        refs = _extract_references(source, {"Player", "Enemy"})
+        assert refs == set()
+
+    def test_inheritance_ref(self) -> None:
+        source = "class Dog : Animal { }"
+        refs = _extract_references(source, {"Animal", "Dog"})
+        assert refs == {"Animal"}
+
+
+# ---------------------------------------------------------------------------
+# Dependency graph
+# ---------------------------------------------------------------------------
+
+
+class TestBuildDependencyGraph:
+    def test_linear_deps(self) -> None:
+        sources = {
+            "Base": "public class Base { }",
+            "Mid": "public class Mid : Base { }",
+            "Top": "public class Top { Mid m; }",
+        }
+        graph, class_map = _build_dependency_graph(sources)
+        assert graph["Base"] == set()
+        assert graph["Mid"] == {"Base"}
+        assert graph["Top"] == {"Mid"}
+        assert class_map["Base"] == "Base"
+
+    def test_no_deps(self) -> None:
+        sources = {
+            "A": "class A { }",
+            "B": "class B { }",
+        }
+        graph, _ = _build_dependency_graph(sources)
+        assert graph["A"] == set()
+        assert graph["B"] == set()
+
+    def test_mutual_deps(self) -> None:
+        sources = {
+            "Foo": "class Foo { Bar b; }",
+            "Bar": "class Bar { Foo f; }",
+        }
+        graph, _ = _build_dependency_graph(sources)
+        assert graph["Foo"] == {"Bar"}
+        assert graph["Bar"] == {"Foo"}
+
+    def test_multiple_classes_in_one_file(self) -> None:
+        sources = {
+            "Types": "enum Color {} struct Vec {}",
+            "User": "class User { Color c; Vec v; }",
+        }
+        graph, class_map = _build_dependency_graph(sources)
+        assert graph["User"] == {"Types"}
+        assert class_map["Color"] == "Types"
+        assert class_map["Vec"] == "Types"
+
+
+# ---------------------------------------------------------------------------
+# Topological sort
+# ---------------------------------------------------------------------------
+
+
+class TestTopologicalSort:
+    def test_linear_chain(self) -> None:
+        graph = {"C": {"B"}, "B": {"A"}, "A": set()}
+        order = _topological_sort(graph)
+        assert order.index("A") < order.index("B") < order.index("C")
+
+    def test_independent_nodes(self) -> None:
+        graph = {"A": set(), "B": set(), "C": set()}
+        order = _topological_sort(graph)
+        assert set(order) == {"A", "B", "C"}
+
+    def test_diamond(self) -> None:
+        graph = {"D": {"B", "C"}, "B": {"A"}, "C": {"A"}, "A": set()}
+        order = _topological_sort(graph)
+        assert order.index("A") < order.index("B")
+        assert order.index("A") < order.index("C")
+        assert order.index("B") < order.index("D")
+        assert order.index("C") < order.index("D")
+
+    def test_cycle_doesnt_crash(self) -> None:
+        graph = {"A": {"B"}, "B": {"A"}}
+        order = _topological_sort(graph)
+        assert set(order) == {"A", "B"}
+
+    def test_empty_graph(self) -> None:
+        assert _topological_sort({}) == []
+
+    def test_single_node(self) -> None:
+        assert _topological_sort({"X": set()}) == ["X"]
+
+
+# ---------------------------------------------------------------------------
+# Scoped context building
+# ---------------------------------------------------------------------------
+
+
+class TestBuildScopedContext:
+    def test_includes_transpiled_luau_for_direct_dep(self) -> None:
+        graph = {"App": {"Util"}, "Util": set()}
+        sources = {"App": "class App { Util u; }", "Util": "class Util {}"}
+        luau = {"Util": "local Util = {}\nreturn Util"}
+        ctx = _build_scoped_context("App", graph, sources, luau)
+        assert "Already-converted dependency: Util.lua" in ctx
+        assert "local Util" in ctx
+
+    def test_falls_back_to_csharp_for_unconverted_dep(self) -> None:
+        graph = {"App": {"Util"}, "Util": set()}
+        sources = {"App": "class App { Util u; }", "Util": "class Util {}"}
+        ctx = _build_scoped_context("App", graph, sources, {})
+        assert "Dependency (C# source): Util.cs" in ctx
+        assert "class Util" in ctx
+
+    def test_transitive_deps_get_summary_only(self) -> None:
+        graph = {"Top": {"Mid"}, "Mid": {"Base"}, "Base": set()}
+        sources = {
+            "Top": "class Top { Mid m; }",
+            "Mid": "class Mid : Base { public void DoStuff() {} }",
+            "Base": "class Base { public void Init() {} }",
+        }
+        ctx = _build_scoped_context("Top", graph, sources, {})
+        # Base is a transitive dep — should get a summary, not full source
+        assert "Transitive ref: Base" in ctx
+        assert "Init" in ctx
+
+    def test_no_deps_returns_empty(self) -> None:
+        graph = {"Solo": set()}
+        sources = {"Solo": "class Solo {}"}
+        assert _build_scoped_context("Solo", graph, sources, {}) == ""
+
+    def test_prefers_luau_over_csharp(self) -> None:
+        graph = {"A": {"B"}, "B": set()}
+        sources = {"A": "class A { B b; }", "B": "class B { }"}
+        luau = {"B": "-- converted B"}
+        ctx = _build_scoped_context("A", graph, sources, luau)
+        assert "Already-converted" in ctx
+        assert "C# source" not in ctx
+
+
+# ---------------------------------------------------------------------------
+# Dependency-ordered transpilation (integration)
+# ---------------------------------------------------------------------------
+
+
+class TestDependencyOrderedTranspilation:
+    """Verify transpile_scripts respects dependency order."""
+
+    def test_deps_transpiled_before_dependents(self, tmp_path: Path) -> None:
+        """Files with no deps should appear before files that reference them."""
+        project = tmp_path / "DepOrder"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        (assets / "Base.cs").write_text(
+            "public class Base { public void Init() {} }", encoding="utf-8"
+        )
+        (assets / "Derived.cs").write_text(
+            "public class Derived : Base { public void Run() {} }", encoding="utf-8"
+        )
+
+        call_order: list[str] = []
+        original_fake = _fake_ai_transpile
+
+        def _tracking_transpile(csharp, api_key, model, max_tokens, **kwargs):
+            filename = kwargs.get("target_filename", "")
+            call_order.append(filename)
+            return original_fake(csharp, api_key, model, max_tokens, **kwargs)
+
+        with patch("modules.code_transpiler._ai_transpile", side_effect=_tracking_transpile):
+            transpile_scripts(project, api_key="test-key")
+
+        assert call_order.index("Base.cs") < call_order.index("Derived.cs")
+
+    def test_scoped_context_passed_to_ai(self, tmp_path: Path) -> None:
+        """Dependent file's prompt should contain dep's already-transpiled Luau."""
+        project = tmp_path / "ScopedCtx"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        (assets / "Helper.cs").write_text(
+            "public class Helper { public void Help() {} }", encoding="utf-8"
+        )
+        (assets / "Main.cs").write_text(
+            "public class Main { Helper h; void Start() { h.Help(); } }",
+            encoding="utf-8",
+        )
+
+        captured_contexts: dict[str, str] = {}
+
+        def _capture_transpile(csharp, api_key, model, max_tokens, **kwargs):
+            filename = kwargs.get("target_filename", "")
+            ctx = kwargs.get("project_context", "")
+            captured_contexts[filename] = ctx
+            return _MOCK_LUAU, 0.9, []
+
+        with patch("modules.code_transpiler._ai_transpile", side_effect=_capture_transpile):
+            transpile_scripts(project, api_key="test-key")
+
+        # Main.cs depends on Helper — its context should include Helper's Luau
+        main_ctx = captured_contexts["Main.cs"]
+        assert "Already-converted dependency: Helper.lua" in main_ctx
+
+    def test_cached_luau_available_to_dependents(self, tmp_path: Path) -> None:
+        """Cached scripts should still be fed as context to downstream files."""
+        project = tmp_path / "CachedDep"
+        assets = project / "Assets"
+        assets.mkdir(parents=True)
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        (assets / "Lib.cs").write_text(
+            "public class Lib { public int Compute() { return 1; } }",
+            encoding="utf-8",
+        )
+        (assets / "App.cs").write_text(
+            "public class App { Lib lib; void Run() { lib.Compute(); } }",
+            encoding="utf-8",
+        )
+        # Pre-cache Lib
+        cached_luau = "local Lib = {}\nfunction Lib:Compute() return 1 end\nreturn Lib\n"
+        (cache_dir / "Lib.lua").write_text(cached_luau, encoding="utf-8")
+
+        captured_contexts: dict[str, str] = {}
+
+        def _capture_transpile(csharp, api_key, model, max_tokens, **kwargs):
+            filename = kwargs.get("target_filename", "")
+            captured_contexts[filename] = kwargs.get("project_context", "")
+            return _MOCK_LUAU, 0.9, []
+
+        with patch("modules.code_transpiler._ai_transpile", side_effect=_capture_transpile):
+            transpile_scripts(
+                project, api_key="test-key",
+                transpile_cache_dir=str(cache_dir),
+            )
+
+        # Lib was cached so _ai_transpile shouldn't be called for it
+        assert "Lib.cs" not in captured_contexts
+        # App's context should include Lib's cached Luau
+        app_ctx = captured_contexts["App.cs"]
+        assert "Already-converted dependency: Lib.lua" in app_ctx
+        assert "Lib:Compute" in app_ctx

@@ -482,6 +482,156 @@ def _build_project_manifest(
 
 
 # ---------------------------------------------------------------------------
+# Dependency graph — cross-file reference analysis
+# ---------------------------------------------------------------------------
+
+def _extract_class_names(source: str) -> set[str]:
+    """Extract all class/struct/enum names defined in a C# file."""
+    names: set[str] = set()
+    for match in re.finditer(
+        r"(?:public\s+|internal\s+|private\s+)?(?:abstract\s+|static\s+|sealed\s+|partial\s+)*"
+        r"(?:class|struct|enum|interface)\s+(\w+)",
+        source,
+    ):
+        names.add(match.group(1))
+    return names
+
+
+def _extract_references(source: str, all_class_names: set[str]) -> set[str]:
+    """Find which project-defined classes are referenced in a C# file.
+
+    Scans for identifiers that match known class names from the project,
+    excluding the classes defined in the file itself.
+    """
+    defined = _extract_class_names(source)
+    refs: set[str] = set()
+    # Match word boundaries for each known class name
+    for name in all_class_names - defined:
+        if re.search(rf"\b{re.escape(name)}\b", source):
+            refs.add(name)
+    return refs
+
+
+def _build_dependency_graph(
+    file_sources: dict[str, str],
+) -> tuple[dict[str, set[str]], dict[str, str]]:
+    """Build a dependency graph from file stem → set of dependency stems.
+
+    Args:
+        file_sources: mapping of file stem (e.g. "PlayerController") to C# source
+
+    Returns:
+        (graph, class_to_stem): graph maps stem → set of stems it depends on;
+        class_to_stem maps class name → file stem that defines it
+    """
+    # First pass: collect all class names and which file defines them
+    class_to_stem: dict[str, str] = {}
+    for stem, source in file_sources.items():
+        for name in _extract_class_names(source):
+            class_to_stem[name] = stem
+
+    all_class_names = set(class_to_stem.keys())
+
+    # Second pass: find references
+    graph: dict[str, set[str]] = {stem: set() for stem in file_sources}
+    for stem, source in file_sources.items():
+        refs = _extract_references(source, all_class_names)
+        for ref_class in refs:
+            dep_stem = class_to_stem[ref_class]
+            if dep_stem != stem:
+                graph[stem].add(dep_stem)
+
+    return graph, class_to_stem
+
+
+def _topological_sort(graph: dict[str, set[str]]) -> list[str]:
+    """Topological sort with cycle handling — dependencies come first.
+
+    If cycles exist, they are broken arbitrarily (the cycle members are
+    appended at the end).
+    """
+    visited: set[str] = set()
+    in_stack: set[str] = set()
+    order: list[str] = []
+
+    def _visit(node: str) -> None:
+        if node in visited:
+            return
+        if node in in_stack:
+            return  # cycle — break it
+        in_stack.add(node)
+        for dep in graph.get(node, set()):
+            _visit(dep)
+        in_stack.discard(node)
+        visited.add(node)
+        order.append(node)
+
+    for node in graph:
+        _visit(node)
+
+    return order  # dependencies first, dependents last
+
+
+def _build_scoped_context(
+    stem: str,
+    graph: dict[str, set[str]],
+    file_sources: dict[str, str],
+    transpiled_luau: dict[str, str],
+) -> str:
+    """Build focused context for transpiling a specific file.
+
+    Includes:
+    - Direct dependencies: their Luau (if already transpiled) or C# source
+    - 1-hop transitive deps: just their manifest (class name + methods)
+    """
+    direct_deps = graph.get(stem, set())
+    # Collect 1-hop transitive deps (deps of deps, excluding self and direct)
+    transitive: set[str] = set()
+    for dep in direct_deps:
+        transitive |= graph.get(dep, set())
+    transitive -= direct_deps
+    transitive.discard(stem)
+
+    parts: list[str] = []
+
+    # Direct deps — full source (prefer already-transpiled Luau)
+    for dep in sorted(direct_deps):
+        if dep in transpiled_luau:
+            parts.append(
+                f"--- Already-converted dependency: {dep}.lua ---\n"
+                f"```lua\n{transpiled_luau[dep]}\n```"
+            )
+        elif dep in file_sources:
+            parts.append(
+                f"--- Dependency (C# source): {dep}.cs ---\n"
+                f"```csharp\n{file_sources[dep]}\n```"
+            )
+
+    # Transitive deps — just signatures
+    for dep in sorted(transitive):
+        if dep in file_sources:
+            source = file_sources[dep]
+            classes = re.findall(
+                r"(?:public\s+)?(?:abstract\s+)?(?:static\s+)?class\s+(\w+)"
+                r"(?:\s*:\s*([\w,\s<>]+))?",
+                source,
+            )
+            methods = re.findall(
+                r"public\s+(?:static\s+)?[\w<>\[\]]+\s+(\w+)\s*\(",
+                source,
+            )
+            if classes or methods:
+                class_str = ", ".join(c[0] for c in classes) if classes else dep
+                method_str = ", ".join(dict.fromkeys(methods)) if methods else "none"
+                parts.append(
+                    f"--- Transitive ref: {dep} — classes: {class_str}, "
+                    f"methods: {method_str} ---"
+                )
+
+    return "\n\n".join(parts) if parts else ""
+
+
+# ---------------------------------------------------------------------------
 # Post-processing: strip invalid Luau patterns
 # ---------------------------------------------------------------------------
 
@@ -563,6 +713,14 @@ def _ai_transpile(
                 "Animator.SetBool/SetFloat/SetTrigger/Play), assume an `animatorBridge` "
                 "field is available on self (passed via config). Map Animator API calls to "
                 "animatorBridge:SetBool/SetFloat/SetTrigger/Play accordingly.\n"
+                "- NEVER silently drop methods, coroutines, or logic branches. If a C# method "
+                "or code block cannot be fully converted (e.g., it depends on Addressables, "
+                "ScriptableObjects, UnityEditor APIs, or other unsupported systems), emit the "
+                "original C# as a commented-out block prefixed with "
+                "'-- [UNCONVERTED] <reason>' followed by the C# source as comments. "
+                "Then emit a Luau stub function with the same name that contains "
+                "'-- TODO: implement <MethodName> (see commented C# above)'. "
+                "This ensures nothing is lost and missing functionality is discoverable.\n"
                 "- Output ONLY the Luau code for the target file, no explanations.\n\n"
                 f"=== PROJECT SOURCE ===\n{project_context}\n\n"
                 f"=== TARGET FILE TO CONVERT: {target_filename} ===\n"
@@ -571,12 +729,21 @@ def _ai_transpile(
         else:
             prompt = (
                 "Convert the following Unity C# MonoBehaviour script to idiomatic Roblox Luau.\n"
+                "NEVER silently drop methods or logic. If a method cannot be fully converted, "
+                "emit the original C# as comments prefixed with '-- [UNCONVERTED] <reason>' "
+                "and a Luau stub with '-- TODO: implement <MethodName>'.\n"
                 "Output ONLY the Luau code, no explanations.\n\n"
                 f"```csharp\n{csharp}\n```"
             )
 
+        # Scale max_tokens based on input size: Luau output is typically
+        # 0.8–1.2× the C# input length.  Estimate output tokens as
+        # (input_chars / 4) * 1.3 and use at least that, capped at 65536.
+        input_token_estimate = len(csharp) / 4
+        estimated_output = int(input_token_estimate * 1.3)
+        current_max = max(max_tokens, min(estimated_output, 65536))
+
         # Retry with doubled max_tokens on truncation (up to one retry)
-        current_max = max_tokens
         for attempt in range(2):
             message = client.messages.create(
                 model=model,
@@ -596,6 +763,15 @@ def _ai_transpile(
         if message.stop_reason == "max_tokens":
             warnings.append("Output truncated after retry — script may be incomplete.")
             confidence = 0.3
+
+        # Check for silently dropped methods
+        from .code_validator import check_method_completeness
+        missing = check_method_completeness(csharp, luau, target_filename)
+        if missing:
+            warnings.extend(missing)
+            # Lower confidence proportionally to how many methods are missing
+            confidence = max(0.3, confidence - 0.1 * len(missing))
+
         return luau, confidence, warnings
 
     except Exception as exc:  # noqa: BLE001
@@ -683,7 +859,13 @@ def transpile_scripts(
     serialized_refs: dict[Path, dict[str, str]] | None = None,
     transpile_cache_dir: str | Path | None = None,
 ) -> TranspilationResult:
-    """Transpile all C# scripts under Assets/ to Luau via Claude."""
+    """Transpile all C# scripts under Assets/ to Luau via Claude.
+
+    Files are transpiled in dependency order: leaf dependencies (shared types,
+    data classes) are converted first. Each file's prompt includes the
+    already-transpiled Luau of its direct dependencies, giving the LLM
+    concrete API surfaces to target rather than guessing from C# source.
+    """
     root = Path(unity_project_path).resolve()
     assets_dir = root / "Assets"
     if not assets_dir.is_dir():
@@ -691,24 +873,36 @@ def transpile_scripts(
 
     cache_dir = Path(transpile_cache_dir) if transpile_cache_dir else None
 
-    full_context, file_map = _build_project_context(assets_dir)
-    token_estimate = len(full_context) / 4
-    if token_estimate < _MAX_FULL_CONTEXT_TOKENS:
-        project_context = full_context
-    else:
-        project_context = (
-            "=== PROJECT MODULE MANIFEST (project too large for full source) ===\n"
-            + _build_project_manifest(assets_dir)
-        )
-
-    result = TranspilationResult()
-
+    # Collect all C# sources and build dependency graph
+    file_sources: dict[str, str] = {}   # stem → C# source
+    stem_to_path: dict[str, Path] = {}  # stem → file path
     for cs_path in sorted(assets_dir.rglob("*.cs")):
         relative_parts = cs_path.relative_to(assets_dir).parts
         if _is_editor_or_test_path(relative_parts):
             continue
+        stem = cs_path.stem
+        file_sources[stem] = cs_path.read_text(encoding="utf-8-sig", errors="replace")
+        stem_to_path[stem] = cs_path
 
-        csharp_source = cs_path.read_text(encoding="utf-8-sig", errors="replace")
+    dep_graph, _class_map = _build_dependency_graph(file_sources)
+    transpile_order = _topological_sort(dep_graph)
+
+    # Build full context or manifest as supplement to scoped dep context
+    full_context, _ = _build_project_context(assets_dir)
+    token_estimate = len(full_context) / 4
+    use_full_context = token_estimate < _MAX_FULL_CONTEXT_TOKENS
+    project_manifest = (
+        None if use_full_context else _build_project_manifest(assets_dir)
+    )
+
+    result = TranspilationResult()
+    transpiled_luau: dict[str, str] = {}  # stem → Luau source (accumulated)
+
+    for stem in transpile_order:
+        if stem not in file_sources:
+            continue
+        cs_path = stem_to_path[stem]
+        csharp_source = file_sources[stem]
         result.total += 1
 
         ast_info = _parse_csharp_ast(csharp_source)
@@ -727,12 +921,31 @@ def transpile_scripts(
             warnings: list[str] = []
             strategy: TranspilationStrategy = "ai"
         else:
+            # Build scoped context: direct deps' Luau + transitive signatures
+            scoped = _build_scoped_context(
+                stem, dep_graph, file_sources, transpiled_luau,
+            )
+            # Combine: scoped deps first, then full source or manifest
+            supplement = full_context if use_full_context else (
+                f"=== PROJECT MANIFEST ===\n{project_manifest}"
+            )
+            if scoped:
+                context = (
+                    f"=== DEPENDENCY CONTEXT (already-converted + C# deps) ===\n"
+                    f"{scoped}\n\n{supplement}"
+                )
+            else:
+                context = supplement
+
             luau, confidence, warnings = _ai_transpile(
                 csharp_source, api_key, model, max_tokens,
-                project_context=project_context,
+                project_context=context,
                 target_filename=cs_path.name,
             )
             strategy = "ai"
+
+        # Store transpiled Luau for downstream dependents
+        transpiled_luau[stem] = luau
 
         pattern_warnings = _analyze_csharp_patterns(csharp_source)
         warnings.extend(pattern_warnings)

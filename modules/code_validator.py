@@ -270,3 +270,71 @@ def validate_luau(source: str, source_name: str = "<script>") -> ValidationResul
     result.valid = result.error_count == 0
 
     return result
+
+
+# C# method signature pattern: matches public/private/protected/internal/static/override/virtual
+# etc. followed by return type and method name with parenthesis
+_CSHARP_METHOD_RE = re.compile(
+    r"(?:public|private|protected|internal|static|override|virtual|abstract|async|sealed"
+    r"|new|partial)\s+"
+    r"(?:(?:public|private|protected|internal|static|override|virtual|abstract|async|sealed"
+    r"|new|partial)\s+)*"
+    r"[\w<>\[\],\s]+?\s+(\w+)\s*\(",
+    re.MULTILINE,
+)
+
+# Luau function definition: Class:Method or Class.Method or standalone function name
+_LUAU_FUNC_RE = re.compile(
+    r"function\s+(?:\w+[.:])?([\w]+)\s*\(",
+    re.MULTILINE,
+)
+
+
+def check_method_completeness(
+    csharp_source: str,
+    luau_source: str,
+    source_name: str = "<script>",
+) -> list[str]:
+    """Compare C# method names against Luau output to find missing methods.
+
+    Returns a list of warning strings for methods present in C# but absent
+    from the Luau output (neither as a function definition nor as a
+    ``-- [UNCONVERTED]`` / ``-- TODO`` comment).
+    """
+    # Extract C# method names (deduplicated, case-sensitive)
+    csharp_methods: set[str] = set()
+    for match in _CSHARP_METHOD_RE.finditer(csharp_source):
+        name = match.group(1)
+        # Skip common C# boilerplate that won't map to Luau functions
+        if name in ("Main", "Awake", "OnDestroy", "OnApplicationQuit",
+                     "OnValidate", "OnDrawGizmos", "OnDrawGizmosSelected",
+                     "Reset", "OnGUI"):
+            continue
+        csharp_methods.add(name)
+
+    if not csharp_methods:
+        return []
+
+    # Extract Luau function names
+    luau_functions: set[str] = set()
+    for match in _LUAU_FUNC_RE.finditer(luau_source):
+        luau_functions.add(match.group(1))
+
+    # Also check for method names in UNCONVERTED/TODO comments
+    commented_methods: set[str] = set()
+    for line in luau_source.splitlines():
+        stripped_line = line.strip()
+        if stripped_line.startswith("--") and ("UNCONVERTED" in stripped_line or "TODO" in stripped_line):
+            for method in csharp_methods:
+                if method in stripped_line:
+                    commented_methods.add(method)
+
+    # Find missing methods
+    missing = csharp_methods - luau_functions - commented_methods
+    warnings = []
+    for method in sorted(missing):
+        warnings.append(
+            f"[{source_name}] C# method '{method}' not found in Luau output "
+            f"(neither as function nor UNCONVERTED comment)"
+        )
+    return warnings
