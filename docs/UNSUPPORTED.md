@@ -253,9 +253,8 @@ only processed materials, not all `.mat` files found.
 
 ## Future Roadmap
 
-1. ~~Multi-material mesh splitting~~ — DONE (`mesh_splitter.py`)
-2. Terrain splat map → MaterialVariant conversion
-3. Custom Shader Graph analysis (.shadergraph parsing)
+1. Terrain splat map → MaterialVariant conversion
+2. Custom Shader Graph analysis (.shadergraph parsing)
 
 ---
 
