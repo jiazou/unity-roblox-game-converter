@@ -254,7 +254,21 @@ These are universal mechanical rules needed before writing any module code.
    ```
    On cleanup (object moves behind player), call `animator:Destroy()` before destroying the clone. The TransformAnimator auto-ticks via a shared Heartbeat connection — no per-frame update call needed. **To identify which templates need animation:** check ReplicatedStorage for `*_TransformAnimConfig` modules whose name prefix matches a template name (e.g., `Fishbones_TransformAnimConfig` → template containing "Fishbones" mesh). The config module name comes from the Unity `.anim` file name or the Animation component's GameObject name.
 
-4. **Implementability check** — For each Unity system, assess whether it can be ported as-is or needs simplification. A working simple version beats a broken complex one. If a system cannot be ported fully, implement an approximation and document what's missing.
+4. **Player character animation state mapping.** Unity games with a player character typically use a Mecanim Animator Controller with states like Run, Jump, Slide, Fall, Death. The converter strips the skinned mesh and uses a standard Roblox R15 humanoid instead — but the **animation state transitions** must still be wired manually in the bootstrap. For each Unity animation state on the player character:
+   - Read the Animator Controller (`.controller` YAML) to enumerate all states and their transition conditions
+   - Map each state to a Roblox R15 default animation or catalog animation:
+     | Unity state | Roblox animation | Asset ID |
+     |---|---|---|
+     | Run/Sprint | R15 default run | `rbxassetid://507767714` |
+     | Jump | R15 default jump | `rbxassetid://507765000` |
+     | Slide/Crouch | R15 default fall (as crouch) | `rbxassetid://507897817` |
+     | Fall | R15 default fall | `rbxassetid://507897817` |
+     | Death | R15 default fall | `rbxassetid://507897817` |
+   - In the Heartbeat loop, track each state with `wasX`/`isX` flags and play/stop the corresponding AnimationTrack with crossfade (`Play(0.1)` / `Stop(0.1)`)
+   - Set animation priorities: base locomotion at `Action`, overlays (jump, slide) at `Action2`
+   - **Every Unity animation state must have a Roblox equivalent** — missing states produce a character that snaps to T-pose during that action. Audit the Animator Controller and verify each state is covered.
+
+5. **Implementability check** — For each Unity system, assess whether it can be ported as-is or needs simplification. A working simple version beats a broken complex one. If a system cannot be ported fully, implement an approximation and document what's missing.
 
 #### Step 4.5h: Module-per-Component Rewrite
 
