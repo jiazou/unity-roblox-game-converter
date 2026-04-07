@@ -24,9 +24,11 @@ Sub-commands:
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -134,9 +136,6 @@ ALL_PHASES = ["discover", "inventory", "materials", "transpile", "assemble", "up
 @click.option("--install", is_flag=True, help="Auto-install missing dependencies.")
 def preflight(unity_project_path: str, output_dir: str, install: bool) -> None:
     """Check prerequisites: Python version, packages, Unity project validity."""
-    import subprocess
-    import sys
-
     result: dict = {"phase": "preflight", "success": True}
     result["python_version"] = sys.version.split()[0]
 
@@ -1155,7 +1154,6 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
     # - Disable ScreenGuis that overlay the 3D view
     preview_info: dict = {}
     if preview_mode and rbxl_path.exists():
-        import copy as _copy
         from xml.etree import ElementTree as _ET
 
         _tree = _ET.parse(rbxl_path)
@@ -1225,7 +1223,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         if _workspace is not None and _templates_folder is not None:
             for _model in _templates_folder.findall("Item"):
                 if _model.get("class") == "Model":
-                    _workspace.append(_copy.deepcopy(_model))
+                    _workspace.append(copy.deepcopy(_model))
                     prefabs_copied += 1
                     _changed = True
 
@@ -1508,4 +1506,8 @@ def report(unity_project_path: str, output_dir: str, verbose: bool, api_key: str
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(name)s: %(message)s",
+    )
     cli()

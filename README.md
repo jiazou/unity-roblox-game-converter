@@ -1,12 +1,12 @@
-# unity-roblox-game-converter
+# Unity → Roblox Game Converter
 
-A Unity-to-Roblox game converter available as an **interactive Claude Code skill**
-(`/convert-unity`) or as a standalone batch CLI. It walks a Unity project
-directory, extracts assets, parses scenes and prefabs, transpiles C#
-MonoBehaviour scripts to Luau (optionally using Claude AI), and writes a
-ready-to-open `.rbxl` file for Roblox Studio.
+Convert Unity game projects into Roblox place files (`.rbxl`). Parses scenes
+and prefabs, maps materials to `SurfaceAppearance`, transpiles C# scripts to
+Luau via Claude AI, decimates meshes for Roblox polygon limits, and optionally
+uploads to Roblox Cloud.
 
----
+Available as an **interactive Claude Code skill** (`/convert-unity`) or as a
+standalone batch CLI.
 
 ## Quick Start
 
@@ -199,3 +199,61 @@ Disable with `--no-decimate` if you prefer to handle mesh optimization yourself.
 
 Edit `config.py` to change defaults (paths, model name, confidence threshold, etc.)
 without modifying any pipeline module.
+
+---
+
+## Troubleshooting
+
+**"An Anthropic API key is required"**
+Set the `ANTHROPIC_API_KEY` environment variable or pass `--api-key`.
+You can get a key at [console.anthropic.com](https://console.anthropic.com/).
+
+**Meshes appear as flat gray in Roblox Studio**
+This usually means FBX vertex colors aren't being baked. Install the `assimp`
+system library:
+
+```bash
+# macOS
+brew install assimp
+
+# Ubuntu / Debian
+sudo apt-get install libassimp-dev
+```
+
+**"trimesh not installed" warnings**
+Install with `pip install trimesh`. Mesh decimation and splitting require it.
+
+**Large project runs slowly**
+The interactive CLI re-parses scenes in the `assemble` phase. For very large
+projects (100+ scenes), use the batch CLI which runs a single pass.
+
+**Binary .rbxl upload fails**
+The Open Cloud API only accepts binary `.rbxl` files. Make sure `lz4` is
+installed (`pip install lz4`) for the binary writer.
+
+---
+
+## Known Limitations
+
+See [`docs/UNSUPPORTED.md`](docs/UNSUPPORTED.md) for the full list. Key ones:
+
+- **Vertex colors** — Roblox ignores FBX vertex colors; the converter bakes them
+  to textures for OBJ/PLY/GLB, and uses a dominant-color fallback for FBX
+- **One material per MeshPart** — multi-material meshes are automatically split
+  via `mesh_splitter.py`; falls back to first material when trimesh can't split
+- **UV tiling > 4x** — pre-tiled automatically up to 4x; higher factors need
+  mesh UV editing
+- **Terrain** — Unity Terrain is recognized but not converted (planned)
+- **Animations** — Animator controllers are parsed into config tables but
+  runtime playback (AnimatorBridge) is not yet integrated into the pipeline
+
+---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, code style,
+and how to submit changes.
+
+## License
+
+[MIT](LICENSE)

@@ -17,11 +17,31 @@ env/
 
 # Environment variables
 .env
+.env.*
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Output / conversion artifacts
 output/
 *.rbxl
 *.rbxlx
+*.rbxm
+
+# LLM cache
+.cache/
+
+# Logs
+*.log
 
 # Local docs (game-specific reports, not part of the converter)
 docs/local/
