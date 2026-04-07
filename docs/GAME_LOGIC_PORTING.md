@@ -68,14 +68,14 @@ Unity C# Scripts
 
 | Component | File | Status |
 |-----------|------|--------|
-| API mapping tables | `modules/api_mappings.py` | 130+ mappings, comprehensive |
-| Lifecycle hook mapping | `api_mappings.py: LIFECYCLE_MAP` | 15 hooks mapped |
+| API mapping tables | `modules/api_mappings.py` | 278 call mappings, 59 type mappings |
+| Lifecycle hook mapping | `api_mappings.py: LIFECYCLE_MAP` | 18 hooks mapped |
 | Bootstrap script generator | `modules/conversion_helpers.py: generate_bootstrap_script()` | GameManager state machine wiring |
 | AI transpiler (Claude) | `modules/code_transpiler.py: _ai_transpile()` | Claude API, high quality |
 
 **Status**: Bridge Luau modules exist in `bridge/` (AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). The API mappings in `api_mappings.py` are used by the AI transpiler as reference context; the bridge modules are the runtime counterpart.
 
-**Remaining gap**: The assembly phase does not yet inject bridge modules into ReplicatedStorage/UnityBridge in the .rbxl. This is Phase 3 below. Currently, the AI transpiler inlines bridge patterns directly into transpiled scripts rather than requiring the bridge modules at runtime.
+**Bridge injection**: `bridge_injector.py` scans transpiled Luau for `require()` calls and API usage patterns, then injects the needed bridge modules into the `.rbxl`. AnimatorBridge and TransformAnimator are injected separately by `animation_converter.py` when animation components are detected.
 
 ## Implementation plan
 
@@ -90,10 +90,9 @@ The `/convert-unity` skill's Step 4.5 (Game Logic Porting) uses a three-phase ap
 
 The skill explicitly prevents the "monolithic flattening" anti-pattern where all game systems get merged into one script. Game-specific output scripts are written to `<output_dir>/scripts/`.
 
-### Phase 3: Assembly integration — PARTIALLY DONE
-- TransformAnimator is injected into `ReplicatedStorage/UnityBridge/` when the animation pipeline detects non-skeletal animations that need it
-- Full auto-injection of all bridge modules is not yet implemented — only TransformAnimator is injected on demand
-- `rbxl_writer.py` needs folder creation logic for the remaining UnityBridge modules
+### Phase 3: Assembly integration — DONE
+- `bridge_injector.py` detects which bridge modules are needed by scanning transpiled Luau for require() calls and API usage patterns (7 modules: Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time)
+- `animation_converter.py` injects AnimatorBridge and TransformAnimator when animation components are detected
 - LLM-rewritten scripts are placed in `<output_dir>/scripts/` and assembled normally
 - Bootstrap script wires everything together
 

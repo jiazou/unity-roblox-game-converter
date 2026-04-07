@@ -9,7 +9,7 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 - `converter.py` — Full end-to-end CLI (non-interactive, runs all phases)
 - `convert_interactive.py` — Phase-based CLI for the `/convert-unity` skill (interactive, one phase at a time)
 - `config.py` — All configuration constants (paths, API keys, thresholds)
-- `modules/` — Individual pipeline modules (21 modules + `__init__.py`). `conversion_helpers` imports multiple pipeline modules (`scene_parser`, `prefab_parser`, `material_mapper`, `code_transpiler`, `guid_resolver`, `mesh_decimator`, `report_generator`, `rbxl_writer`) for data composition.
+- `modules/` — Individual pipeline modules (24 modules + `__init__.py`). `conversion_helpers` imports multiple pipeline modules (`scene_parser`, `prefab_parser`, `material_mapper`, `code_transpiler`, `guid_resolver`, `mesh_decimator`, `report_generator`, `rbxl_writer`) for data composition.
 - `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). All modules are auto-injected: AnimatorBridge and TransformAnimator by `animation_converter.py` when animation components are detected; the other 7 by `bridge_injector.py` which scans transpiled Luau for require() calls and API usage patterns.
 
 ### Pipeline Phases
@@ -62,5 +62,5 @@ Never do one without the other. A fix only to the output will regress on the nex
 
 See `docs/UNSUPPORTED.md` for the full list. Key ones:
 - Vertex colors require baking to textures via `vertex_color_baker.py` + assimp (Roblox ignores FBX vertex colors)
-- One material per MeshPart (multi-material meshes need splitting)
+- One material per MeshPart (automated splitting via `mesh_splitter.py`; falls back to first material when trimesh can't split)
 - C# → Luau transpilation requires an Anthropic API key (Claude)

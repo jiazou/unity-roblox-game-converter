@@ -1,6 +1,6 @@
 # Module Status — Unity→Roblox Game Converter
 
-> Last updated: 2026-03-28
+> Last updated: 2026-04-07
 > Consolidates: FRAGILITY_AUDIT.md, component_analysis_comparison.md,
 > function_spec_review.md, material_converter_plan.md, sprites-audio-ui-fix-plan.md
 
@@ -15,7 +15,7 @@
 | [3](#3-material-mapping) | Material Mapping | Fully implemented (5 remaining gaps: multi-mat, UV >4x, Shader Graph, FBX vertex colors, terrain) |
 | [4](#4-code-transpilation) | Code Transpilation | Fully implemented (AI transpilation via Claude; 5 low/medium gaps) |
 | [5](#5-mesh-processing) | Mesh Processing | Fully implemented (no remaining gaps) |
-| [6](#6-ui-translation) | UI Translation | Fully implemented (3 remaining gaps: sprite pipeline, GUID detection, font map) |
+| [6](#6-ui-translation) | UI Translation | Fully implemented (2 remaining gaps: GUID detection, font map) |
 | [7](#7-rbxl-output) | RBXL Output | Fully implemented (3 low/medium gaps) |
 | [8](#8-upload--reporting) | Upload & Reporting | Fully implemented (no remaining gaps) |
 | [9](#9-orchestration) | Orchestration | Fully implemented (2 low gaps) |
@@ -23,17 +23,14 @@
 | [11](#11-scriptableobject-conversion) | ScriptableObject Conversion | Fully implemented (1 medium gap) |
 | [12](#12-roblox-platform-limitations) | Roblox Platform Limitations | 12 permanent engine-level restrictions |
 | [13](#13-deferred-features) | Deferred Features | 12 features tracked (P1–P3) |
-| [14](#14-test-coverage) | Test Coverage | 1003 tests across 33 files |
+| [14](#14-test-coverage) | Test Coverage | 1137 tests across 37 files |
 
-### Related Documents (Not Consolidated)
+### Related Documents
 
 | Document | Purpose |
 |----------|---------|
 | `docs/UNSUPPORTED.md` | Living document of unsupported conversions, known limitations, and what's fully supported |
 | `docs/material_mapping_research.md` | Design specification — full Unity→Roblox property mapping reference (862 lines) |
-| `docs/smartdown_template.md` | Template specification — UNCONVERTED.md file structure and data contracts |
-| `docs/trash_dash_full_gap_analysis.md` | End-to-end gap analysis of converter vs Trash Dash game requirements |
-| `docs/local/trash_dash_UNCONVERTED.md` | Per-material conversion analysis for Trash Dash (72 materials, 13 shaders) — gitignored, local only |
 
 ---
 
@@ -265,7 +262,7 @@ for syntax errors. Classifies scripts as LocalScript/Script/ModuleScript based o
 - `[Command]` → `RemoteEvent:FireServer`, `[ClientRpc]` → `RemoteEvent:FireAllClients`, `[SyncVar]` → `:SetAttribute`
 - `AddComponent` → `Instance.new`, `Mathf.Lerp` → `math.lerp`
 - `Random.insideUnitSphere` → `Random.new():NextUnitVector()`, `RectTransform` → `UDim2`
-- And others (Vector3.Angle, MoveTowards, ClampMagnitude, etc.)
+- `Vector3.Angle/MoveTowards/ClampMagnitude`, and ~10 more
 
 #### ~~4e. Event Detection Heuristic~~
 
@@ -347,14 +344,17 @@ Handles RectTransform anchor/pivot/sizeDelta → UDim2 conversion with Y-axis in
 
 | Gap | Severity | Notes |
 |-----|----------|-------|
-| Sprite asset pipeline incomplete | MEDIUM | Sprites referenced by GUID but not sliced from spritesheets or copied to build output. ImageLabel URLs are placeholders. |
 | Hardcoded partial GUID prefix for Image component detection | MEDIUM | `ui_translator.py:221-222` — fragile detection method |
 | 4-entry font map, no fallback warning | LOW | `ui_translator.py:122-127` — limited font coverage |
 
 ### Resolved Issues
 
 <details>
-<summary>3 issues resolved (2026-03-04)</summary>
+<summary>4 issues resolved</summary>
+
+| Issue | Resolution |
+|-------|------------|
+| Sprite asset pipeline incomplete | `sprite_extractor.py` parses `.meta` TextureImporter data, slices sprites via Pillow, wired into both orchestrators |
 
 | Issue | Resolution |
 |-------|------------|
@@ -526,22 +526,7 @@ and converts them to Luau data tables as ModuleScripts in ReplicatedStorage.
 
 ## 12. Roblox Platform Limitations
 
-These are engine-level restrictions that **cannot be worked around**:
-
-| Limitation | Impact |
-|------------|--------|
-| No custom shaders | Vertex shader effects (world curve, wave) cannot be replicated |
-| 1 material per MeshPart | Multi-material meshes must be split |
-| UV0 only | Secondary UV channels (lightmaps on UV1) are lost |
-| No height/displacement mapping | Parallax effects converted to normal detail (approximation) |
-| No SSS / anisotropy / iridescence / clear coat | HDRP advanced materials simplified |
-| No per-material cubemap reflections | Engine uses environment probes |
-| Max 4096×4096 texture | Textures larger than this are downscaled |
-| SurfaceAppearance on MeshPart only | Primitive Parts can't use PBR textures |
-| No runtime SurfaceAppearance changes | Material animation requires BasePart.Color workaround |
-| No SurfaceAppearance tiling/offset | Repeating textures need pre-tiling or UV modification |
-| 10,000 face limit per MeshPart | High-poly meshes need decimation |
-| No vertex color reading | Vertex colors in mesh data ignored by SurfaceAppearance (baking workaround available) |
+See `docs/UNSUPPORTED.md` § "Roblox Platform Limitations" for the full table of 12 permanent engine-level restrictions.
 
 ---
 
@@ -552,12 +537,12 @@ Features not yet implemented, tracked for future work:
 | Feature | Priority | Notes |
 |---------|----------|-------|
 | Animation system (Animator/AnimationClip) | P1 | Strategy A planned: embedded state machine generation. Parse `.anim`/`.controller` → Luau config tables + `AnimatorBridge.lua` runtime. Bone retargeting via static Unity Humanoid → R15 lookup table. Implementation order: simple transitions → 1D blend trees → KeyframeSequence export → advanced features. See FUTURE_IMPROVEMENTS.md HA-2 for full plan. |
-| Multi-material mesh splitting | P1 | Parse FBX sub-meshes, split geometry at material boundaries |
+| ~~Multi-material mesh splitting~~ | ~~P1~~ | DONE — `mesh_splitter.py` splits via trimesh, `conversion_helpers.py` creates child parts per submesh |
 | Terrain splat map → MaterialVariant | P2 | Create MaterialVariants per splat layer, paint voxels from splat weights |
 | Custom Shader Graph (.shadergraph) parsing | P2 | Extract exposed properties and node connections |
 | Networking adapter (RemoteEvent generation) | P2 | Detect `[Command]`/`[ClientRpc]` → generate RemoteEvent/RemoteFunction boilerplate |
 | ~~`.rbxm` output format~~ | ~~P2~~ | DONE — `write_rbxm_package()` in `rbxl_writer.py` |
-| Sprite extraction from spritesheets | P2 | Read `.meta` sprite rects, slice with PIL, wire into UI elements |
+| ~~Sprite extraction from spritesheets~~ | ~~P2~~ | DONE — `sprite_extractor.py` parses `.meta` TextureImporter data, slices via Pillow |
 | Audio file upload pipeline | P2 | Copy audio to build output, upload to Roblox, patch SoundId in .rbxl |
 | Texture atlasing | P3 | Not needed for Roblox's per-MeshPart material model |
 | Rojo integration | P3 | Direct .rbxl output is sufficient; Rojo adds deployment dependency |
@@ -568,7 +553,7 @@ Features not yet implemented, tracked for future work:
 
 ## 14. Test Coverage
 
-**1003 automated tests** across 33 test files:
+**1137 automated tests** across 37 test files:
 
 | Test File | Coverage Area |
 |-----------|--------------|

@@ -1,6 +1,6 @@
 # Unsupported Conversions & Known Limitations
 
-> Last updated: 2026-03-29
+> Last updated: 2026-04-07
 > Status: Living document — shrinks as converter improves
 
 This document catalogs everything the Unity-to-Roblox converter **cannot currently handle**,
@@ -72,7 +72,7 @@ limitations (permanent) and converter gaps (fixable in future releases).
 | Feature | Severity | Fixable? | Section |
 |---------|----------|----------|---------|
 | Vertex colors | **HIGH** | Partial | [Vertex Colors](#vertex-colors) |
-| Multi-material meshes | **HIGH** | Future | [Multi-Material Meshes](#multi-material-meshes) |
+| Multi-material meshes | **MEDIUM** | Partial | [Multi-Material Meshes](#multi-material-meshes) |
 | UV tiling ≠ (1,1) | **HIGH** | Partial | [UV Tiling](#uv-tiling-and-offset) |
 | Terrain / splat maps | **HIGH** | Future | [Terrain](#terrain-conversion) |
 | Custom Shader Graph | MEDIUM | Partial | [Shader Graph](#custom-shader-graph) |
@@ -112,20 +112,20 @@ environment meshes like roads, buildings, sky backdrops, and street furniture.
 support FBX format natively. FBX meshes get the dominant-color fallback; OBJ/PLY/GLB
 meshes get full UV-mapped vertex color baking via `vertex_color_baker.py`.
 
-#### Multi-Material Meshes
+#### Multi-Material Meshes — PARTIALLY FIXED
 
-**Severity**: HIGH
+**Severity**: HIGH → MEDIUM (automated splitting now available)
+
 **Why**: Roblox allows only **one material per MeshPart**. Unity meshes can have
 multiple sub-meshes, each with its own material slot.
 
-**Current behavior**: The converter uses the first material reference from
-`MeshRenderer.m_Materials[]` and ignores the rest.
+**What's now automated** (`modules/mesh_splitter.py`):
+- Loads multi-material meshes via trimesh (GLB/FBX scene preservation)
+- Extracts per-material geometries and exports each as a separate OBJ
+- `conversion_helpers.py` creates child `RbxPartEntry` objects (one per submesh) each with its own `SurfaceAppearance`
+- Falls back to single-material behavior when trimesh can't split
 
-**Workaround** (manual): Split the mesh into multiple MeshParts in Blender, one per
-material slot.
-
-**Future automation**: Parse FBX sub-meshes, split geometry at material boundaries,
-create separate MeshParts.
+**Remaining limitation**: Meshes in formats that trimesh can't decompose by material still use the first material only.
 
 #### UV Tiling and Offset
 
@@ -253,7 +253,7 @@ only processed materials, not all `.mat` files found.
 
 ## Future Roadmap
 
-1. Multi-material mesh splitting
+1. ~~Multi-material mesh splitting~~ — DONE (`mesh_splitter.py`)
 2. Terrain splat map → MaterialVariant conversion
 3. Custom Shader Graph analysis (.shadergraph parsing)
 
@@ -261,31 +261,4 @@ only processed materials, not all `.mat` files found.
 
 ## Test Coverage
 
-**Current**: 1003 automated tests across 33 test files covering:
-- `test_unity_yaml_utils.py` — YAML parsing, vector/quaternion extraction, references
-- `test_conversion_helpers.py` — All component conversion helpers (colliders, lights, audio, particles, materials)
-- `test_converter.py` / `test_converter_detailed.py` / `test_converter_e2e.py` — End-to-end node-to-part, prefab resolution, scene conversion, report building
-- `test_scene_parser.py` / `test_scene_parser_detailed.py` — Scene YAML parsing, hierarchy building
-- `test_prefab_parser.py` / `test_prefab_parser_detailed.py` — Prefab YAML parsing
-- `test_material_mapper.py` / `test_material_mapper_detailed.py` — Shader property mapping, pipeline detection
-- `test_code_transpiler.py` / `test_code_transpiler_detailed.py` — C# → Luau AI transpilation
-- `test_api_mappings.py` — API call/type/lifecycle mapping tables
-- `test_llm_cache.py` — LLM response caching, TTL, eviction
-- `test_retry.py` — Retry logic, backoff, exception handling
-- `test_asset_extractor.py` — Asset file discovery
-- `test_code_validator.py` — Luau syntax validation
-- `test_guid_resolver.py` / `test_guid_resolver_detailed.py` — GUID index building
-- `test_rbxl_writer.py` / `test_rbxl_writer_detailed.py` — .rbxl XML serialization
-- `test_mesh_decimator.py` / `test_mesh_decimator_detailed.py` — Mesh decimation
-- `test_animation_converter.py` — Animator controller/clip parsing, config generation
-- `test_scriptable_object_converter.py` — ScriptableObject → Luau data tables
-- `test_ui_translator.py` — Canvas → ScreenGui conversion
-- `test_vertex_color_baker.py` — Vertex color baking to UV textures
-- `test_roblox_uploader.py` — Upload, patching, MeshLoader injection
-- `test_report_generator.py` — Report generation
-- `test_package_generation.py` — .rbxm prefab package generation
-- `test_generic_game_support.py` — Multi-game converter genericity
-
-**Still needed**:
-- Integration test: full pipeline on synthetic project, assert output structure
-- Regression test: known-good .rbxl output comparison
+See `docs/MODULE_STATUS.md` § "Test Coverage" for the full test suite listing (1137 tests across 37 files).

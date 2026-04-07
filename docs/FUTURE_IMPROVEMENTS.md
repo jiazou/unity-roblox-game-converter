@@ -95,52 +95,19 @@ Config generation is pure data transformation — deterministic, no AI needed, f
 
 **Phase 2 — New bridge: `bridge/AnimatorBridge.lua`**
 
-Runtime Luau module consuming config tables from Phase 1. Follows the pattern of `bridge/StateMachine.lua` and `bridge/MonoBehaviour.lua`:
-- `AnimatorBridge.new(humanoidOrAnimController, config)` — loads tracks, initializes parameters
-- `:SetFloat(name, value)`, `:SetBool(name, value)`, `:SetTrigger(name)` — parameter API
-- `:Update(dt)` — evaluates transition conditions, fires crossfades, updates blend tree weights
-
-Scalability:
-- Single shared Heartbeat connection batching all AnimatorBridge instances (not one per entity)
-- Lazy `AnimationTrack` loading (only `:LoadAnimation()` on first state entry)
-- Blend tree weights as sorted threshold lookup, not per-frame recalculation
-
-Hardening:
-- Config validated at construction time, not at runtime
-- Unknown parameters → `warn()` once, then ignore
-- Missing clips → skip with warning, don't crash the state machine
+Runtime Luau module consuming config tables from Phase 1. API: `AnimatorBridge.new(humanoidOrAnimController, config)`, `:SetFloat/SetBool/SetTrigger`, `:Update(dt)`.
 
 **Phase 3 — Animation upload**
 
-*Option A (default)* — KeyframeSequence in .rbxl: Generate `KeyframeSequence` XML nodes in `rbxl_writer.py`, parented under `AnimationController`. User publishes from Studio.
-
-*Option B (enhanced)* — Roblox Animation API: Bulk-upload via `roblox_uploader.py` (same pattern as mesh/texture upload) and get back asset IDs for config tables.
+Generate `KeyframeSequence` XML nodes in `rbxl_writer.py` (option A), or bulk-upload via `roblox_uploader.py` to get asset IDs (option B).
 
 **Phase 4 — Pipeline integration**
 
-Wire into the existing pipeline between mesh decimation and bootstrap generation:
-```
-Processing phase:
-  animation_converter.convert_animations(parsed_scenes, guid_index, anim_assets)
-  → AnimationConversionResult:
-      config_modules: list[RbxScriptEntry]   # ModuleScripts with config tables
-      bridge_needed: bool                     # whether to include AnimatorBridge.lua
-      warnings: list[str]                     # unconverted blend trees, missing clips
-```
-
-For `convert_interactive.py`: new `animations` sub-command between `transpile` and `assemble`, with a review decision point for flagged animations (complex blend trees, unmapped bones).
+Wire `animation_converter.convert_animations()` into the pipeline between mesh decimation and bootstrap generation. Add `animations` sub-command to `convert_interactive.py`.
 
 **Phase 5 — Update API mappings & transpiler**
 
-Replace stub mappings in `api_mappings.py`:
-```python
-"Animator.SetBool": "animatorBridge:SetBool",
-"Animator.SetFloat": "animatorBridge:SetFloat",
-"Animator.SetTrigger": "animatorBridge:SetTrigger",
-"Animator.Play": "animatorBridge:Play",
-```
-
-Add transpiler prompt rule: "If the script references an Animator, assume `animatorBridge` is passed via config."
+Replace stub `Animator.*` mappings in `api_mappings.py` with `animatorBridge:*` calls. Add transpiler prompt rule for Animator references.
 
 #### Difficulty Breakdown
 
@@ -157,25 +124,12 @@ Add transpiler prompt rule: "If the script references an Animator, assume `anima
 | Root motion extraction | High | Separate root bone curves → apply as HumanoidRootPart movement |
 | Inverse kinematics | Not feasible | Would require a full IK solver in Luau — out of scope |
 
-#### Suggested Implementation Order
+#### Implementation Order
 
-1. Config table generation + AnimatorBridge.lua (simple transitions, no blend trees) — covers ~60% of games
-2. 1D blend trees — covers locomotion, the most common use case
-3. KeyframeSequence export in rbxl_writer — makes output fully self-contained
-4. Root motion, layers, 2D blend trees — advanced cases, diminishing returns
-
-#### Open-Source Dependencies
-
-| Tool | Role | Integration point |
-|------|------|-------------------|
-| `unityparser` (PyPI) | Parse Force Text `.anim` / `.controller` YAML | `animation_converter.py` |
-| `UnityPy` (PyPI) | Parse binary Unity assets (fallback for non-text mode) | `animation_converter.py` |
-| `RobloxStateMachine` (Wally, prooheckcp) | Reference for state machine patterns | Inspiration for `AnimatorBridge.lua` |
-| `Arch` (Wally, bohraz) | Hierarchical state machine with sub-states | Reference for nested Mecanim sub-state machines |
-| `FBX2glTF` (Meta, CLI) | FBX → glTF with baked animations | Optional pre-processing for animation extraction |
-| `pygltflib` (PyPI) | Read/write glTF animation data | Alternative extraction path |
-
-**Files affected:** New `modules/animation_converter.py`, new `bridge/AnimatorBridge.lua`, `modules/rbxl_writer.py` (AnimationController + KeyframeSequence instances), `modules/api_mappings.py` (updated animation mappings), `modules/code_transpiler.py` (prompt update), `modules/conversion_helpers.py` (bootstrap wiring), `modules/unity_yaml_utils.py` (new classIDs), `converter.py` + `convert_interactive.py` (pipeline integration)
+1. Config table generation + AnimatorBridge.lua (simple transitions) — covers ~60% of games
+2. 1D blend trees — covers locomotion
+3. KeyframeSequence export — makes output self-contained
+4. Root motion, layers, 2D blend trees — advanced cases
 
 ### HA-3. NavMesh → Roblox pathfinding (medium impact)
 
