@@ -29,20 +29,21 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 
 ## Dependencies
 
-Python packages: see `requirements.txt` (`trimesh`, `Pillow`, `numpy`, `pyassimp`, etc.)
+Python packages: see `requirements.txt`
 
 System libraries:
-- **assimp** (`brew install assimp`) — Required for FBX vertex color baking. The `pyassimp` Python wrapper needs `libassimp.dylib` at `/opt/homebrew/lib/`. Without it, vertex-colored meshes (VCOL material) render as flat gray in Roblox.
+- **assimp** — Required for FBX vertex color baking. The `pyassimp` Python wrapper needs `libassimp` at runtime. Without it, vertex-colored meshes render as flat gray in Roblox. Install via `brew install assimp` (macOS) or `apt-get install libassimp-dev` (Linux).
 
 ## Running Tests
 
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
 ## Skills
 
-The `/convert-unity` skill (`.claude/skills/convert-unity.md`) provides an interactive conversion experience, pausing at decision points for human input:
+The `/convert-unity` skill (`.claude/skills/convert-unity/SKILL.md`) provides an interactive conversion experience, pausing at decision points for human input:
 - Scene selection when multiple scenes exist
 - Material conversion review for unconvertible/partial materials
 - Code transpilation review for flagged (low-confidence) scripts
@@ -51,12 +52,10 @@ The `/convert-unity` skill (`.claude/skills/convert-unity.md`) provides an inter
 
 ## Bug Fix Protocol
 
-When a problem is found in converted output (e.g., the Trash Dash Roblox game), always fix **both**:
+When a problem is found in converted output, fix **both** the converter and the current output:
 
-1. **Fix the converter/skill first** — update the pipeline code (`modules/`), converter skill (`.claude/skills/convert-unity/SKILL.md`), or bridge modules (`bridge/`) so future conversions produce correct output.
-2. **Then fix the current output** — update the game scripts in the output directory (e.g., `trash-dash-roblox-v7/scripts/`) so the already-converted game works.
-
-Never do one without the other. A fix only to the output will regress on the next conversion. A fix only to the converter leaves the current game broken.
+1. **Fix the converter first** — update `modules/`, `bridge/`, or `.claude/skills/` so future conversions produce correct output.
+2. **Then fix the current output** — update the scripts in the output directory so the already-converted game works.
 
 ## Known Limitations
 

@@ -1,8 +1,9 @@
-# Project Problems Analysis
+# Known Issues
 
-Comprehensive review of the Unity-to-Roblox game converter, organized from high-level architectural issues down to per-module bugs and concerns.
-
-**Validation status:** Each issue has been cross-referenced against real code and external documentation. Issues marked **VERIFIED** are confirmed real. Issues marked **DOWNGRADED** or **INVALID** have been re-assessed after validation.
+Architectural issues, module-level bugs, and test gaps in the converter,
+organized by severity. Each issue has been cross-referenced against the
+codebase. Issues marked **VERIFIED** are confirmed. Issues marked
+**DOWNGRADED** or **INVALID** have been re-assessed after validation.
 
 ---
 
@@ -59,7 +60,7 @@ There is no `setup.py`, `pyproject.toml`, or `setup.cfg`. The project can only b
 
 **Severity: MEDIUM** | **Files: `config.py:23`**
 
-`ANTHROPIC_API_KEY` defaults to `"sk-ant-PLACEHOLDER"`. While the uploader validates against known placeholders, the transpiler does not — it would attempt an API call with this placeholder key and get a 401 error at runtime rather than failing fast with a clear message.
+`ANTHROPIC_API_KEY` defaults to an empty string. Both orchestrators validate the key before making API calls, but the transpiler itself does not — if called directly with an empty or invalid key, it would get a 401 error at runtime rather than failing fast.
 
 ---
 

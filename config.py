@@ -20,7 +20,7 @@ TEMP_DIR: Path = Path(os.environ.get("TEMP_DIR", "./tmp"))
 # Anthropic (Claude) API
 # ---------------------------------------------------------------------------
 
-ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "sk-ant-PLACEHOLDER")
+ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL: str = "claude-opus-4-5"
 ANTHROPIC_MAX_TOKENS: int = 16384
 
@@ -65,7 +65,7 @@ ASSET_EXT_TO_KIND: dict[str, str] = {
     ".asmdef": "assembly_definition",
     ".asmref": "assembly_definition",
     # Data / configuration
-    ".asset": "unknown",
+    ".asset": "scriptable_object",
     ".json": "data", ".xml": "data", ".yaml": "data", ".yml": "data",
     ".txt": "data", ".csv": "data",
     # ScriptableObject presets

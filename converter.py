@@ -20,6 +20,7 @@ No module imports another module — all wiring happens here.
 
 from __future__ import annotations
 
+import logging
 import shutil
 import time
 from pathlib import Path
@@ -647,4 +648,8 @@ def convert(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(name)s: %(message)s",
+    )
     convert()

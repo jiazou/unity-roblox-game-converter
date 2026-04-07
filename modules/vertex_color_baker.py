@@ -53,26 +53,35 @@ def _load_fbx_via_assimp(
     import ctypes
     import shutil
 
-    # Locate libassimp shared library
-    lib_candidates = [
-        "/opt/homebrew/lib/libassimp.dylib",
-        "/usr/local/lib/libassimp.dylib",
-        "/usr/lib/libassimp.so",
-    ]
+    # Locate libassimp shared library via the assimp CLI tool first,
+    # then fall back to common system paths.
+    import platform
+
     lib_path = None
-    for candidate in lib_candidates:
-        if Path(candidate).exists():
-            lib_path = candidate
-            break
+
+    # Try to find via the assimp CLI binary (works on any platform)
+    assimp_bin = shutil.which("assimp")
+    if assimp_bin:
+        bin_dir = Path(assimp_bin).resolve().parent.parent / "lib"
+        for suffix in ("libassimp.dylib", "libassimp.so", "libassimp.dll"):
+            p = bin_dir / suffix
+            if p.exists():
+                lib_path = str(p)
+                break
+
+    # Fall back to common system paths
     if lib_path is None:
-        assimp_bin = shutil.which("assimp")
-        if assimp_bin:
-            bin_dir = Path(assimp_bin).resolve().parent.parent / "lib"
-            for suffix in ("libassimp.dylib", "libassimp.so"):
-                p = bin_dir / suffix
-                if p.exists():
-                    lib_path = str(p)
-                    break
+        candidates = ["/usr/lib/libassimp.so", "/usr/local/lib/libassimp.so"]
+        if platform.system() == "Darwin":
+            candidates = [
+                "/opt/homebrew/lib/libassimp.dylib",
+                "/usr/local/lib/libassimp.dylib",
+            ] + candidates
+        for candidate in candidates:
+            if Path(candidate).exists():
+                lib_path = candidate
+                break
+
     if lib_path is None:
         return None
 
