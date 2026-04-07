@@ -62,6 +62,9 @@ don't need to review intermediate results.
 | `rbxl_binary_writer` | `xml_to_binary(xml_path, binary_path)` | Converts XML `.rbxl` to Roblox binary format for Open Cloud upload. |
 | `roblox_uploader` | `upload_to_roblox(rbxl_path, ...)` | Uploads assets and `.rbxl` to Roblox via Open Cloud API. Injects MeshLoader script. |
 | `report_generator` | `generate_report(report, output_path)` | Writes a JSON conversion report and prints a human-readable summary. |
+| `mesh_splitter` | `split_multi_material(mesh_path, output_dir)` | Splits multi-material meshes into per-material OBJ files via trimesh. |
+| `sprite_extractor` | `extract_sprites(unity_path, output_dir)` | Parses `.meta` TextureImporter data and slices sprites from spritesheets. |
+| `bridge_injector` | `detect_needed_bridges(luau_sources)` | Scans transpiled Luau for require() calls and API patterns; injects needed bridge modules. |
 
 ### Infrastructure modules
 
