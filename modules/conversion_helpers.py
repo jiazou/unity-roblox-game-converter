@@ -737,13 +737,31 @@ def node_to_part(
             if mesh_path_remap and mesh_str in mesh_path_remap:
                 mesh_str = mesh_path_remap[mesh_str]
             part.mesh_id = mesh_str
-            # Try to derive part size from mesh bounding box
-            mesh_bounds = _get_mesh_bounds(mesh_str)
-            if mesh_bounds:
+            # Derive part size and center offset from mesh bounding box.
+            # Roblox positions parts by their bounding box center, but Unity
+            # positions by the transform origin (typically the base/pivot).
+            # We shift the position by the mesh's center offset so the part
+            # sits at the correct location in Roblox.
+            bounds_result = _get_mesh_bounds(mesh_str)
+            if bounds_result:
+                mesh_size, mesh_center = bounds_result
                 part.size = (
-                    mesh_bounds[0] * abs(node.scale[0]),
-                    mesh_bounds[1] * abs(node.scale[1]),
-                    mesh_bounds[2] * abs(node.scale[2]),
+                    mesh_size[0] * abs(node.scale[0]),
+                    mesh_size[1] * abs(node.scale[1]),
+                    mesh_size[2] * abs(node.scale[2]),
+                )
+                # Rotate the center offset by the part's world rotation
+                # so tilted parts get the correction in the right direction
+                scaled_center = (
+                    mesh_center[0] * abs(node.scale[0]),
+                    mesh_center[1] * abs(node.scale[1]),
+                    mesh_center[2] * abs(node.scale[2]),
+                )
+                rotated_center = _quat_rotate(world_rot, scaled_center)
+                part.position = (
+                    world_pos[0] + rotated_center[0],
+                    world_pos[1] + rotated_center[1],
+                    world_pos[2] + rotated_center[2],
                 )
 
     # Apply component conversions
@@ -1226,12 +1244,21 @@ def resolve_prefab_instances(
 # Mesh bounding box extraction
 # ---------------------------------------------------------------------------
 
-def _get_fbx_bounds(filepath: str | Path) -> tuple[float, float, float] | None:
+# Return type for mesh bounds: (size, center_offset)
+# size = (width, height, depth), center_offset = (cx, cy, cz) relative to mesh origin
+MeshBounds = tuple[tuple[float, float, float], tuple[float, float, float]]
+
+
+def _get_fbx_bounds(filepath: str | Path) -> MeshBounds | None:
     """Extract bounding box from a binary FBX file by parsing vertex arrays.
 
     FBX stores vertices in centimeters.  We apply a 0.01 scale factor to
     convert to Unity metres (matching Unity's default FBX import behaviour
     with ``useFileScale=1``).
+
+    Returns (size, center_offset) where center_offset is the bounding box
+    center relative to the mesh origin.  Roblox positions parts by their
+    center, so callers must add center_offset to the Unity position.
     """
     import struct
     import zlib
@@ -1288,17 +1315,24 @@ def _get_fbx_bounds(filepath: str | Path) -> tuple[float, float, float] | None:
 
     # FBX centimetres → Unity metres
     scale = 0.01
-    return (
+    size = (
         (max_xyz[0] - min_xyz[0]) * scale,
         (max_xyz[1] - min_xyz[1]) * scale,
         (max_xyz[2] - min_xyz[2]) * scale,
     )
+    center_offset = (
+        (min_xyz[0] + max_xyz[0]) * 0.5 * scale,
+        (min_xyz[1] + max_xyz[1]) * 0.5 * scale,
+        (min_xyz[2] + max_xyz[2]) * 0.5 * scale,
+    )
+    return size, center_offset
 
 
-def _get_mesh_bounds(mesh_path: str | Path) -> tuple[float, float, float] | None:
-    """Read a mesh file and return its bounding box size (x, y, z).
+def _get_mesh_bounds(mesh_path: str | Path) -> MeshBounds | None:
+    """Read a mesh file and return (size, center_offset).
 
     Uses trimesh for OBJ/DAE/PLY and a binary parser for FBX files.
+    center_offset is the bounding box center relative to the mesh origin.
     """
     mesh_path = Path(mesh_path)
 
@@ -1313,7 +1347,11 @@ def _get_mesh_bounds(mesh_path: str | Path) -> tuple[float, float, float] | None
             return None
         bounds = mesh.bounds  # [[min_x, min_y, min_z], [max_x, max_y, max_z]]
         size = bounds[1] - bounds[0]
-        return (float(size[0]), float(size[1]), float(size[2]))
+        center = (bounds[0] + bounds[1]) * 0.5
+        return (
+            (float(size[0]), float(size[1]), float(size[2])),
+            (float(center[0]), float(center[1]), float(center[2])),
+        )
     except Exception:
         return None
 
