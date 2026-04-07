@@ -1548,6 +1548,11 @@ def scene_nodes_to_parts(
         for node in parsed.roots:
             if _is_ui_subtree(node):
                 continue
+            # Skip prefab instances — they already exist in
+            # ReplicatedStorage/Templates via generate_prefab_packages().
+            # Placing them in Workspace too creates visible static duplicates.
+            if node.source_prefab_name is not None:
+                continue
             if _is_system_node(node):
                 # Still extract directional light data from skipped system nodes.
                 convert_light_components(
