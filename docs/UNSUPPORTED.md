@@ -261,4 +261,4 @@ only processed materials, not all `.mat` files found.
 
 ## Test Coverage
 
-See `docs/MODULE_STATUS.md` § "Test Coverage" for the full test suite listing (1137 tests across 37 files).
+See `docs/MODULE_STATUS.md` § "Test Coverage" for the full test suite listing (1264 tests across 40 files).
