@@ -23,7 +23,7 @@
 | [11](#11-scriptableobject-conversion) | ScriptableObject Conversion | Fully implemented (1 medium gap) |
 | [12](#12-roblox-platform-limitations) | Roblox Platform Limitations | 12 permanent engine-level restrictions |
 | [13](#13-deferred-features) | Deferred Features | 12 features tracked (P1–P3) |
-| [14](#14-test-coverage) | Test Coverage | 1137 tests across 37 files |
+| [14](#14-test-coverage) | Test Coverage | 1264 tests across 40 files |
 
 ### Related Documents
 
@@ -553,7 +553,7 @@ Features not yet implemented, tracked for future work:
 
 ## 14. Test Coverage
 
-**1137 automated tests** across 37 test files:
+**1264 automated tests** across 40 test files:
 
 | Test File | Coverage Area |
 |-----------|--------------|
