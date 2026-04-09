@@ -270,7 +270,7 @@ def _parse_property(el: ET.Element) -> tuple[int, object] | None:
         return None
 
     if tag in ("string", "ProtectedString"):
-        return (type_id, el.text or "")
+        return (TYPE_STRING, el.text or "")
     elif tag == "Content":
         # Roblox XML uses <Content><url>value</url></Content> for asset refs.
         # Fall back to el.text for legacy flat-text Content elements.
