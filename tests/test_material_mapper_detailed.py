@@ -464,11 +464,22 @@ class TestConvertMaterial:
         assert result.roblox_def.color_tint != (1.0, 1.0, 1.0)
 
     def test_transparency_from_alpha(self) -> None:
+        # render_mode=2 (Fade/Transparent) — alpha in _Color applies
         parsed = self._make_parsed(
             albedo_color=(1.0, 1.0, 1.0, 0.5),
+            render_mode=2,
         )
         result = _convert_material(parsed)
         assert result.roblox_def.base_part_transparency == pytest.approx(0.5)
+
+    def test_opaque_ignores_color_alpha(self) -> None:
+        # render_mode=0 (Opaque) — alpha in _Color is ignored
+        parsed = self._make_parsed(
+            albedo_color=(1.0, 1.0, 1.0, 0.0),
+            render_mode=0,
+        )
+        result = _convert_material(parsed)
+        assert result.roblox_def.base_part_transparency == 0.0
 
     def test_metallic_scalar(self) -> None:
         parsed = self._make_parsed(metallic_value=0.8)
