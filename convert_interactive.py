@@ -52,6 +52,7 @@ from modules import (
     scene_parser,
     scriptable_object_converter,
     sprite_extractor,
+    terrain_converter,
     ui_translator,
     vertex_color_baker,
 )
@@ -81,6 +82,40 @@ def _iter_prefab_nodes(roots):
     for node in roots:
         yield node
         yield from _iter_prefab_nodes(node.children)
+
+
+import re as _re
+
+
+def _infer_script_type(source: str) -> str:
+    """Infer Roblox script type from Luau source code.
+
+    - Files ending with ``return <identifier>`` are ModuleScripts.
+    - Files using client-only APIs (Players.LocalPlayer, UserInputService,
+      StarterGui, PlayerGui, Camera, etc.) are LocalScripts.
+    - Everything else is a server Script.
+    """
+    # Check for module pattern: last non-blank line is ``return <something>``
+    stripped_lines = [ln for ln in source.splitlines() if ln.strip()]
+    if stripped_lines and _re.match(r"^return\s+\S", stripped_lines[-1].strip()):
+        return "ModuleScript"
+
+    # Client-side API markers → LocalScript
+    _CLIENT_MARKERS = [
+        "Players.LocalPlayer",
+        "game:GetService(\"Players\").LocalPlayer",
+        "game:GetService('Players').LocalPlayer",
+        'GetService("UserInputService")',
+        "GetService('UserInputService')",
+        "PlayerGui",
+        "StarterGui",
+        "workspace.CurrentCamera",
+    ]
+    for marker in _CLIENT_MARKERS:
+        if marker in source:
+            return "LocalScript"
+
+    return "Script"
 
 
 # ---------------------------------------------------------------------------
@@ -715,14 +750,15 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             if lua_file.name == "_meta.json":
                 continue
             info = script_meta.get(lua_file.name, {})
+            luau_src = lua_file.read_text(encoding="utf-8")
             transpilation.scripts.append(code_transpiler.TranspiledScript(
                 source_path=Path(info.get("source_path", "(cached)")),
                 output_filename=lua_file.name,
                 csharp_source="",
-                luau_source=lua_file.read_text(encoding="utf-8"),
+                luau_source=luau_src,
                 strategy="ai",
                 confidence=info.get("confidence", 1.0),
-                script_type=info.get("script_type", "ModuleScript"),
+                script_type=info.get("script_type") or _infer_script_type(luau_src),
             ))
         transpilation.total = len(transpilation.scripts)
         transpilation.succeeded = len(transpilation.scripts)
@@ -1105,7 +1141,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
             disk_source = lua_file.read_text(encoding="utf-8")
             meta = script_meta.get(lua_file.name, {})
             script_name = meta.get("name", lua_file.stem)
-            script_type = meta.get("script_type", "ModuleScript")
+            script_type = meta.get("script_type") or _infer_script_type(disk_source)
             original_name = lua_file.stem  # name before meta rename
 
             if script_name in existing_names:
@@ -1128,6 +1164,52 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
                     luau_source=disk_source,
                     script_type=script_type,
                 ))
+
+    # ── Terrain conversion ─────────────────────────────────────────
+    # Find terrain offset from scene parts — the Terrain GameObject's world
+    # position may differ from the origin if it has a parent hierarchy.
+    terrain_offset = (0.0, 0.0, 0.0)
+    def _find_terrain_part(plist: list) -> tuple[float, float, float] | None:
+        for p in plist:
+            if p.name == "Terrain":
+                return p.position
+            result = _find_terrain_part(p.children)
+            if result is not None:
+                return result
+        return None
+    _tp = _find_terrain_part(parts)
+    if _tp is not None:
+        terrain_offset = _tp
+
+    terrain_info: dict = {}
+    terrain_result = terrain_converter.convert_terrain(unity_path, terrain_offset=terrain_offset)
+    if terrain_result.found and terrain_result.loader_script:
+        # Add terrain loader as a ServerScript
+        rbx_scripts.append(rbxl_writer.RbxScriptEntry(
+            name="TerrainLoader",
+            luau_source=terrain_result.loader_script,
+            script_type="Script",
+        ))
+        terrain_info = {
+            "found": True,
+            "resolution": terrain_result.resolution,
+            "size_x": terrain_result.size_x,
+            "size_y": terrain_result.size_y,
+            "size_z": terrain_result.size_z,
+            "layers": terrain_result.layers,
+        }
+        # Save terrain data JSON for optional MCP-based painting
+        terrain_json_path = out_dir / "terrain_data.json"
+        terrain_json_path.write_text(terrain_result.terrain_data_json, encoding="utf-8")
+        click.echo(
+            f"🏔️  Terrain: {terrain_result.resolution}x{terrain_result.resolution} heightmap, "
+            f"{terrain_result.size_x:.0f}x{terrain_result.size_z:.0f} studs, "
+            f"{len(terrain_result.layers)} layers",
+            err=True,
+        )
+    elif terrain_result.error:
+        errors.append(f"Terrain: {terrain_result.error}")
+        terrain_info = {"found": False, "error": terrain_result.error}
 
     rbxl_path = out_dir / config.RBXL_OUTPUT_FILENAME
 
@@ -1179,7 +1261,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
 
         # Disable all Scripts and LocalScripts (except MeshLoader)
         scripts_disabled = 0
-        _keep_scripts = {"MeshLoader", "GameBootstrap"}
+        _keep_scripts = {"MeshLoader", "GameBootstrap", "TerrainLoader"}
         for _item in _root.iter("Item"):
             if _item.get("class") in ("Script", "LocalScript"):
                 _props = _item.find("Properties")
@@ -1276,6 +1358,7 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
         "decimation": decimation_info,
         "ui_translation": ui_info,
         "sprites": sprite_info,
+        "terrain": terrain_info,
         "packages": package_info,
         "preview": preview_info,
         "errors": errors,

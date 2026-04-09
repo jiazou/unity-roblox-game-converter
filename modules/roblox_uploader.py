@@ -523,12 +523,14 @@ def _build_mesh_material_map(unity_project_path: Path | None) -> dict[str, str]:
     # ── Step 2: material GUID → texture filename ───────────────────
     # A .mat file references its _MainTex via a GUID.  We map the
     # material's own GUID → "<MaterialName>_color.png" (matching the
-    # texture filenames produced by the material_mapper).
+    # texture filenames produced by the material_mapper's _safe_filename).
     mat_guid_to_texture: dict[str, str] = {}
     for guid, path in guid_to_path.items():
         if path.suffix.lower() != ".mat":
             continue
-        mat_guid_to_texture[guid] = f"{path.stem}_color.png"
+        # Sanitize the same way material_mapper._safe_filename does
+        safe_stem = _re.sub(r"[^a-zA-Z0-9_\-]", "_", path.stem)
+        mat_guid_to_texture[guid] = f"{safe_stem}_color.png"
 
     # ── Step 3: parse prefabs/scenes for mesh↔material pairs ───────
     # Unity YAML uses multi-document format.  Each document starts with
@@ -1065,14 +1067,28 @@ local function loadOneAsset(asset)
                 end
 
                 for _parentKey, parts in pairs(partsByParent) do
-                    if #sourceParts >= #parts then
-                        -- Enough source parts — try name matching per placeholder
+                    -- Check if placeholders are repeated instances of the same
+                    -- mesh (BrickWall, BrickWall (1), BrickWall (2)) vs different
+                    -- sub-meshes combined into one asset (BinBase, BinTop, TrashBag).
+                    -- Same base name = separate instances at different positions;
+                    -- replace each one. Different base names = combined sub-meshes;
+                    -- dedup by replacing first and destroying extras.
+                    local baseNames = {{}}
+                    for _, part in ipairs(parts) do
+                        baseNames[baseName(part.Name)] = true
+                    end
+                    local uniqueBaseCount = 0
+                    for _ in pairs(baseNames) do uniqueBaseCount = uniqueBaseCount + 1 end
+
+                    if uniqueBaseCount <= 1 or #sourceParts >= #parts then
+                        -- Same base name (repeated instances) or enough source
+                        -- parts — replace each placeholder individually.
                         for _, part in ipairs(parts) do
                             replacePart(part)
                         end
                     else
-                        -- More placeholders than source parts = sub-meshes
-                        -- combined in the uploaded asset. Replace first, destroy rest.
+                        -- Different base names with fewer sources = combined sub-meshes.
+                        -- Replace first, destroy extras.
                         replacePart(parts[1])
                         for ii = 2, #parts do
                             parts[ii]:Destroy()

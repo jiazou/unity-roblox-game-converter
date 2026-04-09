@@ -9,7 +9,7 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 - `converter.py` — Full end-to-end CLI (non-interactive, runs all phases)
 - `convert_interactive.py` — Phase-based CLI for the `/convert-unity` skill (interactive, one phase at a time)
 - `config.py` — All configuration constants (paths, API keys, thresholds)
-- `modules/` — Individual pipeline modules (24 modules + `__init__.py`). `conversion_helpers` imports multiple pipeline modules (`scene_parser`, `prefab_parser`, `material_mapper`, `code_transpiler`, `guid_resolver`, `mesh_decimator`, `report_generator`, `rbxl_writer`) for data composition.
+- `modules/` — Individual pipeline modules (25 modules + `__init__.py`). `conversion_helpers` imports multiple pipeline modules (`scene_parser`, `prefab_parser`, `material_mapper`, `code_transpiler`, `guid_resolver`, `mesh_decimator`, `report_generator`, `rbxl_writer`) for data composition.
 - `bridge/` — Reusable Unity API shim modules in Luau (9 modules: AnimatorBridge, Coroutine, GameObjectUtil, Input, MonoBehaviour, Physics, StateMachine, Time, TransformAnimator). All modules are auto-injected: AnimatorBridge and TransformAnimator by `animation_converter.py` when animation components are detected; the other 7 by `bridge_injector.py` which scans transpiled Luau for require() calls and API usage patterns.
 
 ### Pipeline Phases
@@ -17,7 +17,7 @@ This is a multi-phase pipeline that converts Unity game projects into Roblox pla
 1. **Discovery**: `scene_parser` + `prefab_parser` — parse .unity/.prefab YAML
 2. **Inventory**: `asset_extractor` + `guid_resolver` — catalog assets, build GUID index
 3. **Processing**: `material_mapper` + `code_transpiler` + `code_validator` + `mesh_decimator` + `scriptable_object_converter` + `animation_converter` + `vertex_color_baker`
-4. **Assembly**: `rbxl_writer` + `ui_translator` + `conversion_helpers` — build .rbxl XML, generate bootstrap
+4. **Assembly**: `rbxl_writer` + `ui_translator` + `terrain_converter` + `conversion_helpers` — build .rbxl XML, generate terrain loader, generate bootstrap
 5. **Upload**: `roblox_uploader` + `report_generator` — upload assets, inject MeshLoader, patch asset IDs, upload to Roblox Cloud, generate report
 
 ### Key Design Principles

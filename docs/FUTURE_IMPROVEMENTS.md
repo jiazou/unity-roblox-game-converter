@@ -16,18 +16,9 @@
 
 **Resolution:** New `modules/sprite_extractor.py` parses `.meta` TextureImporter data for sprite rects (single and multi-sprite modes). Slices individual sprites from source textures using Pillow, handling Unity's bottom-left coordinate origin → Pillow top-left conversion. Writes extracted PNGs to `<output>/sprites/` which the existing `roblox_uploader.py` already picks up for upload. Wired into both `converter.py` (batch) and `convert_interactive.py` (assemble phase). Single-sprite textures map GUID → file directly; spritesheets use `guid:spritename` compound keys.
 
-### MB-2. Terrain heightmap → Roblox Terrain conversion (high impact)
+### ~~MB-2. Terrain heightmap → Roblox Terrain conversion (high impact)~~ — DONE
 
-**Problem:** Unity Terrain (classID 218) is recognized but completely dropped. Games with terrain lose their entire landscape — no geometry, no texture, no collision.
-
-**Fix:**
-- Extract heightmap data from Unity terrain asset (raw float array)
-- Extract splat/alpha maps for terrain layer blending
-- Map Unity terrain layers to Roblox terrain materials (Grass, Sand, Rock, etc.)
-- Generate Roblox Terrain voxel data via `Terrain:FillRegion()` in a loader script
-- Handle terrain trees/detail objects as separate Part instances
-
-**Files affected:** New `modules/terrain_converter.py`, `modules/rbxl_writer.py` (Terrain instance), loader script generation
+**Resolution:** New `modules/terrain_converter.py` parses Unity TerrainData binary `.asset` files to extract heightmap data (uint16 arrays), terrain dimensions, and terrain layer names from `.terrainlayer` files. Downsamples the heightmap to a configurable grid (default 65×65) and generates a `TerrainLoader` ServerScript that recreates terrain using `Terrain:FillBlock()` with elevation-based material assignment (Sand, Grass, Ground, Rock). Also generates water base. Handles Git LFS pointers with a clear warning message. Wired into `convert_interactive.py` assemble phase — auto-detects and converts terrain with no user intervention. Also saves `terrain_data.json` for optional MCP-based direct terrain painting in Roblox Studio. Remaining gap: splatmap-based per-layer material painting (currently uses elevation-only heuristic) and terrain trees/detail objects.
 
 ### ~~MB-3. Layout group support for UI (medium impact)~~ — DONE
 

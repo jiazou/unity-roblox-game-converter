@@ -17,6 +17,8 @@ Pipeline modules:
     rbxl_writer       — serialises geometry and scripts into .rbxl XML
     report_generator  — writes JSON conversion report
 
+    terrain_converter — extracts Unity terrain heightmaps and generates Roblox terrain loader
+
 Data modules:
     api_mappings      — comprehensive Unity C# → Roblox Luau API mapping table
 
