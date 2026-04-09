@@ -1374,8 +1374,6 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
 @cli.command()
 @click.argument("output_dir", type=click.Path(exists=True, file_okay=False))
 @click.option("--roblox-api-key", default=config.ROBLOX_API_KEY, envvar="ROBLOX_API_KEY")
-@click.option("--universe-id", default=config.ROBLOX_UNIVERSE_ID, type=int)
-@click.option("--place-id", default=config.ROBLOX_PLACE_ID, type=int)
 @click.option("--creator-id", default=config.ROBLOX_CREATOR_ID, type=int,
               help="Roblox user or group ID that will own uploaded assets.")
 @click.option("--creator-type", default=config.ROBLOX_CREATOR_TYPE,
@@ -1383,8 +1381,8 @@ def assemble(unity_project_path: str, output_dir: str, decimate: bool,
               help="Whether creator-id is a User or Group.")
 @click.option("--creator-username", default=None,
               help="Roblox username (resolved to numeric ID if --creator-id not given).")
-def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
-           place_id: int | None, creator_id: int | None, creator_type: str,
+def upload(output_dir: str, roblox_api_key: str,
+           creator_id: int | None, creator_type: str,
            creator_username: str | None) -> None:
     """Phase 5: Upload assets and .rbxl to Roblox Cloud."""
     out_dir = Path(output_dir).resolve()
@@ -1428,8 +1426,6 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         audio_dir=audio_dir,
         meshes_dir=meshes_dir,
         api_key=roblox_api_key,
-        universe_id=universe_id,
-        place_id=place_id,
         creator_id=creator_id,
         creator_type=creator_type,
         mesh_texture_map=mesh_texture_map,
@@ -1454,7 +1450,6 @@ def upload(output_dir: str, roblox_api_key: str, universe_id: int | None,
         "phase": "upload",
         "success": upload_result.success,
         "skipped": upload_result.skipped,
-        "place_id": upload_result.place_id,
         "version_number": upload_result.version_number,
         "asset_ids": upload_result.asset_ids,
         "sprites_uploaded": upload_result.sprites_uploaded,

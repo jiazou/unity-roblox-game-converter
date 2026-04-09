@@ -500,11 +500,13 @@ If opaque gray blocks appear in the converted game, check which Unity object the
 6. **Opaque material with `_Color.a = 0`** → the material mapper must **ignore** `_Color` alpha when the material's rendering mode is Opaque (`_Mode = 0`). Unity's Standard shader discards `_Color.a` in Opaque mode, and many opaque materials ship with `a=0` by default. If the converter blindly applies `1.0 - _Color.a` as `base_part_transparency`, textured MeshParts become fully invisible despite having a valid MeshRenderer and SurfaceAppearance. **If a MeshPart has a SurfaceAppearance with textures but is still invisible**, check the source `.mat` file: if `_Mode: 0` (Opaque) and `_Color: {... a: 0}`, the transparency was set incorrectly by the material mapper. The fix is in `material_mapper.py` — only apply alpha transparency when `parsed.render_mode != 0`.
 
 **Mesh and material verification — skinned meshes appearing as skeletons or gray blobs.**
-Two converter-level issues can cause MeshParts to render without their skin texture:
+Three converter-level issues can cause MeshParts to render incorrectly:
 
-1. **Missing SurfaceAppearance.** The pipeline only creates a SurfaceAppearance when the material has at least one texture map (`color_map`, `normal_map`, etc.). Vertex-color-only materials create an empty `RobloxMaterialDef` that depends on vertex color baking to fill in the `color_map` later. If baking fails or the mesh path doesn't match the `vc_baked_textures` lookup key, the MeshPart ends up with no SurfaceAppearance at all — rendering as untextured gray or exposing internal bone geometry. **After assembly, scan the .rbxl for MeshParts that have a MeshId but no SurfaceAppearance child.** If the Unity source has an albedo texture for that mesh's material, the SurfaceAppearance was dropped and must be restored manually.
+1. **SurfaceAppearance without ColorMap makes parts white.** SurfaceAppearance completely overrides Part.Color3 for rendering. If a material has metalness/roughness texture maps but NO albedo texture (color_map), adding a SurfaceAppearance with only MetalnessMap/RoughnessMap produces a white part — the Color3 value is ignored. **Only create SurfaceAppearance when `rdef.color_map` is present.** Materials with only metalness/roughness maps should rely on Color3 alone. This is handled in `conversion_helpers.py:apply_materials()`.
 
-2. **Split meshes not uploaded.** `mesh_splitter.py` splits multi-material meshes into per-material OBJ files in `split_meshes/`, but the uploader (`roblox_uploader.py`) only scans the `meshes/` directory. Split submeshes never get uploaded or assigned asset IDs. The .rbxl ends up referencing the original unsplit mesh asset, which may include raw skeleton data. **If a mesh was split** (check for `_sub0.obj` files in `split_meshes/`), verify the uploaded asset still renders correctly — the single-asset fallback may include bone geometry that was separated out by the split.
+2. **Missing SurfaceAppearance.** The pipeline only creates a SurfaceAppearance when the material has a color_map (albedo texture). Vertex-color-only materials create an empty `RobloxMaterialDef` that depends on vertex color baking to fill in the `color_map` later. If baking fails or the mesh path doesn't match the `vc_baked_textures` lookup key, the MeshPart ends up with no SurfaceAppearance at all — rendering as untextured gray or exposing internal bone geometry. **After assembly, scan the .rbxl for MeshParts that have a MeshId but no SurfaceAppearance child.** If the Unity source has an albedo texture for that mesh's material, the SurfaceAppearance was dropped and must be restored manually.
+
+3. **Split meshes not uploaded.** `mesh_splitter.py` splits multi-material meshes into per-material OBJ files in `split_meshes/`, but the uploader (`roblox_uploader.py`) only scans the `meshes/` directory. Split submeshes never get uploaded or assigned asset IDs. The .rbxl ends up referencing the original unsplit mesh asset, which may include raw skeleton data. **If a mesh was split** (check for `_sub0.obj` files in `split_meshes/`), verify the uploaded asset still renders correctly — the single-asset fallback may include bone geometry that was separated out by the split.
 
 When a MeshPart renders as skeleton bones or wireframe instead of a solid mesh: check the .rbxl for that MeshPart's SurfaceAppearance (must have a ColorMap texture), compare the MeshId asset with any prior working conversion, and verify the uploaded GLB doesn't contain exposed armature data.
 
@@ -537,18 +539,27 @@ python3 convert_interactive.py assemble <unity_project_path> <output_dir> 2>/dev
 
 **Decision point:** If mesh decimation significantly reduced meshes, ask about quality adjustment. If terrain was found, confirm it looks correct in Studio.
 
-### Step 6: Upload (Optional)
+### Step 6: Upload & Publish
 
-Ask if they want to upload. Requires Roblox Open Cloud API key, Universe ID, Place ID.
+Upload is a two-stage process:
+
+**Stage 1 — Asset upload via API.** Uploads meshes, textures, and audio to Roblox via Open Cloud. Requires an API key. Patches the .rbxl with uploaded asset IDs.
 
 ```bash
 python3 convert_interactive.py upload <output_dir> \
-  --roblox-api-key <key> --universe-id <id> --place-id <id> \
+  --roblox-api-key <key> \
   [--creator-id <id> | --creator-username <username>] \
   [--creator-type User|Group] 2>/dev/null
 ```
 
-**Decision point:** If some uploads fail — retry, continue without, or abort?
+**Stage 2 — Place publish via Roblox Studio.** The Open Cloud API strips Script.Source from uploaded binary files for security. The final place MUST be published through Roblox Studio to preserve script source code (TerrainLoader, MeshLoader, GameBootstrap, all controllers). Instruct the user to:
+
+1. Open the patched `.rbxl` file in Roblox Studio
+2. Use **File > Publish to Roblox** (NOT "Save to Roblox" — that saves without publishing)
+
+**Never attempt to publish the place via the API** — it will silently produce a broken game with empty scripts.
+
+**Decision point:** If some asset uploads fail — retry, continue without, or abort?
 
 ### Step 7: Final Report
 
