@@ -390,9 +390,12 @@ def apply_materials(
 
         # Apply the first material (Roblox limitation: one material per MeshPart)
         rdef = guid_to_roblox_def[resolved_guids[0]]
-        # Only create SurfaceAppearance if the material has actual texture data.
-        # An empty SurfaceAppearance overrides Color3, making the part white.
-        if rdef.color_map or rdef.normal_map or rdef.metalness_map or rdef.roughness_map:
+        # Only create SurfaceAppearance if the material has a color map (albedo
+        # texture).  SurfaceAppearance completely overrides the Part's Color3 for
+        # rendering — so metalness/roughness maps WITHOUT a color map produce a
+        # white part instead of the intended color.  Better to skip SA entirely
+        # and let Color3 carry the visual.
+        if rdef.color_map:
             sa = roblox_def_to_surface_appearance(rdef)
             part.surface_appearance = sa
             logger.debug("apply_materials: %r → color_map=%s", node.name, sa.color_map)
