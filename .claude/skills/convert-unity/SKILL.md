@@ -143,7 +143,13 @@ Unity uses 1 unit ≈ 1 meter. Roblox avatars are ~5.5 studs tall vs Unity's ~1.
    elseif clone:IsA("BasePart") then clone.Size = clone.Size * SCALE end
    ```
 
-**Pipeline detail:** Unity stores transforms as local-space. The converter computes world-space positions recursively (`world_pos = parent_pos + parent_rot * local_pos`). If objects cluster at the origin, check `conversion_helpers.py:_compute_world_transform()`.
+**Pipeline detail:** Unity stores transforms as local-space. The converter computes world-space positions recursively (`world_pos = parent_pos + parent_rot * local_pos`). Scale accumulates hierarchically (`world_scale = parent_scale × node_scale`). If objects cluster at the origin, check `conversion_helpers.py:_compute_world_transform()`.
+
+**Mesh bounding box sizing and FBX units.**
+MeshPart sizes are derived from the FBX bounding box in `_get_fbx_bounds()`, scaled by the FBX `UnitScaleFactor` and Unity's `.fbx.meta` import settings (`globalScale`, `useFileScale`). Three things must be correct for mesh sizes to match Unity:
+- **UnitScaleFactor** — stored in the FBX binary; `1.0` = centimeters (scale by 0.01), `100.0` = meters (scale by 1.0). Default assumption of 0.01 produces meshes 100× too small for USF=100 files.
+- **Unity import scale** — `useFileScale=1` → `globalScale × USF/100`; `useFileScale=0` → `globalScale` alone. Read from the `.fbx.meta` YAML sidecar.
+- **Parent scale chain** — Unity applies scale hierarchically. A mesh at node scale (1,1,1) under a parent with scale (0.2, 0.2, 0.2) renders at 20% size. The converter passes `parent_world_scale` through `node_to_part()` recursion to accumulate this. If a mesh appears at the correct position but wrong size, check whether its parent hierarchy has non-unit scales.
 
 **Decoration positions are baked into Unity prefabs — preserve them faithfully.**
 Unity segment prefabs (e.g., IndustrialWarehouse01, SuburbsHouse01) have all decoration children (buildings, fences, props) pre-positioned by the artist at specific local offsets. There is no runtime repositioning of individual decorations in Unity — the only runtime effect is a random 50% chance to mirror the entire segment on X. Never override or "fix" these positions in the converter output. If decorations appear to block the road, the root cause is elsewhere (camera angle, character scale, mesh orientation) — not the positions.
@@ -200,6 +206,7 @@ These are universal mechanical rules needed before writing any module code.
 - Unity: only GameObjects with MeshRenderer or SkinnedMeshRenderer are visible. Everything else is invisible by design.
 - Roblox: every Part is visible by default.
 - **Always override.** The pipeline sets `Transparency=1` on objects without a renderer. SpriteRenderer objects (decals, shadows, glow) are 2D overlays — also hidden. Built-in Quad/Plane primitives are almost always effect surfaces and are hidden automatically. Trigger colliders, inactive GameObjects, disabled renderers, and UI subtrees are all handled.
+- **Visibility is per-node, not inherited.** The converter checks each node independently. A parent without MeshRenderer gets `Transparency=1`, but its children with MeshRenderer keep `Transparency=0`. This is correct — Unity works the same way (parent visibility doesn't affect children). Do NOT add workarounds that force child MeshParts visible; the converter handles this correctly through prefab expansion. If pickups or collectibles appear invisible, the cause is elsewhere (MeshLoader failure, missing mesh upload, or wrong MeshId).
 - If opaque gray rectangles block the view: check (1) SpriteRenderer nodes not hidden, (2) Quad/Plane surfaces not hidden, (3) MeshLoader race condition.
 
 **ScriptableObject data:**
@@ -413,7 +420,7 @@ Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
 - Registers states with the StateMachine bridge
 - Starts the state machine with the initial state
 - Does NOT contain game logic — it's pure wiring
-- **Verify method names match.** After writing bootstrap calls like `playerCtrl:UpdateSpawnpoint()`, confirm the method actually exists on the target module. Luau silently returns nil for missing methods — no error, no warning. The call appears to succeed but does nothing. Always `grep` the module source for the exact method name before wiring.
+- **Verify method names match — CRITICAL.** The transpiler converts each C# file independently, so method names may diverge between modules. For example, `SpawnPoint.cs` may call `player.UpdateSpawnpoint()` while the transpiled PlayerController has `SetSpawnCFrame()`. Luau silently returns nil for missing methods — no error, no warning. The call appears to succeed but does nothing. **Before writing any cross-module call in the bootstrap or any game script**, `grep` the target module for the exact method name. Common mismatches: `UpdateX` vs `SetX`, `OnTriggerEnter` vs `HandleTrigger`, `GetComponent` vs direct property access. Fix mismatches in ALL callers — never assume the transpiled name is correct without checking.
 - To determine what to wire: read the `.unity` scene file for serialized field references (e.g., `characterController: {fileID: XXXX}` tells you TrackManager needs a reference to CharacterInputController)
 - **Uses the player's Roblox avatar** as the game character when appropriate (e.g., endless runners, platformers). Wait for `player.Character`, get `HumanoidRootPart`, disable default movement (`WalkSpeed=0`, `JumpPower=0`, `JumpHeight=0`). If Step 4.5c chose "scale character down", call `character:ScaleTo(SCALE)` **before** anchoring (scaling requires a brief physics settle — `task.wait(0.1)` after scaling). **Never call `Humanoid:ApplyDescription()` or `Humanoid:ApplyDescriptionReset()` from a LocalScript** — these are server-only APIs and will error on the client, crashing the bootstrap. Then anchor HRP, set initial `CFrame` using the computed `GROUND_Y`, and pass both `transform` and `groundY` to the character controller. Only create a placeholder Part if the game uses a non-humanoid avatar.
 - **Wires input** via `UserInputService.InputBegan` — the transpiler does NOT create input bindings. Map Unity's `Input.GetKeyDown` keycodes to Roblox `Enum.KeyCode` and dispatch to controller methods (`ChangeLane`, `Jump`, `Slide`, etc.).
@@ -489,6 +496,8 @@ The full visibility rules (all enforced in `conversion_helpers.py:node_to_part()
 5. **UI subtrees** (Canvas hierarchies) → filtered out of 3D hierarchy entirely, converted to ScreenGui
 
 If opaque gray blocks appear in the converted game, check which Unity object they came from and verify it falls into one of these categories.
+
+6. **Opaque material with `_Color.a = 0`** → the material mapper must **ignore** `_Color` alpha when the material's rendering mode is Opaque (`_Mode = 0`). Unity's Standard shader discards `_Color.a` in Opaque mode, and many opaque materials ship with `a=0` by default. If the converter blindly applies `1.0 - _Color.a` as `base_part_transparency`, textured MeshParts become fully invisible despite having a valid MeshRenderer and SurfaceAppearance. **If a MeshPart has a SurfaceAppearance with textures but is still invisible**, check the source `.mat` file: if `_Mode: 0` (Opaque) and `_Color: {... a: 0}`, the transparency was set incorrectly by the material mapper. The fix is in `material_mapper.py` — only apply alpha transparency when `parsed.render_mode != 0`.
 
 **Mesh and material verification — skinned meshes appearing as skeletons or gray blobs.**
 Two converter-level issues can cause MeshParts to render without their skin texture:

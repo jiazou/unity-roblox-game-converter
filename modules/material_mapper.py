@@ -809,8 +809,11 @@ def _convert_material(parsed: ParsedMaterial) -> MaterialConversionResult:
     if parsed.albedo_color and rdef.color_map and not _is_white(parsed.albedo_color):
         rdef.color_tint = parsed.albedo_color[:3]
 
-    # Alpha from _Color
-    if parsed.albedo_color and parsed.albedo_color[3] < 0.99:
+    # Alpha from _Color — only applies when the material is NOT Opaque.
+    # Unity's Standard shader ignores _Color.a in Opaque mode (_Mode=0),
+    # and many opaque materials ship with a=0 by default.
+    if (parsed.albedo_color and parsed.albedo_color[3] < 0.99
+            and parsed.render_mode != 0):
         rdef.base_part_transparency = 1.0 - parsed.albedo_color[3]
 
     # --- PBR maps (Standard / Standard Specular / URP Lit / HDRP Lit / Legacy Bumped/Specular) ---

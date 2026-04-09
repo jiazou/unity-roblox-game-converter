@@ -692,6 +692,7 @@ def node_to_part(
     component_warnings: list[ComponentWarning] | None = None,
     parent_world_pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
     parent_world_rot: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
+    parent_world_scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
     vc_baked_textures: dict[str, str] | None = None,
     split_output_dir: Path | None = None,
 ) -> rbxl_writer.RbxPartEntry:
@@ -701,6 +702,13 @@ def node_to_part(
 
     world_pos, world_rot = _compute_world_transform(
         node.position, node.rotation, parent_world_pos, parent_world_rot,
+    )
+
+    # Accumulate scale from parent chain (Unity applies scale hierarchically)
+    world_scale = (
+        parent_world_scale[0] * abs(node.scale[0]),
+        parent_world_scale[1] * abs(node.scale[1]),
+        parent_world_scale[2] * abs(node.scale[2]),
     )
 
     scaled_size = (abs(node.scale[0]), abs(node.scale[1]), abs(node.scale[2]))
@@ -746,16 +754,16 @@ def node_to_part(
             if bounds_result:
                 mesh_size, mesh_center = bounds_result
                 part.size = (
-                    mesh_size[0] * abs(node.scale[0]),
-                    mesh_size[1] * abs(node.scale[1]),
-                    mesh_size[2] * abs(node.scale[2]),
+                    mesh_size[0] * world_scale[0],
+                    mesh_size[1] * world_scale[1],
+                    mesh_size[2] * world_scale[2],
                 )
                 # Rotate the center offset by the part's world rotation
                 # so tilted parts get the correction in the right direction
                 scaled_center = (
-                    mesh_center[0] * abs(node.scale[0]),
-                    mesh_center[1] * abs(node.scale[1]),
-                    mesh_center[2] * abs(node.scale[2]),
+                    mesh_center[0] * world_scale[0],
+                    mesh_center[1] * world_scale[1],
+                    mesh_center[2] * world_scale[2],
                 )
                 rotated_center = _quat_rotate(world_rot, scaled_center)
                 part.position = (
@@ -836,6 +844,7 @@ def node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
             mesh_path_remap, directional_lights, component_warnings,
             parent_world_pos=world_pos, parent_world_rot=world_rot,
+            parent_world_scale=world_scale,
             vc_baked_textures=vc_baked_textures,
             split_output_dir=split_output_dir,
         ))
@@ -1252,9 +1261,17 @@ MeshBounds = tuple[tuple[float, float, float], tuple[float, float, float]]
 def _get_fbx_bounds(filepath: str | Path) -> MeshBounds | None:
     """Extract bounding box from a binary FBX file by parsing vertex arrays.
 
-    FBX stores vertices in centimeters.  We apply a 0.01 scale factor to
-    convert to Unity metres (matching Unity's default FBX import behaviour
-    with ``useFileScale=1``).
+    Determines the correct unit conversion by checking (in order):
+
+    1. The Unity ``.fbx.meta`` import settings (``globalScale`` and
+       ``useFileScale``).  This is what Unity actually applies.
+    2. The FBX ``UnitScaleFactor`` property, used when ``useFileScale=1``
+       or when no ``.meta`` file exists.
+
+    The import scale that matches Unity's behaviour is:
+    - ``useFileScale=1``: ``globalScale × UnitScaleFactor / 100``
+    - ``useFileScale=0``: ``globalScale``
+    - No ``.meta`` file:  ``UnitScaleFactor / 100`` (Unity default)
 
     Returns (size, center_offset) where center_offset is the bounding box
     center relative to the mesh origin.  Roblox positions parts by their
@@ -1271,6 +1288,39 @@ def _get_fbx_bounds(filepath: str | Path) -> MeshBounds | None:
 
     if not data.startswith(b"Kaydara FBX Binary"):
         return None
+
+    # Read UnitScaleFactor from FBX (defaults to 1.0 = centimetres)
+    unit_scale_factor = 1.0
+    usf_idx = data.find(b"UnitScaleFactor")
+    if usf_idx >= 0:
+        for off in range(usf_idx + 14, min(usf_idx + 100, len(data))):
+            if data[off : off + 1] == b"D":  # FBX double property
+                val = struct.unpack_from("<d", data, off + 1)[0]
+                if 0.001 < val < 100000:
+                    unit_scale_factor = val
+                break
+
+    # Read Unity .fbx.meta for the actual import scale
+    meta_path = Path(str(filepath) + ".meta")
+    global_scale = None
+    use_file_scale = None
+    if meta_path.exists():
+        try:
+            meta_text = meta_path.read_text(errors="replace")
+            for line in meta_text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("globalScale:"):
+                    try:
+                        global_scale = float(stripped.split(":", 1)[1].strip())
+                    except ValueError:
+                        pass
+                elif stripped.startswith("useFileScale:"):
+                    try:
+                        use_file_scale = int(stripped.split(":", 1)[1].strip())
+                    except ValueError:
+                        pass
+        except OSError:
+            pass
 
     min_xyz = [float("inf")] * 3
     max_xyz = [float("-inf")] * 3
@@ -1313,8 +1363,15 @@ def _get_fbx_bounds(filepath: str | Path) -> MeshBounds | None:
     if not found:
         return None
 
-    # FBX centimetres → Unity metres
-    scale = 0.01
+    # Compute import scale matching Unity's behaviour
+    if global_scale is not None and use_file_scale is not None:
+        if use_file_scale:
+            scale = global_scale * (unit_scale_factor / 100.0)
+        else:
+            scale = global_scale
+    else:
+        # No .meta file — use FBX UnitScaleFactor (Unity default with useFileScale=1)
+        scale = unit_scale_factor / 100.0
     size = (
         (max_xyz[0] - min_xyz[0]) * scale,
         (max_xyz[1] - min_xyz[1]) * scale,
