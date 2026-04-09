@@ -43,7 +43,6 @@ TYPE_REFERENT = 0x13
 TYPE_NUMBERSEQUENCE = 0x15
 TYPE_COLORSEQUENCE = 0x16
 TYPE_NUMBERRANGE = 0x17
-TYPE_PROTECTEDSTRING = 0x1D
 # Map XML element tags → binary type IDs.
 _XML_TYPE_MAP: dict[str, int] = {
     "string": TYPE_STRING,
@@ -61,7 +60,7 @@ _XML_TYPE_MAP: dict[str, int] = {
     # SoundId) as type 0x01 (String), not 0x20 (Content).  Writing 0x20 causes
     # "Unexpected format 32 (expected 1) << ContentId" on load.
     "Content": TYPE_STRING,
-    "ProtectedString": TYPE_PROTECTEDSTRING,
+    "ProtectedString": TYPE_STRING,
     "UDim2": TYPE_UDIM2,
     "NumberRange": TYPE_NUMBERRANGE,
     "NumberSequence": TYPE_NUMBERSEQUENCE,
@@ -353,7 +352,6 @@ def _default_for_type(type_id: int) -> object:
     """Return a sensible default value for a given property type."""
     defaults: dict[int, object] = {
         TYPE_STRING: "",
-        TYPE_PROTECTEDSTRING: "",
 
         TYPE_BOOL: False,
         TYPE_INT32: 0,
@@ -379,7 +377,7 @@ def _serialise_prop_values(type_id: int, values: list[object]) -> bytes:
     n = len(values)
     buf = bytearray()
 
-    if type_id in (TYPE_STRING, TYPE_PROTECTEDSTRING):
+    if type_id == TYPE_STRING:
         for v in values:
             buf += _encode_string(str(v))
 
