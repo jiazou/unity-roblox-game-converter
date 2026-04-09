@@ -145,6 +145,8 @@ _BUILTIN_SHADERS: dict[int, ShaderInfo] = {
     10753: ShaderInfo("Particles/Additive", "particle_additive", True, False, False, True),
     10755: ShaderInfo("Particles/Multiply", "particle_multiply", True, False, False, True),
     200: ShaderInfo("Sprites/Default", "sprite", True, False, True, True),
+    # Default shaders (fileID with guid 0000000000000000f000000000000000)
+    7: ShaderInfo("Default-Diffuse", "legacy_diffuse", False, False, True, True),
     # Additional common built-in shaders
     10750: ShaderInfo("UI/Default", "ui_default", True, False, True, True),
     10703: ShaderInfo("Legacy Shaders/Transparent/Diffuse", "legacy_transparent_diffuse", True, False, True, True),

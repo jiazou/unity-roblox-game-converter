@@ -413,6 +413,7 @@ Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
 - Registers states with the StateMachine bridge
 - Starts the state machine with the initial state
 - Does NOT contain game logic — it's pure wiring
+- **Verify method names match.** After writing bootstrap calls like `playerCtrl:UpdateSpawnpoint()`, confirm the method actually exists on the target module. Luau silently returns nil for missing methods — no error, no warning. The call appears to succeed but does nothing. Always `grep` the module source for the exact method name before wiring.
 - To determine what to wire: read the `.unity` scene file for serialized field references (e.g., `characterController: {fileID: XXXX}` tells you TrackManager needs a reference to CharacterInputController)
 - **Uses the player's Roblox avatar** as the game character when appropriate (e.g., endless runners, platformers). Wait for `player.Character`, get `HumanoidRootPart`, disable default movement (`WalkSpeed=0`, `JumpPower=0`, `JumpHeight=0`). If Step 4.5c chose "scale character down", call `character:ScaleTo(SCALE)` **before** anchoring (scaling requires a brief physics settle — `task.wait(0.1)` after scaling). **Never call `Humanoid:ApplyDescription()` or `Humanoid:ApplyDescriptionReset()` from a LocalScript** — these are server-only APIs and will error on the client, crashing the bootstrap. Then anchor HRP, set initial `CFrame` using the computed `GROUND_Y`, and pass both `transform` and `groundY` to the character controller. Only create a placeholder Part if the game uses a non-humanoid avatar.
 - **Wires input** via `UserInputService.InputBegan` — the transpiler does NOT create input bindings. Map Unity's `Input.GetKeyDown` keycodes to Roblox `Enum.KeyCode` and dispatch to controller methods (`ChangeLane`, `Jump`, `Slide`, etc.).
@@ -421,6 +422,12 @@ Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
   - **CFrame-driven parts** (anchored, moved by setting CFrame each frame): `.Touched` is **unreliable** — Roblox's physics engine doesn't fire touch events for parts moved via CFrame. Use `workspace:GetPartsInPart(part, overlapParams)` in a per-frame `Heartbeat` loop instead. This is the common case for converted games where the character controller directly sets position.
 
   For the per-frame overlap pattern, use an `alreadyHit` set to prevent duplicate triggers per object, and filter out the character's own parts via `OverlapParams.FilterDescendantsInstances`. **Skip fully transparent parts** (`Transparency >= 1.0`) — Unity obstacle prefabs contain shadow planes and invisible collision boxes that don't have colliders in Unity, but `GetPartsInPart` picks them up in Roblox. Without this filter, the player takes damage from invisible geometry. **The bootstrap only wires the signal — the transpiled method decides what to do.** Never add game-specific collision filtering in the bootstrap.
+
+**Player spawn disambiguation.** Unity scenes often have both a "Player" prefab (the character model with camera, weapon slot, etc.) AND a spawn marker part also named "Player." The converter places both in Workspace. When searching for the spawn position, the bootstrap must distinguish between them:
+- The Player **prefab Model** is typically at or near the origin and contains child objects (Camera, WeaponSlot, etc.). It's a Model, not a BasePart.
+- The Player **spawn marker** is a BasePart at the actual starting position.
+- `workspace:FindFirstChild("Player")` returns whichever comes first in the tree — often the prefab Model at origin, not the spawn marker. Use `workspace:GetDescendants()` with filtering: skip any "Player" BasePart whose parent is also a Model named "Player" (that's the prefab, not the spawn marker).
+- **Never let PlayerController independently search for spawn position.** The bootstrap should be the single source of truth — it finds the correct spawn marker and passes it to the controller via the controller's spawn-setting method. The controller should only fall back to `character:GetPivot()` if no spawn was explicitly set.
 
 **Scene object classification — menu vs gameplay environment.**
 Unity scenes contain objects meant for different contexts: menu backgrounds, editor-only preview instances, and gameplay environment (road-side buildings, terrain). The converter places non-prefab scene objects into Workspace. Prefab instances (nodes with `source_prefab_name` set by `resolve_prefab_instances()`) are automatically excluded from Workspace — they already exist as template Models in ReplicatedStorage/Templates and are cloned at runtime by game scripts. Only gameplay environment objects should remain visible during gameplay.
@@ -453,6 +460,7 @@ Write all scripts to `<output_dir>/scripts/`:
 - One file per module (e.g., `TrackManager.lua`, `CharacterController.lua`, `GameState.lua`)
 - `GameBootstrap.lua` — the entry point that wires everything
 - These replace the raw transpiled versions for core systems
+- **No `_meta.json` needed for script types.** The converter auto-detects script type from source: files ending with `return <identifier>` → ModuleScript, files using client APIs (`Players.LocalPlayer`, `UserInputService`, etc.) → LocalScript, everything else → Script. Override via `_meta.json` only when auto-detection is wrong.
 
 #### Decision point
 
@@ -507,7 +515,18 @@ When a MeshPart renders as skeleton bones or wireframe instead of a solid mesh: 
 python3 convert_interactive.py assemble <unity_project_path> <output_dir> 2>/dev/null
 ```
 
-**Decision point:** If mesh decimation significantly reduced meshes, ask about quality adjustment.
+**Terrain handling:** The assembly phase auto-detects Unity TerrainData assets (binary `.asset` files containing heightmaps). If found, it:
+1. Extracts the heightmap (uint16 array), terrain dimensions, and terrain layer names
+2. Downsamples to a 65×65 grid for performance
+3. Generates a `TerrainLoader` ServerScript that uses `Terrain:FillBlock()` with elevation-based materials (Sand < 5 studs, Grass < 20, Ground < 50, Rock ≥ 50)
+4. Adds a water base surrounding the terrain
+5. Saves `terrain_data.json` to the output directory for optional MCP-based terrain painting
+
+**LFS requirement:** If the terrain `.asset` file is a Git LFS pointer (starts with `version https://git-lfs`), the converter will warn but cannot extract terrain data. The user must run `git lfs install && git lfs pull` to download the actual binary.
+
+**MCP-based alternative:** When Roblox Studio is connected via MCP, you can paint terrain directly using `execute_luau` with the generated heightmap data. This produces smoother terrain than the loader script approach because it runs at edit-time rather than at game startup. Read the `terrain_data.json` from the output directory, generate Luau `Terrain:FillBlock()` calls in chunks (max ~10KB per MCP call), and execute them sequentially.
+
+**Decision point:** If mesh decimation significantly reduced meshes, ask about quality adjustment. If terrain was found, confirm it looks correct in Studio.
 
 ### Step 6: Upload (Optional)
 

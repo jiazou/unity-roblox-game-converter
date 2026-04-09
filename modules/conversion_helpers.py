@@ -58,7 +58,7 @@ _COMPONENT_SUGGESTIONS: dict[str, str] = {
     "CharacterController": "Replace with Humanoid or custom character controller in Luau",
     "NavMeshAgent": "Use PathfindingService for AI navigation in Roblox",
     "NavMeshObstacle": "Use PathfindingService modifiers for obstacles",
-    "Terrain": "Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()",
+    "Terrain": "Auto-converted: terrain_converter extracts heightmap and generates TerrainLoader script",
     "TerrainCollider": "Roblox Terrain has built-in collision",
     "LineRenderer": "Use Beam instances or draw lines with Parts",
     "TrailRenderer": "Use Trail instances attached to Parts",
