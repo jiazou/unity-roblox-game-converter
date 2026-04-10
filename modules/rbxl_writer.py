@@ -69,6 +69,12 @@ class RbxPartEntry:
     light_children: list[tuple] = field(default_factory=list)
     sound_children: list[tuple] = field(default_factory=list)
     particle_children: list[tuple] = field(default_factory=list)
+    # Per-sub-mesh colors carried for chain-collapsed FBX placeholders.
+    # Order matches the FBX sub-mesh order (sorted by Unity mesh_file_id).
+    # MeshLoader's multi-mesh assembly applies these to the cloned source
+    # MeshParts so each sub-mesh keeps its original Unity material color
+    # instead of inheriting the topmost placeholder's single color.
+    sub_mesh_colors: list[tuple[float, float, float]] = field(default_factory=list)
 
 
 @dataclass
@@ -213,6 +219,23 @@ def _make_color3(parent: ET.Element, name: str, rgb: tuple[float, float, float])
     ET.SubElement(el, "R").text = f"{rgb[0]:.6f}"
     ET.SubElement(el, "G").text = f"{rgb[1]:.6f}"
     ET.SubElement(el, "B").text = f"{rgb[2]:.6f}"
+    return el
+
+
+def _make_color3uint8(parent: ET.Element, name: str, rgb: tuple[float, float, float]) -> ET.Element:
+    """Pack a 0-1 float RGB tuple into Roblox's Color3uint8 wire format.
+
+    BasePart.Color is serialized as Color3uint8 (a single uint32: 0xFFRRGGBB).
+    The legacy <Color3> element is silently ignored on BaseParts in modern
+    rbxl/rbxlx files — Roblox falls back to BrickColor instead. Use this
+    helper for BasePart.Color to make custom colors actually render.
+    """
+    r = max(0, min(255, round(rgb[0] * 255)))
+    g = max(0, min(255, round(rgb[1] * 255)))
+    b = max(0, min(255, round(rgb[2] * 255)))
+    packed = (0xFF << 24) | (r << 16) | (g << 8) | b
+    el = ET.SubElement(parent, "Color3uint8", name=name)
+    el.text = str(packed)
     return el
 
 
@@ -599,7 +622,7 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
         _make_property(props, "token", "shape", _SHAPE_TOKEN[part.shape])
 
     if part.color3:
-        _make_color3(props, "Color3", part.color3)
+        _make_color3uint8(props, "Color3uint8", part.color3)
     if part.transparency > 0.001:
         _make_property(props, "float", "Transparency", f"{part.transparency:.4f}")
     if not part.can_collide:
@@ -622,6 +645,21 @@ def _make_part(workspace: ET.Element, part: RbxPartEntry) -> ET.Element:
             "write_part: %r is MeshPart with NO SurfaceAppearance at all",
             part.name,
         )
+
+    # Per-sub-mesh colors for chain-collapsed FBX placeholders.
+    # Stored as IntValue children named "SubMeshColor1", "SubMeshColor2", ...
+    # whose Value is the packed Color3uint8 (0xFFRRGGBB).  MeshLoader's
+    # multi-mesh assembly reads these and applies them to source clones in
+    # the same order they appear in the loaded asset.
+    for i, rgb in enumerate(part.sub_mesh_colors, start=1):
+        r = max(0, min(255, round(rgb[0] * 255)))
+        g = max(0, min(255, round(rgb[1] * 255)))
+        b = max(0, min(255, round(rgb[2] * 255)))
+        packed = (0xFF << 24) | (r << 16) | (g << 8) | b
+        iv = ET.SubElement(item, "Item", **{"class": "IntValue"})
+        ivp = ET.SubElement(iv, "Properties")
+        _make_property(ivp, "string", "Name", f"SubMeshColor{i}")
+        _make_property(ivp, "int", "Value", str(packed))
 
     for lc in part.light_children:
         _make_light(item, lc[0], lc[1], lc[2], lc[3], lc[4], lc[5])
