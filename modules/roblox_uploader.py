@@ -24,15 +24,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 ASSET_MAX_BYTES: int = 20 * 1024 * 1024      # 20 MB for assets (decals, meshes, audio)
-PLACE_MAX_BYTES: int = 100 * 1024 * 1024     # 100 MB for place files
-
 
 @dataclass
 class UploadResult:
     """Outcome of a Roblox portal upload attempt."""
     success: bool = False
-    place_id: int | None = None
-    universe_id: int | None = None
     version_number: int | None = None
     asset_ids: dict[str, int] = field(default_factory=dict)  # local_name → rbx asset id
     meshes_uploaded: int = 0
@@ -213,50 +209,6 @@ def _poll_operation(api_key: str, operation_id: str, max_wait: float = 30.0) -> 
 
     raise TimeoutError(f"Operation {operation_id} did not complete within {max_wait}s")
 
-
-def _upload_place(
-    rbxl_path: Path,
-    api_key: str,
-    universe_id: int,
-    place_id: int,
-) -> dict[str, Any]:
-    """
-    Upload a .rbxl file to an existing Roblox place via Open Cloud.
-
-    Uses POST /v2/universes/{universeId}/places/{placeId}/versions
-    """
-    import urllib.request
-    import urllib.error
-
-    # Validate file size before upload
-    file_size = rbxl_path.stat().st_size
-    if file_size > PLACE_MAX_BYTES:
-        raise ValueError(
-            f"Place file too large for Roblox Open Cloud: "
-            f"{file_size / 1_048_576:.1f} MB (limit: {PLACE_MAX_BYTES // 1_048_576} MB)"
-        )
-
-    url = (
-        f"https://apis.roblox.com/universes/v1/"
-        f"{universe_id}/places/{place_id}/versions"
-        f"?versionType=Published"
-    )
-
-    rbxl_bytes = rbxl_path.read_bytes()
-
-    req = urllib.request.Request(
-        url,
-        data=rbxl_bytes,
-        method="POST",
-        headers={
-            "x-api-key": api_key,
-            "Content-Type": "application/octet-stream",
-        },
-    )
-
-    resp = urllib.request.urlopen(req, timeout=120)
-    _check_rate_limit_headers(resp)
-    return json.loads(resp.read().decode("utf-8"))
 
 
 @dataclass
@@ -1278,8 +1230,6 @@ def upload_to_roblox(
     rbxl_path: Path,
     textures_dir: Path | None,
     api_key: str,
-    universe_id: int | None = None,
-    place_id: int | None = None,
     sprites_dir: Path | None = None,
     audio_dir: Path | None = None,
     meshes_dir: Path | None = None,
@@ -1544,41 +1494,15 @@ def upload_to_roblox(
         except Exception as exc:  # noqa: BLE001
             result.warnings.append(f"Failed to patch .rbxl with asset IDs: {exc}")
 
-    # ── Convert XML to binary format (required by Roblox Open Cloud) ──
-    upload_path = rbxl_path
-    if rbxl_path.exists():
-        try:
-            raw = rbxl_path.read_bytes()
-            if raw.lstrip().startswith(b"<?xml"):
-                from modules.rbxl_binary_writer import xml_to_binary
-                binary_path = rbxl_path.with_name(rbxl_path.stem + "_binary.rbxl")
-                xml_to_binary(rbxl_path, binary_path)
-                upload_path = binary_path
-                logger.info("Converted XML .rbxl to binary format for upload")
-        except Exception as exc:  # noqa: BLE001
-            result.warnings.append(f"Binary conversion failed, uploading XML: {exc}")
-
-    # ── Upload place file (after patching) ─────────────────────────────
-    if has_valid_api_key and universe_id and place_id:
-        try:
-            resp = _upload_place(upload_path, api_key, universe_id, place_id)
-            result.place_id = place_id
-            result.universe_id = universe_id
-            result.version_number = resp.get("versionNumber")
-            result.success = True
-        except Exception as exc:  # noqa: BLE001
-            result.errors.append(f"Place upload failed: {_describe_upload_error(exc)}")
-            # M9: classify HTTP 409 as place-not-published
-            import urllib.error
-            if isinstance(exc, urllib.error.HTTPError) and exc.code == 409:
-                result.error_type = "place_not_published"
-                result.suggestion = (
-                    "Open the place in Roblox Studio and publish an initial version first"
-                )
-    else:
-        result.warnings.append(
-            "Place upload skipped: --universe-id and --place-id are required "
-            "to upload to an existing Roblox experience."
-        )
+    # ── Place publishing note ─────────────────────────────────────────
+    # The Open Cloud API strips Script.Source from uploaded binary files
+    # for security.  Assets (meshes, textures, audio) upload correctly via
+    # the API, but the final place must be published through Roblox Studio
+    # (File > Publish to Roblox) to preserve script source code.
+    result.warnings.append(
+        "Place publish via API skipped: Roblox's Open Cloud API strips script "
+        "source code from uploaded files.  Open the .rbxl in Roblox Studio and "
+        "use File > Publish to Roblox to publish with scripts intact."
+    )
 
     return result

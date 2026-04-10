@@ -390,9 +390,12 @@ def apply_materials(
 
         # Apply the first material (Roblox limitation: one material per MeshPart)
         rdef = guid_to_roblox_def[resolved_guids[0]]
-        # Only create SurfaceAppearance if the material has actual texture data.
-        # An empty SurfaceAppearance overrides Color3, making the part white.
-        if rdef.color_map or rdef.normal_map or rdef.metalness_map or rdef.roughness_map:
+        # Only create SurfaceAppearance if the material has a color map (albedo
+        # texture).  SurfaceAppearance completely overrides the Part's Color3 for
+        # rendering — so metalness/roughness maps WITHOUT a color map produce a
+        # white part instead of the intended color.  Better to skip SA entirely
+        # and let Color3 carry the visual.
+        if rdef.color_map:
             sa = roblox_def_to_surface_appearance(rdef)
             part.surface_appearance = sa
             logger.debug("apply_materials: %r → color_map=%s", node.name, sa.color_map)
@@ -682,6 +685,21 @@ def _try_split_multi_material(
     return True
 
 
+def _hide_collapsed_descendants(
+    part: rbxl_writer.RbxPartEntry,
+    node: scene_parser.SceneNode,
+    collapsed_guid: str,
+) -> None:
+    """Recursively hide parts whose mesh was collapsed into a parent."""
+    if node.mesh_guid == collapsed_guid:
+        part.mesh_id = None
+        part.transparency = 1.0
+        part.can_collide = False
+        part.surface_appearance = None
+    for child_part, child_node in zip(part.children, node.children):
+        _hide_collapsed_descendants(child_part, child_node, collapsed_guid)
+
+
 def node_to_part(
     node: scene_parser.SceneNode,
     guid_to_roblox_def: dict[str, material_mapper.RobloxMaterialDef] | None,
@@ -836,18 +854,88 @@ def node_to_part(
         part.transparency = 1.0
         part.can_collide = False
 
+    # ---- FBX sub-mesh collapse ------------------------------------------------
+    # Unity FBX import creates separate child GameObjects for each sub-mesh in
+    # an FBX file — all sharing the same mesh GUID but with different fileIDs.
+    # Roblox MeshPart loads the ENTIRE mesh file; there is no sub-mesh reference.
+    # If we create a MeshPart per child, each one renders the full model,
+    # producing N overlapping copies.
+    #
+    # Detection: parent has no mesh, 2+ children share the same non-builtin mesh
+    # GUID with different mesh_file_ids.
+    # Fix: promote the mesh to the parent, hide children's mesh rendering.
+    _collapsed_mesh_guid: str | None = None
+    if not node.mesh_guid and len(node.children) >= 2:
+        child_mesh_guids: dict[str, set[str | None]] = {}  # guid → set of file_ids
+        for child in node.children:
+            if child.mesh_guid and child.mesh_guid != _BUILTIN_MESH_GUID:
+                child_mesh_guids.setdefault(child.mesh_guid, set()).add(
+                    child.mesh_file_id
+                )
+        for guid, file_ids in child_mesh_guids.items():
+            if len(file_ids) >= 2:
+                # Multiple children reference different sub-meshes of the same FBX.
+                # Promote the full mesh to this parent node.
+                if guid_index:
+                    mesh_path = guid_index.resolve(guid)
+                    if mesh_path:
+                        mesh_str = str(mesh_path)
+                        if mesh_path_remap and mesh_str in mesh_path_remap:
+                            mesh_str = mesh_path_remap[mesh_str]
+                        part.mesh_id = mesh_str
+                        bounds_result = _get_mesh_bounds(mesh_str)
+                        if bounds_result:
+                            mesh_size, mesh_center = bounds_result
+                            part.size = (
+                                mesh_size[0] * world_scale[0],
+                                mesh_size[1] * world_scale[1],
+                                mesh_size[2] * world_scale[2],
+                            )
+                            scaled_center = (
+                                mesh_center[0] * world_scale[0],
+                                mesh_center[1] * world_scale[1],
+                                mesh_center[2] * world_scale[2],
+                            )
+                            rotated_center = _quat_rotate(world_rot, scaled_center)
+                            part.position = (
+                                world_pos[0] + rotated_center[0],
+                                world_pos[1] + rotated_center[1],
+                                world_pos[2] + rotated_center[2],
+                            )
+                        # Apply material from first child that has a renderer
+                        for child in node.children:
+                            if child.mesh_guid == guid:
+                                apply_materials(
+                                    part, child, guid_to_roblox_def,
+                                    guid_to_companion_scripts,
+                                )
+                                break
+                        part.transparency = 0.0
+                        part.can_collide = True
+                        _collapsed_mesh_guid = guid
+                        logger.info(
+                            "node_to_part: %r → collapsed %d FBX sub-meshes "
+                            "(guid=%s) into parent MeshPart",
+                            node.name, len(file_ids), guid[:8],
+                        )
+                break  # only collapse one shared GUID per parent
+
     # Recurse into children to preserve hierarchy (skip nested UI subtrees)
     for child in node.children:
         if _is_ui_subtree(child):
             continue
-        part.children.append(node_to_part(
+        child_part = node_to_part(
             child, guid_to_roblox_def, guid_to_companion_scripts, guid_index,
             mesh_path_remap, directional_lights, component_warnings,
             parent_world_pos=world_pos, parent_world_rot=world_rot,
             parent_world_scale=world_scale,
             vc_baked_textures=vc_baked_textures,
             split_output_dir=split_output_dir,
-        ))
+        )
+        # Hide descendants whose mesh was collapsed into the parent
+        if _collapsed_mesh_guid:
+            _hide_collapsed_descendants(child_part, child, _collapsed_mesh_guid)
+        part.children.append(child_part)
 
     return part
 

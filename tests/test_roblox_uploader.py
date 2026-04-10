@@ -18,7 +18,6 @@ from modules.roblox_uploader import (
     _patch_rbxl_asset_ids,
     upload_to_roblox,
     ASSET_MAX_BYTES,
-    PLACE_MAX_BYTES,
 )
 
 
@@ -53,7 +52,7 @@ class TestUploadSkipScenarios:
     def test_no_api_key(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         rbxl.write_text("<roblox/>")
-        result = upload_to_roblox(rbxl, None, "", None, None)
+        result = upload_to_roblox(rbxl, None, "")
         assert result.skipped is True
         assert result.success is False
         assert len(result.warnings) == 1
@@ -62,64 +61,36 @@ class TestUploadSkipScenarios:
     def test_placeholder_api_key(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "test.rbxl"
         rbxl.write_text("<roblox/>")
-        result = upload_to_roblox(rbxl, None, "PLACEHOLDER", None, None)
+        result = upload_to_roblox(rbxl, None, "PLACEHOLDER")
         assert result.skipped is True
 
     def test_missing_rbxl_file(self, tmp_path: Path) -> None:
         rbxl = tmp_path / "nonexistent.rbxl"
-        result = upload_to_roblox(rbxl, None, "real-api-key-123", 123, 456)
+        result = upload_to_roblox(rbxl, None, "real-api-key-123")
         assert result.success is False
         assert len(result.errors) == 1
         assert "not found" in result.errors[0].lower()
 
-    def test_no_universe_and_place_id(self, tmp_path: Path) -> None:
-        """Valid key but no universe/place IDs → place upload skipped with warning."""
+    def test_valid_key_emits_studio_publish_warning(self, tmp_path: Path) -> None:
+        """Valid key → assets uploaded, but place publish warning is emitted."""
         rbxl = tmp_path / "test.rbxl"
         rbxl.write_text("<roblox/>")
-        result = upload_to_roblox(rbxl, None, "real-api-key-123", None, None)
-        assert result.skipped is False  # not fully skipped — key was valid
-        assert result.success is False
-        assert any("universe-id" in w.lower() or "place-id" in w.lower()
+        result = upload_to_roblox(rbxl, None, "real-api-key-123")
+        assert any("publish" in w.lower() and "studio" in w.lower()
                     for w in result.warnings)
 
 
 # ---------------------------------------------------------------------------
-# upload_to_roblox — mocked HTTP
+# upload_to_roblox — mocked HTTP (asset upload only)
 # ---------------------------------------------------------------------------
 
 class TestUploadWithMockedHTTP:
-    @patch("modules.roblox_uploader._upload_place")
-    def test_successful_place_upload(self, mock_upload: MagicMock, tmp_path: Path) -> None:
-        rbxl = tmp_path / "test.rbxl"
-        rbxl.write_text("<roblox/>")
-        mock_upload.return_value = {"versionNumber": 42}
-
-        result = upload_to_roblox(rbxl, None, "real-key", 111, 222)
-        assert result.success is True
-        assert result.place_id == 222
-        assert result.universe_id == 111
-        assert result.version_number == 42
-        mock_upload.assert_called_once_with(rbxl, "real-key", 111, 222)
-
-    @patch("modules.roblox_uploader._upload_place")
-    def test_place_upload_failure(self, mock_upload: MagicMock, tmp_path: Path) -> None:
-        rbxl = tmp_path / "test.rbxl"
-        rbxl.write_text("<roblox/>")
-        mock_upload.side_effect = Exception("403 Forbidden")
-
-        result = upload_to_roblox(rbxl, None, "real-key", 111, 222)
-        assert result.success is False
-        assert len(result.errors) == 1
-        assert "403 Forbidden" in result.errors[0]
-
     @patch("modules.roblox_uploader._upload_asset")
-    @patch("modules.roblox_uploader._upload_place")
     def test_texture_upload(
-        self, mock_place: MagicMock, mock_img: MagicMock, tmp_path: Path
+        self, mock_img: MagicMock, tmp_path: Path
     ) -> None:
         rbxl = tmp_path / "test.rbxl"
         rbxl.write_text("<roblox/>")
-        mock_place.return_value = {"versionNumber": 1}
 
         tex_dir = tmp_path / "textures"
         tex_dir.mkdir()
@@ -129,34 +100,30 @@ class TestUploadWithMockedHTTP:
 
         mock_img.return_value = {"assetId": 999}
 
-        result = upload_to_roblox(rbxl, tex_dir, "real-key", 111, 222)
-        assert result.success is True
+        result = upload_to_roblox(rbxl, tex_dir, "real-key")
         # Only .png and .jpg should be uploaded (not .txt)
         assert mock_img.call_count == 2
         assert len(result.asset_ids) == 2
 
     @patch("modules.roblox_uploader._upload_asset")
-    @patch("modules.roblox_uploader._upload_place")
     def test_texture_upload_failure_doesnt_crash(
-        self, mock_place: MagicMock, mock_img: MagicMock, tmp_path: Path
+        self, mock_img: MagicMock, tmp_path: Path
     ) -> None:
         rbxl = tmp_path / "test.rbxl"
         rbxl.write_text("<roblox/>")
-        mock_place.return_value = {"versionNumber": 1}
 
         tex_dir = tmp_path / "textures"
         tex_dir.mkdir()
         (tex_dir / "bad.png").write_bytes(b"\x89PNG" + b"\x00" * 10)
         mock_img.side_effect = Exception("Upload failed")
 
-        result = upload_to_roblox(rbxl, tex_dir, "real-key", 111, 222)
-        assert result.success is True  # place upload succeeded
+        result = upload_to_roblox(rbxl, tex_dir, "real-key")
         assert len(result.warnings) >= 1
-        assert "bad.png" in result.warnings[0]
+        assert any("bad.png" in w for w in result.warnings)
 
 
 # ---------------------------------------------------------------------------
-# File size limits
+# _patch_rbxl_asset_ids
 # ---------------------------------------------------------------------------
 
 class TestPatchRbxlAssetIds:
@@ -255,8 +222,5 @@ class TestPatchRbxlAssetIds:
 
 
 class TestFileSizeLimits:
-    def test_place_max_bytes_value(self) -> None:
-        assert PLACE_MAX_BYTES == 100 * 1024 * 1024
-
     def test_asset_max_bytes_value(self) -> None:
         assert ASSET_MAX_BYTES == 20 * 1024 * 1024

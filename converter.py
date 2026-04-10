@@ -71,10 +71,6 @@ from modules.retry import call_with_retry
               help="Include per-script detail in the report.")
 @click.option("--roblox-api-key", default=config.ROBLOX_API_KEY, envvar="ROBLOX_API_KEY",
               help="Roblox Open Cloud API key (required for portal upload).")
-@click.option("--universe-id", default=config.ROBLOX_UNIVERSE_ID, type=int,
-              help="Roblox universe (experience) ID for upload.")
-@click.option("--place-id", default=config.ROBLOX_PLACE_ID, type=int,
-              help="Roblox place ID for upload.")
 @click.option("--decimate/--no-decimate", default=config.MESH_DECIMATION_ENABLED,
               help="Decimate meshes exceeding Roblox polygon limits.")
 @click.option("--emit-packages/--no-packages", default=config.EMIT_PACKAGES,
@@ -85,8 +81,6 @@ def convert(
     api_key: str,
     verbose: bool,
     roblox_api_key: str,
-    universe_id: int | None,
-    place_id: int | None,
     decimate: bool,
     emit_packages: bool,
 ) -> None:
@@ -96,7 +90,7 @@ def convert(
     \b
     Example:
         python converter.py ./MyUnityGame ./roblox_output
-        python converter.py ./MyUnityGame ./out --roblox-api-key KEY --universe-id 123 --place-id 456
+        python converter.py ./MyUnityGame ./out --roblox-api-key KEY
     """
     unity_path = Path(unity_project_path).resolve()
     out_dir = Path(output_dir).resolve()
@@ -549,8 +543,6 @@ def convert(
         audio_dir=audio_dir,
         meshes_dir=meshes_dir,
         api_key=roblox_api_key,
-        universe_id=universe_id,
-        place_id=place_id,
         mesh_texture_map=mesh_texture_map,
         unity_project_path=unity_path,
         asset_cache_path=out_dir / "asset_id_map.json",
@@ -563,8 +555,7 @@ def convert(
         for w in upload_result.warnings:
             click.echo(f"    → {w}")
     elif upload_result.success:
-        click.echo(f"    → Uploaded to place {upload_result.place_id} "
-                   f"(version {upload_result.version_number})")
+        click.echo(f"    → Assets uploaded (version {upload_result.version_number})")
         if upload_result.asset_ids:
             click.echo(f"    → {len(upload_result.asset_ids)} texture(s) uploaded")
     else:
