@@ -1,0 +1,118 @@
+{
+  "unity_project_path": "/home/user/unity-3d-simplefps",
+  "output_dir": "/home/user/unity-fps-output",
+  "completed_phases": [
+    "discover",
+    "inventory",
+    "materials",
+    "transpile",
+    "validate",
+    "assemble",
+    "report"
+  ],
+  "errors": [
+    "Failed to open texture lmb.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/lmb.png'",
+    "Failed to open texture esc.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/esc.png'",
+    "Failed to open texture wasd.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/wasd.png'",
+    "Failed to open texture space.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/space.png'"
+  ],
+  "scene_files": [
+    "/home/user/unity-3d-simplefps/Assets/Scenes/main.unity",
+    "/home/user/unity-3d-simplefps/Assets/Scenes/menu.unity"
+  ],
+  "referenced_material_guids": [
+    "0000000000000000f000000000000000",
+    "02a1601a5fb6a4ea987e0f5c72e7e922",
+    "0ab120f92eecd32488408982c7a8dcd5",
+    "0d50145bee798544d8b27c4702b7e6fe",
+    "126edbef99dfc834c9c2546b8c628941",
+    "1424fba8ccf58db408525d2a56b1c4ff",
+    "1619e27645c26df428cacc5d22264938",
+    "2373532d000362b4f97187dbc5b89819",
+    "25166539dc339184cb61b24dd63c2afb",
+    "2e7a0a54507b88e4fa42eefb8aca12dd",
+    "36d0812a86339d649bf5c86131d7e74f",
+    "37603567838e60e43b4f311e17a85237",
+    "3a3600aa0c690b0499a6943283a42f5b",
+    "3d23ad70a85c9b04d91f7c2975d28af3",
+    "4d44507887e3e9349b29a684b42a4392",
+    "52b7d70b1de7c4ce09662b77c14d9fda",
+    "599ffdfcce243fa4aaac26be96947250",
+    "649c09ecf48fd1e419439ec9fee377dc",
+    "64e706ca09e1d8e47a4dabda31bd2b1b",
+    "656fde119942645aa8e062e04c119aa1",
+    "65dc28d4596ba4d61bb8d67aa2cbd64f",
+    "66e1071157d5769479112915f768f150",
+    "7350b65a6431f604a8496c39db1ac9c5",
+    "77a0a8bcd62a14f75b7cdf253bcb440c",
+    "7b621f3d20f81af4785f8576da7910e2",
+    "85fe9f257c1e2a74e995a4b202fe47eb",
+    "9a96fb19838d47a4aa48e3293607e468",
+    "a338ab56bd3f4d2489193f9726f1b400",
+    "a5f2339f242f6cc41a982ec55ea3c201",
+    "b49510b14bae4114b8069a5809b8eb8b",
+    "b8821eb1e8bc34442b0d9ade6c97aba6",
+    "c55afdc4a8a3b4890b07cc7d176510bb",
+    "dea376d96a33e084bb54684d0922971f",
+    "e633a20421c47426aa04444234225b69",
+    "e8c588fe56f5ea844b2da2485b093b3c",
+    "ef6d68ea93f6a58478de397556093f49",
+    "f82a72c6c8103194eacf960f901b038f"
+  ],
+  "mesh_texture_map": {
+    "/home/user/unity-fps-output/meshes/Girder_Base.FBX": "Mod4_parts_color.png",
+    "/home/user/unity-fps-output/meshes/Girder_Short.FBX": "Mod4_parts_color.png",
+    "/home/user/unity-fps-output/meshes/Camera3.FBX": "Mod4_parts_color.png",
+    "/home/user/unity-fps-output/meshes/Antenna_lg.FBX": "Mod4_parts_color.png",
+    "/home/user/unity-fps-output/meshes/Battery_small_06.FBX": "battery_color.png",
+    "/home/user/unity-fps-output/meshes/HornetRifle.fbx": "HornetRifle_orange_color.png",
+    "/home/user/unity-fps-output/meshes/prop_keycard.fbx": "prop_keycard_plastic_mat_color.png",
+    "/home/user/unity-fps-output/meshes/Battery_medium_05.FBX": "battery_color.png",
+    "/home/user/unity-fps-output/meshes/World War II - Plane - Flying.fbx": "World_War_II_-_Propeller_color.png",
+    "/home/user/unity-fps-output/meshes/crate01.FBX": "crate01_color.png",
+    "/home/user/unity-fps-output/meshes/jerrycan02_prp.fbx": "jerrycans_prp_diffuse_color.png"
+  },
+  "assembly": {
+    "rbxl_path": "/home/user/unity-fps-output/converted_place.rbxl",
+    "parts_written": 723,
+    "scripts_written": 14,
+    "prefab_instances_resolved": 364,
+    "component_warnings": [
+      {
+        "game_object": "Terrain",
+        "component_type": "TerrainCollider",
+        "suggestion": "Roblox Terrain has built-in collision"
+      },
+      {
+        "game_object": "Terrain",
+        "component_type": "Terrain",
+        "suggestion": "Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()"
+      },
+      {
+        "game_object": "CutsceneCamera",
+        "component_type": "AudioListener",
+        "suggestion": "Roblox positions audio listener at the camera automatically"
+      },
+      {
+        "game_object": "Player",
+        "component_type": "CharacterController",
+        "suggestion": "Replace with Humanoid or custom character controller in Luau"
+      },
+      {
+        "game_object": "Main Camera",
+        "component_type": "AudioListener",
+        "suggestion": "Roblox positions audio listener at the camera automatically"
+      },
+      {
+        "game_object": "Terrain",
+        "component_type": "TerrainCollider",
+        "suggestion": "Roblox Terrain has built-in collision"
+      },
+      {
+        "game_object": "Terrain",
+        "component_type": "Terrain",
+        "suggestion": "Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()"
+      }
+    ]
+  }
+}

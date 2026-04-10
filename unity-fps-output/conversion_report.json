@@ -1,0 +1,159 @@
+{
+  "generated_at": "2026-04-08T05:26:18.682383+00:00",
+  "unity_project_path": "/home/user/unity-3d-simplefps",
+  "output_dir": "/home/user/unity-fps-output",
+  "duration_seconds": 20.908035638,
+  "success": false,
+  "errors": [
+    "Failed to open texture lmb.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/lmb.png'",
+    "Failed to open texture esc.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/esc.png'",
+    "Failed to open texture wasd.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/wasd.png'",
+    "Failed to open texture space.png: cannot identify image file '/home/user/unity-3d-simplefps/Assets/Textures/space.png'"
+  ],
+  "warnings": [
+    "TerrainCollider: 2 instance(s) not converted — Roblox Terrain has built-in collision",
+    "Terrain: 2 instance(s) not converted — Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()",
+    "AudioListener: 2 instance(s) not converted — Roblox positions audio listener at the camera automatically",
+    "CharacterController: 1 instance(s) not converted — Replace with Humanoid or custom character controller in Luau"
+  ],
+  "assets": {
+    "total": 455,
+    "by_kind": {
+      "texture": 138,
+      "script": 36,
+      "data": 1,
+      "prefab": 80,
+      "shader": 9,
+      "material": 112,
+      "mesh": 39,
+      "scene": 2,
+      "lighting": 1,
+      "scriptable_object": 4,
+      "animation": 11,
+      "terrain": 5,
+      "audio": 17
+    },
+    "total_size_bytes": 6885041,
+    "duplicates_removed": 0
+  },
+  "materials": {
+    "total": 112,
+    "fully_converted": 46,
+    "partially_converted": 0,
+    "unconvertible": 66,
+    "texture_ops": 21,
+    "unconverted_md_path": "/home/user/unity-fps-output/UNCONVERTED.md"
+  },
+  "scripts": {
+    "total": 36,
+    "succeeded": 0,
+    "flagged_for_review": 36,
+    "skipped": 0,
+    "ai_transpiled": 36,
+    "flagged_scripts": [
+      "PlaneTexture.cs",
+      "Player.cs",
+      "Door.cs",
+      "GameManager.cs",
+      "HostilePlane.cs",
+      "HudControl.cs",
+      "Machine.cs",
+      "Menu.cs",
+      "Mine.cs",
+      "Pickup.cs",
+      "Plane.cs",
+      "PlaneBullet.cs",
+      "SpawnPoint.cs",
+      "Turret.cs",
+      "TurretBullet.cs",
+      "Water.cs",
+      "WaterBase.cs",
+      "Displace.cs",
+      "GerstnerDisplace.cs",
+      "MeshContainer.cs",
+      "PlanarReflection.cs",
+      "SpecularLighting.cs",
+      "WaterTile.cs",
+      "WaterBasic.cs",
+      "AfterburnerPhysicsForce.cs",
+      "ParticleSystemMultiplier.cs",
+      "ExplosionFireAndDebris.cs",
+      "ExplosionPhysicsForce.cs",
+      "ObjectResetter.cs",
+      "Explosive.cs",
+      "ExtinguishableParticleSystem.cs",
+      "FireLight.cs",
+      "Hose.cs",
+      "SmokeParticles.cs",
+      "WaterHoseParticles.cs",
+      "ParticleSystemDestroyer.cs"
+    ]
+  },
+  "scene": {
+    "scenes_parsed": 2,
+    "total_game_objects": 120,
+    "prefabs_parsed": 80,
+    "prefab_instances_resolved": 364,
+    "meshes_decimated": 0,
+    "meshes_compliant": 0
+  },
+  "components": {
+    "total_encountered": 258,
+    "converted": 251,
+    "dropped": 7,
+    "dropped_by_type": {
+      "TerrainCollider": 2,
+      "Terrain": 2,
+      "AudioListener": 2,
+      "CharacterController": 1
+    },
+    "dropped_details": [
+      {
+        "game_object": "Terrain",
+        "component": "TerrainCollider",
+        "suggestion": "Roblox Terrain has built-in collision"
+      },
+      {
+        "game_object": "Terrain",
+        "component": "Terrain",
+        "suggestion": "Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()"
+      },
+      {
+        "game_object": "CutsceneCamera",
+        "component": "AudioListener",
+        "suggestion": "Roblox positions audio listener at the camera automatically"
+      },
+      {
+        "game_object": "Player",
+        "component": "CharacterController",
+        "suggestion": "Replace with Humanoid or custom character controller in Luau"
+      },
+      {
+        "game_object": "Main Camera",
+        "component": "AudioListener",
+        "suggestion": "Roblox positions audio listener at the camera automatically"
+      },
+      {
+        "game_object": "Terrain",
+        "component": "TerrainCollider",
+        "suggestion": "Roblox Terrain has built-in collision"
+      },
+      {
+        "game_object": "Terrain",
+        "component": "Terrain",
+        "suggestion": "Recreate terrain using Roblox Terrain editor or Terrain:FillRegion()"
+      }
+    ]
+  },
+  "output": {
+    "rbxl_path": "/home/user/unity-fps-output/converted_place.rbxl",
+    "parts_written": 723,
+    "scripts_in_place": 14,
+    "report_path": "/home/user/unity-fps-output/conversion_report.json",
+    "packages": {
+      "total_packages": 0,
+      "package_names": [],
+      "packages_dir": ""
+    }
+  }
+}
