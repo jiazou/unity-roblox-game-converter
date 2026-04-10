@@ -855,18 +855,101 @@ def node_to_part(
         part.can_collide = False
 
     # ---- FBX sub-mesh collapse ------------------------------------------------
-    # Unity FBX import creates separate child GameObjects for each sub-mesh in
-    # an FBX file — all sharing the same mesh GUID but with different fileIDs.
-    # Roblox MeshPart loads the ENTIRE mesh file; there is no sub-mesh reference.
-    # If we create a MeshPart per child, each one renders the full model,
-    # producing N overlapping copies.
+    # Unity FBX import creates separate GameObjects for each sub-mesh in an FBX
+    # file — all sharing the same mesh GUID but with different fileIDs. They may
+    # be siblings (e.g., {Tower, TurretBase, Turret} under one parent) or a
+    # nested chain (e.g., Base→Turret→Weapon, each carrying a different sub-mesh
+    # of the same FBX). Roblox MeshPart loads the ENTIRE mesh file; there is no
+    # sub-mesh reference. If we create a MeshPart per node, each one renders the
+    # full model, producing N overlapping copies.
     #
-    # Detection: parent has no mesh, 2+ children share the same non-builtin mesh
-    # GUID with different mesh_file_ids.
-    # Fix: promote the mesh to the parent, hide children's mesh rendering.
+    # Detection: walk the entire subtree (any depth) and find a non-builtin mesh
+    # guid that appears with 2+ distinct mesh_file_ids.
+    #
+    # Fix:
+    #   - Chain case (this node has the shared guid): keep this node's MeshPart
+    #     as the single rendered copy and hide all deeper descendants with the
+    #     same guid.
+    #   - Sibling case (this node has no mesh): promote the full mesh to this
+    #     node and hide all descendants with the same guid.
     _collapsed_mesh_guid: str | None = None
-    if not node.mesh_guid and len(node.children) >= 2:
-        child_mesh_guids: dict[str, set[str | None]] = {}  # guid → set of file_ids
+
+    # Gather (guid → set of file_ids) across all descendants (recursive).
+    descendant_meshes: dict[str, set[str | None]] = {}
+
+    def _gather(n: scene_parser.SceneNode) -> None:
+        for c in n.children:
+            if c.mesh_guid and c.mesh_guid != _BUILTIN_MESH_GUID:
+                descendant_meshes.setdefault(c.mesh_guid, set()).add(c.mesh_file_id)
+            _gather(c)
+
+    _gather(node)
+
+    # Chain case: this node already carries the shared FBX. If any descendant
+    # references the same FBX with a different sub-mesh fileID, the chain
+    # collapses into this node — its MeshPart already loads the full FBX.
+    if (
+        node.mesh_guid
+        and node.mesh_guid != _BUILTIN_MESH_GUID
+        and node.mesh_guid in descendant_meshes
+    ):
+        chain_fids = descendant_meshes[node.mesh_guid]
+        if chain_fids - {node.mesh_file_id}:
+            _collapsed_mesh_guid = node.mesh_guid
+
+            # Carry per-sub-mesh colors so MeshLoader's multi-mesh assembly
+            # can preserve each sub-mesh's original Unity material instead of
+            # tinting everything with the topmost (Tower) placeholder's color.
+            # We gather (mesh_file_id, color3) pairs from this node and any
+            # descendant whose mesh_guid matches, sort by file_id (the FBX
+            # internal sub-mesh order, which matches the order InsertService
+            # returns the source MeshParts in), and store on the part.
+            chain_members: list[tuple[str | None, scene_parser.SceneNode]] = []
+
+            def _gather_chain(n: scene_parser.SceneNode) -> None:
+                if n.mesh_guid == node.mesh_guid:
+                    chain_members.append((n.mesh_file_id, n))
+                for c in n.children:
+                    _gather_chain(c)
+
+            _gather_chain(node)
+
+            def _fid_key(item: tuple[str | None, scene_parser.SceneNode]) -> int:
+                fid = item[0]
+                try:
+                    return int(fid) if fid is not None else 0
+                except (TypeError, ValueError):
+                    return 0
+
+            chain_members.sort(key=_fid_key)
+            sub_colors: list[tuple[float, float, float]] = []
+            for _fid, member in chain_members:
+                tmp = rbxl_writer.RbxPartEntry(name=member.name)
+                apply_materials(
+                    tmp, member, guid_to_roblox_def,
+                    guid_to_companion_scripts,
+                )
+                if tmp.color3:
+                    sub_colors.append(tmp.color3)
+                else:
+                    # Fall back to a neutral grey so order alignment with
+                    # source MeshParts is preserved even when a chain member
+                    # has no resolvable material.
+                    sub_colors.append((0.639, 0.639, 0.639))
+            part.sub_mesh_colors = sub_colors
+
+            logger.info(
+                "node_to_part: %r → collapsed FBX chain (guid=%s, %d sub-mesh "
+                "descendants, %d colors) into self",
+                node.name, node.mesh_guid[:8], len(chain_fids), len(sub_colors),
+            )
+
+    if not _collapsed_mesh_guid and not node.mesh_guid and len(node.children) >= 2:
+        # Sibling case: only look at DIRECT children. Recursive descent here
+        # would falsely collapse a container of N independent turret instances
+        # (each itself a chain of sub-meshes) into a single MeshPart, because
+        # the same FBX guid appears across many cousins with multiple file_ids.
+        child_mesh_guids: dict[str, set[str | None]] = {}
         for child in node.children:
             if child.mesh_guid and child.mesh_guid != _BUILTIN_MESH_GUID:
                 child_mesh_guids.setdefault(child.mesh_guid, set()).add(
@@ -1223,10 +1306,55 @@ def generate_prefab_packages(
 _MESH_EXTENSIONS: set[str] = {".fbx", ".obj", ".dae"}
 
 
+def _resolve_fbx_auto_materials(
+    fbx_path: Path,
+    guid_index: guid_resolver.GuidIndex,
+) -> list[str]:
+    """Find materials that Unity's importer would auto-bind to a directly-placed FBX.
+
+    Unity's FBX importer (with the default ``materialSearch=Recursive`` and
+    ``materialName=ByBaseTextureName``) auto-resolves materials by searching
+    for ``.mat`` files near the FBX.  We mirror that with a simple, robust
+    heuristic: collect ``.mat`` files in the FBX's own directory and in any
+    sibling ``Materials/`` folder, prefer one whose stem matches the FBX
+    stem, and otherwise return all candidates.
+
+    Returns a list of material GUIDs in renderer-slot order.  Empty list if
+    nothing matches — apply_materials() will then leave the part untouched
+    and the BrickColor fallback will render.
+    """
+    fbx_dir = fbx_path.parent
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+    for d in (fbx_dir / "Materials", fbx_dir):
+        if not d.is_dir():
+            continue
+        for mat in sorted(d.glob("*.mat")):
+            r = mat.resolve()
+            if r in seen:
+                continue
+            seen.add(r)
+            candidates.append(mat)
+    if not candidates:
+        return []
+
+    stem = fbx_path.stem.lower()
+    preferred = [m for m in candidates if m.stem.lower() == stem]
+    chosen = preferred or candidates[:1]
+
+    guids: list[str] = []
+    for mat in chosen:
+        g = guid_index.guid_for_path(mat.resolve())
+        if g:
+            guids.append(g)
+    return guids
+
+
 def _create_fbx_scene_node(
     asset_path: Path,
     guid: str,
     modifications: list[dict],
+    guid_index: guid_resolver.GuidIndex,
 ) -> scene_parser.SceneNode:
     """Create a SceneNode for a directly-placed FBX/OBJ/DAE model.
 
@@ -1240,6 +1368,10 @@ def _create_fbx_scene_node(
     GameObject and 400000 for its Transform component.  We set these on the
     node so that apply_prefab_modifications() can match the modification
     targets correctly (position, rotation, scale, name).
+
+    A synthetic MeshRenderer with auto-resolved material GUIDs is also
+    attached so apply_materials() can set the part's Color3 — without this,
+    directly-instanced FBXes render with the default BrickColor.
     """
     name = asset_path.stem
     node = scene_parser.SceneNode(
@@ -1261,6 +1393,20 @@ def _create_fbx_scene_node(
         file_id="400000",
         properties={},
     ))
+    # Synthesize a MeshRenderer carrying Unity's auto-resolved materials so
+    # apply_materials() can wire colors/textures onto the placeholder part.
+    auto_mat_guids = _resolve_fbx_auto_materials(asset_path, guid_index)
+    if auto_mat_guids:
+        node.components.append(scene_parser.ComponentData(
+            component_type="MeshRenderer",
+            file_id="2300000",  # Unity FBX MeshRenderer fileID
+            properties={
+                "m_Materials": [
+                    {"fileID": 2100000, "guid": g, "type": 2}
+                    for g in auto_mat_guids
+                ],
+            },
+        ))
     # Apply position/rotation/scale modifications from the PrefabInstance
     apply_prefab_modifications(node, modifications)
     return node
@@ -1315,8 +1461,17 @@ def resolve_prefab_instances(
 
                 root_node = _create_fbx_scene_node(
                     asset_path, pi.source_prefab_guid, pi.modifications,
+                    guid_index,
                 )
                 scene.referenced_mesh_guids.add(pi.source_prefab_guid)
+                # Pull in the auto-resolved material GUIDs so the material
+                # mapping phase produces RobloxMaterialDefs for them.
+                for comp in root_node.components:
+                    if comp.component_type == "MeshRenderer":
+                        for mref in comp.properties.get("m_Materials", []):
+                            mguid = mref.get("guid", "") if isinstance(mref, dict) else ""
+                            if mguid:
+                                scene.referenced_material_guids.add(mguid)
 
             # Look up parent node: transform_parent_file_id may reference a
             # Transform component rather than a GameObject, so check both.

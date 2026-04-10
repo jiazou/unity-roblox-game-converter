@@ -924,6 +924,9 @@ local function loadOneAsset(asset)
             end
 
             if #sourceParts > 0 then
+                -- Brief yield to let mesh data stream in after InsertService load
+                task.wait(0.1)
+
                 -- Find all placeholder MeshParts in Workspace and ReplicatedStorage
                 -- whose MeshId matches this asset's ID.
                 local allParts = findMeshParts(Workspace)
@@ -944,6 +947,7 @@ local function loadOneAsset(asset)
                     return sourceParts[1]
                 end
 
+                -- Replace a single placeholder with a single source sub-mesh
                 local function replacePart(part)
                     local src = findBestSource(part.Name)
                     local replacement = src:Clone()
@@ -955,6 +959,51 @@ local function loadOneAsset(asset)
                     replacement.Color = part.Color
                     replacement.Size = part.Size
 
+                    -- Transfer SurfaceAppearances from placeholder
+                    local placeholderSAs = {{}}
+                    for _, child in ipairs(part:GetChildren()) do
+                        if child:IsA("SurfaceAppearance") then
+                            table.insert(placeholderSAs, child)
+                        end
+                    end
+                    if #placeholderSAs > 0 then
+                        for _, child in ipairs(replacement:GetChildren()) do
+                            if child:IsA("SurfaceAppearance") then
+                                child:Destroy()
+                            end
+                        end
+                        for _, sa in ipairs(placeholderSAs) do
+                            sa.Parent = replacement
+                        end
+                    end
+
+                    -- Reparent children from placeholder, hiding sub-parts
+                    for _, child in ipairs(part:GetChildren()) do
+                        if not child:IsA("SurfaceAppearance") then
+                            if child:IsA("BasePart") then
+                                child.Transparency = 1
+                                child.CanCollide = false
+                            end
+                            child.Parent = replacement
+                        end
+                    end
+
+                    if matchCount == 0 then
+                        print("[MeshLoader]   " .. asset.name .. ": meshId=" .. tostring(src.MeshId) .. " size=" .. tostring(replacement.Size))
+                    end
+
+                    replacement.Parent = part.Parent
+                    part:Destroy()
+                    matchCount = matchCount + 1
+                    replaced = replaced + 1
+                end
+
+                -- Replace a single placeholder with ALL source sub-meshes as a Model
+                local function replacePartMultiMesh(part)
+                    local wrapper = Instance.new("Model")
+                    wrapper.Name = part.Name
+
+                    -- Collect placeholder SurfaceAppearances
                     local placeholderSAs = {{}}
                     for _, child in ipairs(part:GetChildren()) do
                         if child:IsA("SurfaceAppearance") then
@@ -962,29 +1011,111 @@ local function loadOneAsset(asset)
                         end
                     end
 
-                    if #placeholderSAs > 0 then
-                        for _, child in ipairs(replacement:GetChildren()) do
-                            if child:IsA("SurfaceAppearance") then
-                                child:Destroy()
+                    -- Per-sub-mesh colors written by the converter for chain-
+                    -- collapsed FBX placeholders.  Each IntValue named
+                    -- "SubMeshColorN" carries a packed Color3uint8 for the
+                    -- N-th source sub-mesh (sorted by Unity mesh fileID,
+                    -- which matches the order InsertService returns parts).
+                    local subMeshColors = {{}}
+                    while true do
+                        local iv = part:FindFirstChild("SubMeshColor" .. (#subMeshColors + 1))
+                        if not iv or not iv:IsA("IntValue") then break end
+                        local packed = iv.Value
+                        local r = math.floor(packed / 65536) % 256
+                        local g = math.floor(packed / 256) % 256
+                        local b = packed % 256
+                        table.insert(subMeshColors, Color3.fromRGB(r, g, b))
+                    end
+
+                    -- Clone each source sub-mesh into the wrapper.
+                    -- Preserve per-sub-mesh materials from the FBX upload:
+                    --  - If the clone already has a SurfaceAppearance, keep it.
+                    --  - Else if the clone has a baked TextureID (from FBX), keep it
+                    --    and do NOT apply the placeholder SA — the placeholder SA
+                    --    comes from a single Unity .mat and would clobber the
+                    --    per-sub-mesh FBX textures, rendering everything with one
+                    --    material (often appearing all-white/tinted).
+                    --  - Else fall back to the placeholder SA so the part isn't bare.
+                    -- Always propagate the placeholder's Color/Material to clones —
+                    -- the InsertService source comes back with Roblox default gray
+                    -- (0.639), but the placeholder carries the Unity .mat color.
+                    local firstClone = nil
+                    for i, src in ipairs(sourceParts) do
+                        local clone = src:Clone()
+                        clone.Anchored = true
+                        local cloneHasSA = false
+                        for _, existingSA in ipairs(clone:GetChildren()) do
+                            if existingSA:IsA("SurfaceAppearance") then
+                                cloneHasSA = true
+                                break
                             end
+                        end
+                        local cloneHasTex = tostring(clone.TextureID) ~= ""
+                        if not cloneHasSA and not cloneHasTex and #placeholderSAs > 0 then
+                            for _, sa in ipairs(placeholderSAs) do
+                                sa:Clone().Parent = clone
+                            end
+                        end
+                        -- Per-sub-mesh color from the chain-collapsed
+                        -- placeholder takes precedence; otherwise inherit
+                        -- the placeholder's single color so solid-color
+                        -- Unity materials still render with the intended hue.
+                        if subMeshColors[i] then
+                            clone.Color = subMeshColors[i]
+                        else
+                            clone.Color = part.Color
+                        end
+                        clone.Material = part.Material
+                        clone.Parent = wrapper
+                        if not firstClone then firstClone = clone end
+                    end
+
+                    if firstClone then
+                        wrapper.PrimaryPart = firstClone
+                    end
+
+                    wrapper.Parent = part.Parent
+
+                    -- Scale the assembled model to match the placeholder's
+                    -- size. FBX assets often upload at a different unit scale
+                    -- than Unity's intended size, leaving sub-meshes at e.g.
+                    -- 0.02 studs each. Compute a uniform scale from natural
+                    -- extents to placeholder size (preserves aspect ratio).
+                    local natural = wrapper:GetExtentsSize()
+                    if natural.X > 0 and natural.Y > 0 and natural.Z > 0 then
+                        local sx = part.Size.X / natural.X
+                        local sy = part.Size.Y / natural.Y
+                        local sz = part.Size.Z / natural.Z
+                        local uniformScale = math.max(sx, sy, sz)
+                        if uniformScale > 0 and math.abs(uniformScale - 1) > 0.01 then
+                            wrapper:ScaleTo(uniformScale)
                         end
                     end
 
+                    wrapper:PivotTo(part.CFrame)
+
+                    -- Reparent non-SA children from placeholder (after scale/pivot
+                    -- so they aren't affected by the wrapper transform).
+                    -- Drop the SubMeshColor IntValues — they were only carriers
+                    -- for the per-clone colors applied above.
                     for _, child in ipairs(part:GetChildren()) do
-                        child.Parent = replacement
+                        if child:IsA("SurfaceAppearance") then
+                            -- already cloned onto sub-mesh clones
+                        elseif child:IsA("IntValue") and child.Name:match("^SubMeshColor%d+$") then
+                            child:Destroy()
+                        else
+                            if child:IsA("BasePart") then
+                                child.Transparency = 1
+                                child.CanCollide = false
+                            end
+                            child.Parent = wrapper
+                        end
                     end
 
                     if matchCount == 0 then
-                        local finalSACount = 0
-                        for _, child in ipairs(replacement:GetChildren()) do
-                            if child:IsA("SurfaceAppearance") then
-                                finalSACount = finalSACount + 1
-                            end
-                        end
-                        print("[MeshLoader]   " .. asset.name .. ": transferred " .. #placeholderSAs .. " SA(s) from placeholder, final SA count=" .. finalSACount)
+                        print("[MeshLoader]   " .. asset.name .. ": multi-mesh (" .. #sourceParts .. " sub-meshes)")
                     end
 
-                    replacement.Parent = part.Parent
                     part:Destroy()
                     matchCount = matchCount + 1
                     replaced = replaced + 1
@@ -1018,13 +1149,17 @@ local function loadOneAsset(asset)
                     end
                 end
 
+                -- Count total matching placeholders across all parents to decide strategy.
+                -- If total < #sourceParts, the converter created one placeholder per FBX
+                -- (couldn't decompose sub-meshes) -> use multi-mesh assembly.
+                -- If total >= #sourceParts, there are enough placeholders for 1:1 matching.
+                local totalMatchingParts = 0
+                for _, parts in pairs(partsByParent) do
+                    totalMatchingParts = totalMatchingParts + #parts
+                end
+                local useMultiMesh = totalMatchingParts < #sourceParts and #sourceParts > 1
+
                 for _parentKey, parts in pairs(partsByParent) do
-                    -- Check if placeholders are repeated instances of the same
-                    -- mesh (BrickWall, BrickWall (1), BrickWall (2)) vs different
-                    -- sub-meshes combined into one asset (BinBase, BinTop, TrashBag).
-                    -- Same base name = separate instances at different positions;
-                    -- replace each one. Different base names = combined sub-meshes;
-                    -- dedup by replacing first and destroying extras.
                     local baseNames = {{}}
                     for _, part in ipairs(parts) do
                         baseNames[baseName(part.Name)] = true
@@ -1032,7 +1167,20 @@ local function loadOneAsset(asset)
                     local uniqueBaseCount = 0
                     for _ in pairs(baseNames) do uniqueBaseCount = uniqueBaseCount + 1 end
 
-                    if uniqueBaseCount <= 1 or #sourceParts >= #parts then
+                    if useMultiMesh and #parts == 1 then
+                        -- Single placeholder but multiple source sub-meshes:
+                        -- assemble all sub-meshes into a Model at the placeholder's position
+                        replacePartMultiMesh(parts[1])
+                    elseif uniqueBaseCount == 1 and #sourceParts > 1 then
+                        -- Repeated instances of the same multi-mesh asset
+                        -- (e.g. 19 "Turret" placeholders, each representing the
+                        -- full turret). Assemble the multi-mesh Model at each
+                        -- placeholder's CFrame — a single squished sub-mesh
+                        -- would render as a tiny cylinder.
+                        for _, part in ipairs(parts) do
+                            replacePartMultiMesh(part)
+                        end
+                    elseif uniqueBaseCount <= 1 or #sourceParts >= #parts then
                         -- Same base name (repeated instances) or enough source
                         -- parts — replace each placeholder individually.
                         for _, part in ipairs(parts) do
@@ -1049,14 +1197,23 @@ local function loadOneAsset(asset)
                     end
                 end
 
-                -- Store template in ReplicatedStorage/Templates for TrackManager cloning.
-                local template = sourceParts[1]:Clone()
-                template.Name = asset.name
-                -- Remove loaded mesh's SA from template if we have a better one
-                if matchCount > 0 then
-                    -- Find the first replaced part's SA to copy to template
-                    -- (we can't access the destroyed placeholder, but the
-                    --  replacements in allParts have the transferred SAs)
+                -- Store template in ReplicatedStorage/Templates for cloning.
+                local template
+                if #sourceParts > 1 then
+                    -- Multi-mesh: store as a Model containing all sub-meshes
+                    template = Instance.new("Model")
+                    template.Name = asset.name
+                    local firstPart = nil
+                    for _, src in ipairs(sourceParts) do
+                        local c = src:Clone()
+                        c.Anchored = true
+                        c.Parent = template
+                        if not firstPart then firstPart = c end
+                    end
+                    if firstPart then template.PrimaryPart = firstPart end
+                else
+                    template = sourceParts[1]:Clone()
+                    template.Name = asset.name
                 end
                 template.Parent = Templates
 
@@ -1345,10 +1502,12 @@ def upload_to_roblox(
             else:
                 logger.warning("Mesh %s: will be uploaded WITHOUT texture", mesh_path.name)
 
-            # Convert FBX → GLB with embedded texture
+            # Upload FBX directly — Roblox Open Cloud handles FBX natively.
+            # GLB conversion merges sub-meshes into one MeshPart, losing
+            # multi-mesh detail (rifles, complex props). FBX preserves them.
+            upload_path = mesh_path
+            # Still check for skinning data via GLB conversion (metadata only)
             glb_result = _convert_fbx_to_glb(mesh_path, tex_path, glb_dir)
-            glb_path = glb_result.glb_path
-            upload_path = glb_path if glb_path else mesh_path
             if glb_result.had_skinning:
                 result.skinned_meshes.add(mesh_path.stem)
 
