@@ -10,540 +10,128 @@ allowed-tools:
 
 # Convert Unity Project to Roblox
 
-Interactive, phase-based conversion of a Unity game project into a Roblox place (.rbxl). Pause at each decision point for human judgment — do NOT run the pipeline blindly.
+Interactive, phase-based conversion of a Unity game project into a Roblox place (`.rbxl`). The agent pauses at each decision point and decides autonomously based on documented factors. All commands output structured JSON to stdout; redirect stderr (`2>/dev/null`) to keep output clean.
 
-All commands output structured JSON to stdout. Redirect stderr (`2>/dev/null`) to keep output clean.
+## How to use this skill
+
+**This file is a thin orchestrator.** Detailed rules live in `references/`. At the start of each phase, you **MUST** `Read` the referenced file(s) before running the phase command. Do not skip Reads — the one-line teasers here are navigation aids, not substitutes.
+
+If you find yourself guessing at a rule, you skipped a Read. Stop and load the relevant phase file.
+
+## Universal rules (apply to every phase)
+
+These are the rules most likely to cause silent failures if forgotten. Full detail in `references/phase-4.5-universal-rules.md`.
+
+- **No renderer = invisible.** Every converted Part without a renderer must have `Transparency=1`. Roblox renders gray blocks by default; Unity does not.
+- **Heartbeat wiring.** A Luau method named `Update` does nothing unless you connect it via `RunService.Heartbeat`.
+- **Signal callbacks cannot yield.** `task.wait()` inside `Heartbeat:Connect` / `Touched:Connect` silently stops execution. Wrap yielding bodies in `task.spawn`.
+- **Part size cap.** Roblox Parts silently fail to render above 2048 studs on any axis. Clamp or tile.
+- **ScreenGui placement.** Always place converted ScreenGuis in `ReplicatedStorage` with `Enabled=false`. Never in `StarterGui`.
+- **Faithful port over workarounds.** If Unity generates content at runtime, the Roblox port must too. Port the system, not the symptom.
+- **Bridge modules (`bridge/`) are reusable.** Never modify them for one game. Game-specific scripts live in `<output_dir>/scripts/`.
+- **The agent decides.** Each decision point names Question / Factors / Options / Escape hatch. Decide autonomously based on the factors; escalate only when genuinely ambiguous.
+
+## Reference files
+
+| File | When to read | Topic |
+|---|---|---|
+| `references/INDEX.md` | Before first use | File inventory and house rules |
+| `references/phase-1-discovery.md` | Step 1 | Scene selection, parse errors |
+| `references/phase-2-inventory.md` | Step 2 | Duplicate GUIDs, orphaned assets |
+| `references/phase-3-materials.md` | Step 3 | Material mapping, SurfaceAppearance, split meshes |
+| `references/phase-4-transpilation.md` | Step 4 | Transpile errors, per-script review |
+| `references/phase-4.5-overview.md` | Start of 4.5 | Router + dependency DAG for 4.5 sub-files |
+| `references/phase-4.5-architecture-map.md` | 4.5a | State machines, ownership, timing |
+| `references/phase-4.5-divergence-and-scale.md` | 4.5b, 4.5c | Character/camera/input overrides, scale, mesh facing |
+| `references/phase-4.5-universal-rules.md` | 4.5d, 4.5e | Game loop, yielding, visibility, assets, ScreenGui |
+| `references/phase-4.5-animation.md` | 4.5g | Transform animation, root motion, particles |
+| `references/phase-4.5-runtime-content.md` | 4.5f, 4.5h | Runtime spawning, templates, movement |
+| `references/phase-4.5-transpiler-gaps.md` | 4.5h | Semantic gaps where transpiled Luau silently breaks |
+| `references/phase-4.5-module-rewrite.md` | 4.5h, 4.5i | Module-per-component rules, bootstrap wiring |
+| `references/phase-5-assembly.md` | Step 5 | Terrain, LFS, MCP painting |
+| `references/phase-6-upload.md` | Step 6 | Two-stage upload, Studio publish |
+| `references/upload-patching.md` | Step 6 detail | Asset ID patching internals |
 
 ## Workflow
 
 ### Step 0: Gather Inputs & Preflight
 
-Ask the user for the Unity project path, output directory, and whether they want AI-assisted transpilation. If provided as arguments, parse from args.
+Parse `<unity_project_path>` and `<output_dir>` from arguments, or ask the user. Also ask whether they want AI-assisted transpilation (needs an Anthropic API key).
 
 ```bash
 python3 convert_interactive.py preflight <unity_project_path> <output_dir> --install 2>/dev/null
 ```
 
-If resuming, check `python3 convert_interactive.py status <output_dir> 2>/dev/null`.
+If resuming an existing conversion:
+
+```bash
+python3 convert_interactive.py status <output_dir> 2>/dev/null
+```
 
 ### Step 1: Discovery
+
+**Read `references/phase-1-discovery.md`** — covers scene selection and parse-error decisions.
+
+Teaser: pick the primary gameplay scene by size + dependency count + name signals; abort only on high parse-error rate in the primary scene.
 
 ```bash
 python3 convert_interactive.py discover <unity_project_path> <output_dir> 2>/dev/null
 ```
 
-**Decision point:** If multiple scenes, ask which to include. If parse errors, ask whether to continue.
-
 ### Step 2: Asset Inventory
+
+**Read `references/phase-2-inventory.md`** — covers duplicate GUIDs and orphaned assets.
+
+Teaser: keep the referenced copy of duplicate GUIDs; skip orphans unless the project uses Resources/Addressables.
 
 ```bash
 python3 convert_interactive.py inventory <unity_project_path> <output_dir> 2>/dev/null
 ```
 
-**Decision point:** If duplicate GUIDs or orphans, warn and ask how to proceed.
-
 ### Step 3: Material Mapping
+
+**Read `references/phase-3-materials.md`** — covers partial materials, SurfaceAppearance rules, opaque-mode alpha bug, split meshes.
+
+Teaser: SurfaceAppearance without a ColorMap makes parts white; only create it when `rdef.color_map` is present.
 
 ```bash
 python3 convert_interactive.py materials <unity_project_path> <output_dir> 2>/dev/null
 ```
 
-**Decision point:** For unconvertible/partial materials — accept, provide manual mappings, or skip?
-
 ### Step 4: Code Transpilation
+
+**Read `references/phase-4-transpilation.md`** — covers structured error handling and per-script review.
+
+Teaser: `insufficient_credits` / `auth_failure` are terminal — do NOT retry. For flagged scripts, decide Accept / Retry / Edit / Skip based on script criticality and diff size.
 
 ```bash
 python3 convert_interactive.py transpile <unity_project_path> <output_dir> --api-key <key> 2>/dev/null
+python3 convert_interactive.py validate <output_dir> 2>/dev/null
 ```
 
-Handle structured errors: `"insufficient_credits"` / `"auth_failure"` — don't retry, ask user to check their API key. If `"batch_review_suggested": true`, offer batch options.
+### Step 4.5: Game Logic Porting
 
-**Decision point:** For each flagged script, show C# and Luau side-by-side. Ask: Accept, Retry with AI, Edit manually, or Skip?
+**Read `references/phase-4.5-overview.md` first** — it routes you to the seven sub-phase files and defines the dependency DAG.
 
-After review, validate: `python3 convert_interactive.py validate <output_dir> 2>/dev/null`
+Teaser: the transpiler converts files independently; 4.5 provides cross-file architectural awareness. Do NOT flatten the game into a monolithic script — mirror the Unity component separation, state machine, and timing model. **Faithful port over workarounds.**
 
-### Step 4.5: Game Logic Porting (LLM Rewrite)
-
-The AI transpiler converts each file independently. This step provides cross-file architectural awareness — ensuring state machines, component wiring, and platform-specific adaptations are coherent across the full game.
-
-**Do NOT flatten the game into a monolithic script.** The Roblox port must mirror the original Unity project's component separation, state machine structure, and timing models.
-
-#### Step 4.5a: Architecture Map
-
-Read all C# scripts in `<unity_project_path>/Assets/Scripts/` and produce:
-
-1. **State machine identification** — Find the game's state machine (often a `GameManager` with `AState` subclasses). Map out:
-   - What states exist (e.g., `LoadoutState`, `GameState`, `GameOverState`)
-   - State transitions: which state switches/pushes/pops to which, and what triggers it
-   - What each state's `Enter`/`Exit`/`Tick` does
-
-2. **Component ownership graph** — Map which MonoBehaviour owns references to which:
-   - e.g., `GameState` → `TrackManager` → `CharacterInputController` → `Character`
-   - Inspector-assigned references become constructor/config wiring in Luau
-   - Identify singletons (`static instance` pattern) — these become module-level state
-
-3. **Timing model** — Identify whether game mechanics use:
-   - **Time-based**: `Time.deltaTime` for durations (simple, direct bridge mapping)
-   - **World-distance-based**: e.g., jump/slide measured by `worldDistance` traveled, not elapsed time. Many endless runners scale by `(1 + speedRatio)`. The Roblox port MUST preserve this.
-   - **Coroutine-based**: `StartCoroutine` + `yield return` for sequenced events (map to `task.spawn` + `task.wait`)
-
-**Decision point:** Present the architecture map to the user. Ask: "Does this match your understanding of the game?"
-
-#### Step 4.5b: Character, Camera & Movement Divergence
-
-Unity is a blank canvas: no default character, camera, input, or physics. Roblox provides all of these. For each pillar below, read the Unity C# code and answer: **"Does the Unity game do this itself?"** Then decide: **"Does Roblox's default do the same thing, or do we need to override it?"**
-
-**Character:**
-- Unity: No character exists until you Instantiate one and attach scripts
-- Roblox: Player gets a Humanoid rig with health, collision, animation
-- Override when: the game uses a custom character controller, non-humanoid avatar, or no visible character
-
-**Camera:**
-- Unity: No camera behavior until you write a script or attach a component
-- Roblox: Third-person follow camera that orbits the character
-- Override when: the game uses fixed camera, rail camera, top-down, isometric, or any non-orbit view
-
-**Input → Movement:**
-- Unity: No movement until you write `Update()` + `transform.Translate()` or a CharacterController
-- Roblox: WASD/mobile stick moves the character, Space jumps, Humanoid handles it all
-- Override when: the game uses custom movement (auto-run, on-rails, grid-based, turn-based, vehicle, etc.)
-
-**Character positioning:**
-- Unity: `Transform.position` is set by the scene or by code. No "default spawn."
-- Roblox: Spawns at a `SpawnLocation` or the origin
-- Override: After anchoring HRP and disabling default movement, set `hrp.CFrame` to the game's starting location. Without this, the avatar floats at the default spawn point.
-
-For each pillar where the Unity game diverges:
-- Identify exactly what the Unity code does (e.g., "TrackManager sets character position each frame from a spline curve")
-- Decide how to override the Roblox default (e.g., "Anchor HumanoidRootPart, set WalkSpeed=0, drive CFrame from script")
-- If too complex to port fully, design a simpler approximation that preserves gameplay feel
-
-**This is a design decision, not a checklist.** Present to the user and ask which approach they want for each pillar.
-
-#### Step 4.5c: Scale & Positioning
-
-Unity uses 1 unit ≈ 1 meter. Roblox avatars are ~5.5 studs tall vs Unity's ~1.8 units. The converter passes positions 1:1 (no scale transform), so the Roblox avatar is ~4x larger than a typical Unity character.
-
-**Decision framework — pick one:**
-- **Scale character down** (preferred for dense scene geometry like endless runners): `character:ScaleTo(SCALE)` with `SCALE = unity_character_height / roblox_avatar_height` (typically 0.2–0.3). Also adjust: `laneOffset`, `groundY`, camera offset, road/lane stripe geometry.
-- **Scale world up**: Multiply all positions/sizes by a uniform factor. Simpler but requires re-running the converter and may break mesh proportions.
-- **Hybrid**: Scale gameplay values without changing visual scale. Quickest hack but produces visual mismatch.
-
-**Implementation for "scale character down":**
-1. Measure Unity character height from collider or mesh bounds
-2. Compute `SCALE = unity_height / roblox_height`
-3. Bootstrap: `character:ScaleTo(SCALE)`, wait `task.wait(0.1)` for physics, then anchor HRP
-4. `GROUND_Y = default_hrp_height × SCALE` (e.g., 2.5 × 0.25 = 0.625)
-5. Pass `groundY` to character controller; pass Unity's original `laneOffset` to TrackManager
-6. Scale camera offset proportionally
-7. Scale road/lane stripe widths to match Unity lane geometry
-8. **Do NOT scale runtime-spawned content by default.** When the character is scaled down, both the character and the converted world geometry are at Unity scale — the character was the only thing out of proportion. Cloned templates from ReplicatedStorage are already at the correct Unity scale. Scaling them by the character scale factor makes them too small (e.g., a 0.74-stud coin scaled by 0.25 becomes 0.18 studs — nearly invisible). **Only scale spawned content if the Unity game explicitly scales instantiated objects in code**, or if the template dimensions are clearly mismatched with the scene geometry. **`Model:ScaleTo()` only works on Models, not individual BaseParts.** If you do need to scale, use a helper:
-   ```lua
-   if clone:IsA("Model") then clone:ScaleTo(SCALE)
-   elseif clone:IsA("BasePart") then clone.Size = clone.Size * SCALE end
-   ```
-
-**Pipeline detail:** Unity stores transforms as local-space. The converter computes world-space positions recursively (`world_pos = parent_pos + parent_rot * local_pos`). Scale accumulates hierarchically (`world_scale = parent_scale × node_scale`). If objects cluster at the origin, check `conversion_helpers.py:_compute_world_transform()`.
-
-**Mesh bounding box sizing and FBX units.**
-MeshPart sizes are derived from the FBX bounding box in `_get_fbx_bounds()`, scaled by the FBX `UnitScaleFactor` and Unity's `.fbx.meta` import settings (`globalScale`, `useFileScale`). Three things must be correct for mesh sizes to match Unity:
-- **UnitScaleFactor** — stored in the FBX binary; `1.0` = centimeters (scale by 0.01), `100.0` = meters (scale by 1.0). Default assumption of 0.01 produces meshes 100× too small for USF=100 files.
-- **Unity import scale** — `useFileScale=1` → `globalScale × USF/100`; `useFileScale=0` → `globalScale` alone. Read from the `.fbx.meta` YAML sidecar.
-- **Parent scale chain** — Unity applies scale hierarchically. A mesh at node scale (1,1,1) under a parent with scale (0.2, 0.2, 0.2) renders at 20% size. The converter passes `parent_world_scale` through `node_to_part()` recursion to accumulate this. If a mesh appears at the correct position but wrong size, check whether its parent hierarchy has non-unit scales.
-
-**Decoration positions are baked into Unity prefabs — preserve them faithfully.**
-Unity segment prefabs (e.g., IndustrialWarehouse01, SuburbsHouse01) have all decoration children (buildings, fences, props) pre-positioned by the artist at specific local offsets. There is no runtime repositioning of individual decorations in Unity — the only runtime effect is a random 50% chance to mirror the entire segment on X. Never override or "fix" these positions in the converter output. If decorations appear to block the road, the root cause is elsewhere (camera angle, character scale, mesh orientation) — not the positions.
-
-**Mesh facing direction.**
-The converter passes positions and rotations 1:1 from Unity to Roblox. FBX meshes are uploaded via assimp (FBX→GLB) with no coordinate system transform applied. Unity is left-handed Y-up (Z-forward); Roblox and glTF are right-handed Y-up. Mesh geometry baked into the FBX may face the wrong direction in Roblox. After conversion, visually verify decoration meshes (buildings, props). If roadside objects face into the road instead of away from it, apply a 180° Y-axis rotation to off-center decoration MeshParts at spawn time:
-```lua
-local Y_FLIP = CFrame.Angles(0, math.pi, 0)
-local rot = (desc.CFrame - desc.CFrame.Position) * Y_FLIP
-desc.CFrame = CFrame.new(pos) * rot
-```
-This is not always needed — it depends on how the original meshes were authored. Test visually before applying.
-
-**Decision point:** Present scale approach. Ask which strategy the user wants.
-
-#### Step 4.5d: Game Loop & Timing Rules
-
-These are universal mechanical rules needed before writing any module code.
-
-**Game loop wiring:**
-- Unity implicitly calls `Update()`, `FixedUpdate()`, `LateUpdate()` every frame on all active MonoBehaviours
-- Roblox has no implicit per-frame callbacks. A method named `Update()` that isn't connected to anything will never execute.
-- **Always override.** Add `RunService.Heartbeat:Connect(function(dt) obj:Update(dt) end)`. Without this, the game appears frozen — no movement, no spawning, no scoring. Disconnect in cleanup paths (`End()`, `OnDisable()`, `Destroy()`).
-
-**Threading / yielding:**
-- Unity coroutines (`yield return`) run cooperatively within the main thread. `Update()` never yields.
-- Roblox signal callbacks (`Heartbeat:Connect`, `Touched:Connect`) **cannot yield**. `task.wait()` inside a callback silently stops execution — no error, no warning.
-- **Rules:** (1) No-yield methods → plain functions. (2) Yielding methods → `task.spawn(function() ... end)`. (3) **Never use `coroutine.wrap` + `task.wait()` together** — `coroutine.wrap` creates a raw Lua coroutine, not a Roblox thread. If the body contains `task.wait()`, it will not resume properly.
-
-**Array indexing (0-based vs 1-based):**
-- The transpiler converts access (`arr[i]` → `arr[i + 1]`), but must NOT convert default/initial values of index variables.
-- If C# has `usedTheme = 0` and the transpiler changes it to `1`, then `themes[usedTheme + 1]` becomes `themes[2]` — off-by-one returning `nil`.
-- **Rule:** Index variables keep their C# value (0-based); the +1 lives only in array subscript expressions.
-
-**Part size limits:**
-- Roblox Parts **silently fail to render** if any dimension exceeds 2048 studs. No error, no warning.
-- Ground planes, roads, terrain boundaries from Unity often exceed this. Either clamp to 2048 and tile, or use Roblox Terrain.
-
-#### Step 4.5e: Assets, Visibility & Data
-
-**Asset loading (MeshLoader):**
-- `MeshId` is read-only at runtime. Meshes must be loaded via `InsertService:LoadAsset(assetId)`. Clone the MeshPart from the loaded Model into the scene.
-- The pipeline generates a MeshLoader script that replaces placeholder MeshParts with loaded clones.
-- **The bootstrap MUST wait for MeshLoader completion** before entering gameplay. Without this, all cloned objects have placeholder geometry (gray boxes). **Use polling, not `Changed:Wait()`** — the MeshLoader (ServerScript) may set the BoolValue to `true` before the bootstrap (LocalScript) starts listening, causing `Changed:Wait()` to hang forever. Correct pattern:
-  ```lua
-  local done = ReplicatedStorage:WaitForChild("MeshLoaderDone", 120)
-  if done and done:IsA("BoolValue") and not done.Value then
-      while not done.Value do task.wait(0.1) end
-  end
-  ```
-- **Skinned meshes** (FBX with bone data from SkinnedMeshRenderer) are invisible as static MeshParts. The pipeline strips skinning data during FBX→GLB conversion. If a mesh is invisible despite correct MeshId/Size/Transparency, check `assimp info <file>.fbx` for `Bones: N > 0`.
-
-**Object visibility:**
-- Unity: only GameObjects with MeshRenderer or SkinnedMeshRenderer are visible. Everything else is invisible by design.
-- Roblox: every Part is visible by default.
-- **Always override.** The pipeline sets `Transparency=1` on objects without a renderer. SpriteRenderer objects (decals, shadows, glow) are 2D overlays — also hidden. Built-in Quad/Plane primitives are almost always effect surfaces and are hidden automatically. Trigger colliders, inactive GameObjects, disabled renderers, and UI subtrees are all handled.
-- **Visibility is per-node, not inherited.** The converter checks each node independently. A parent without MeshRenderer gets `Transparency=1`, but its children with MeshRenderer keep `Transparency=0`. This is correct — Unity works the same way (parent visibility doesn't affect children). Do NOT add workarounds that force child MeshParts visible; the converter handles this correctly through prefab expansion. If pickups or collectibles appear invisible, the cause is elsewhere (MeshLoader failure, missing mesh upload, or wrong MeshId).
-- If opaque gray rectangles block the view: check (1) SpriteRenderer nodes not hidden, (2) Quad/Plane surfaces not hidden, (3) MeshLoader race condition.
-
-**ScriptableObject data:**
-- The converter transpiles `.asset` files to `_Data.lua` ModuleScripts, but data still contains raw GUIDs and `nil` placeholders.
-- GUIDs must be mapped to Template names in ReplicatedStorage. The data-loading code must find the data modules and be called before game start.
-
-**Database initialization order:**
-- If the bootstrap skips UI states (loadout/shop screens), database initialization those states trigger will be missed. Scripts get `nil`.
-- The bootstrap must call all `LoadDatabase()` functions explicitly before the game state. Check every singleton's `Create()`/`Init()` for database loading side effects.
-
-**ScreenGui placement:**
-- `StarterGui` children are auto-cloned to PlayerGui on every character spawn.
-- **Always** place converted ScreenGuis in `ReplicatedStorage` with `Enabled = false`. The state machine parents GUIs to `PlayerGui` when needed. Never place converted UIs in StarterGui.
-
-#### Step 4.5f: Input, Physics & Runtime Content
-
-**Input wiring:**
-- Unity polls input via `Input.GetKeyDown()` in `Update()`. No setup required.
-- Roblox uses `UserInputService.InputBegan`/`InputEnded` signals. No polling API. The transpiler does NOT create signal connections.
-- The bootstrap must connect signals to dispatch input to controller methods (e.g., A/D → `ChangeLane()`, Space → `Jump()`). Map `Input.GetKeyDown(KeyCode.X)` to `Enum.KeyCode.X`. Without this, the game appears frozen to player input.
-
-**Physics:**
-- Unity: Rigidbody is opt-in, gravity/collision configured per-object
-- Roblox: All parts have physics, character has Humanoid physics with WalkSpeed/JumpPower
-- Override when: the game positions objects directly via CFrame/Transform rather than through physics forces
-
-**Runtime content generation:**
-- Many Unity games generate content at runtime (procedural levels, spawned obstacles, track segments). The transpiler often strips or stubs spawning logic because it depends on Inspector-serialized prefab references and object pooling.
-- After transpilation, verify the core game loop actually spawns content — check for empty `m_Segments` arrays, missing `Instantiate` calls, nil prefab references. This is the **#1 reason** a converted game "runs" (score ticks, character moves) but looks empty.
-- Porting pattern: convert prefab templates to Models in ReplicatedStorage/Templates, replace `Instantiate()` with `:Clone()`, resolve ScriptableObject GUIDs to Template names, wire spawning check into Heartbeat. See Step 4.5h for the full spawning system porting guide.
-
-**Decision point:** Present the full divergence analysis (steps 4.5b–f) to the user.
-
-#### Step 4.5g: Animation, Particles & Implementability
-
-1. **Transform animation detection** — Two distinct paths:
-   - **Legacy Animation** (classID 111): `.anim` files driving looping transforms (spin, bob, tilt). Auto-generated by `convert_transform_animations()`.
-   - **Mecanim Animator on skinned meshes**: Pipeline strips skinning data, searches for animation FBXes (`<Name>_Run.fbx`, `_Walk.fbx`, `_Idle.fbx`, `_Anim.fbx`), extracts Hips bone root motion via `extract_fbx_root_motion()`. Generates `*_RootMotionConfig` ModuleScript. Spawning code checks `HasRootMotion`/`RootMotionConfig` attributes and creates a `TransformAnimator` per clone. The result is a looping bob/sway — not full skeletal animation, but convincing for small fast-moving obstacles.
-   
-   **Root motion euler sanity check:** `extract_fbx_root_motion()` extracts **absolute bone orientations** from the Hips bone. These are the bone's local euler angles in skeleton space — NOT relative offsets. But `TransformAnimator` applies euler values as **additive CFrame rotations** on top of `_baseCFrame`. Bone rotations that flip through ±180° (common in hop/tumble animations) cause the entire mesh to tumble wildly. **After generating a `*_RootMotionConfig`**, inspect the euler curve: if any axis exceeds ±45°, the raw bone data is unsuitable for TransformAnimator. Replace with a hand-authored euler curve that captures the visual intent (gentle nose-dip on hops, Y-rotation on turns) rather than the raw skeletal data. The position curve is usually fine as-is since bone position offsets are small.
-
-2. **Particle emission classification** — For each ParticleSystem, determine if it's continuous (ambient) or burst-triggered (collection sparkles, death effects). Burst particles have `rateOverTime ≈ 0` with burst entries (`m_Bursts` array or old-format `cnt0`-`cnt3`). The converter sets burst emitters to `Enabled = false` with a `BurstCount` IntValue. Game scripts must call `emitter:Emit(burstCount)` at the right moment.
-
-3. **Wiring transform animations to spawned content.** The converter auto-generates `*_TransformAnimConfig` ModuleScripts and the `TransformAnimator` bridge module into ReplicatedStorage. But this only provides the data and the runtime engine — the game scripts that **spawn** animated objects must wire them up. After cloning a template that has a corresponding animation config, attach a `TransformAnimator`:
-   ```lua
-   local TransformAnimator = require(ReplicatedStorage:WaitForChild("TransformAnimator"))
-   local MyObjectConfig = require(ReplicatedStorage:WaitForChild("MyObject_TransformAnimConfig"))
-   -- After cloning and positioning:
-   local animator = TransformAnimator.new(clone, MyObjectConfig)
-   -- Store the animator reference for cleanup:
-   table.insert(spawnedObjects, { model = clone, animator = animator })
-   ```
-   On cleanup (object moves behind player), call `animator:Destroy()` before destroying the clone. The TransformAnimator auto-ticks via a shared Heartbeat connection — no per-frame update call needed. **To identify which templates need animation:** check ReplicatedStorage for `*_TransformAnimConfig` modules whose name prefix matches a template name (e.g., `Fishbones_TransformAnimConfig` → template containing "Fishbones" mesh). The config module name comes from the Unity `.anim` file name or the Animation component's GameObject name.
-
-4. **Player character animation state mapping.** Unity games with a player character typically use a Mecanim Animator Controller with states like Run, Jump, Slide, Fall, Death. The converter strips the skinned mesh and uses a standard Roblox R15 humanoid instead — but the **animation state transitions** must still be wired manually in the bootstrap. For each Unity animation state on the player character:
-   - Read the Animator Controller (`.controller` YAML) to enumerate all states and their transition conditions
-   - Map each state to a Roblox R15 default animation or catalog animation:
-     | Unity state | Roblox animation | Asset ID |
-     |---|---|---|
-     | Run/Sprint | R15 default run | `rbxassetid://507767714` |
-     | Jump | R15 default jump | `rbxassetid://507765000` |
-     | Slide/Crouch | R15 default fall (as crouch) | `rbxassetid://507897817` |
-     | Fall | R15 default fall | `rbxassetid://507897817` |
-     | Death | R15 default fall | `rbxassetid://507897817` |
-   - In the Heartbeat loop, track each state with `wasX`/`isX` flags and play/stop the corresponding AnimationTrack with crossfade (`Play(0.1)` / `Stop(0.1)`)
-   - Set animation priorities: base locomotion at `Action`, overlays (jump, slide) at `Action2`
-   - **Every Unity animation state must have a Roblox equivalent** — missing states produce a character that snaps to T-pose during that action. Audit the Animator Controller and verify each state is covered.
-
-5. **Implementability check** — For each Unity system, assess whether it can be ported as-is or needs simplification. A working simple version beats a broken complex one. If a system cannot be ported fully, implement an approximation and document what's missing.
-
-#### Step 4.5h: Module-per-Component Rewrite
-
-For each major game system, write a **separate Luau module** that mirrors its Unity counterpart:
-
-| Unity class | Roblox module | Bridge modules used |
-|---|---|---|
-| `GameManager` + `AState` subclasses | State modules + bootstrap wiring via `StateMachine` | `StateMachine` |
-| `TrackManager` | `TrackManager.lua` | `GameObjectUtil`, `Time` |
-| `CharacterInputController` | `CharacterController.lua` | `Input`, `Physics` |
-| Game-specific MonoBehaviours | One module per behaviour | `MonoBehaviour` |
-| Legacy Animation on non-skeletal objects (collectibles, power-ups) | Auto-generated `*_TransformAnimConfig` ModuleScript | `TransformAnimator` |
-| Mecanim Animator on skinned meshes (animals, characters) | Auto-generated `*_RootMotionConfig` ModuleScript from animation FBX Hips bone | `TransformAnimator` |
-| ParticleSystem (burst effects) | ParticleEmitter with `Enabled=false` + `BurstCount` tag | Game scripts call `:Emit()` |
-
-**Rules for each module:**
-- Preserve the same public API shape as the Unity class (methods, properties)
-- Inspector fields → config table passed to constructor
-- `GetComponent<T>()` / singleton access → explicit references passed in during wiring
-- Component-to-component references → set during bootstrap, same as Unity's Inspector drag-and-drop
-- **Never merge two Unity classes into one Luau module** — if they were separate in Unity, they stay separate
-
-**Unity→Luau semantic gaps to catch during transpilation:**
-
-The AI transpiler translates C# syntax but can miss platform-level semantic differences. These are the known categories where 1:1 translation produces broken Luau:
-
-1. **MonoBehaviour lifecycle vs explicit construction.** Unity components are never `new()`-ed in code — they're attached to GameObjects and their fields are populated by the Inspector (serialized scene references). The transpiler converts these to `ClassName.new(config)` constructors, but callers may not know what config to pass (that info is in `.unity` YAML, not C# source). *Decision:* All constructors must start with `config = config or {}` and default every field. The bootstrap wires references after construction, same as Unity's Inspector.
-
-2. **C# properties → Luau has no `property()`.** C# `get`/`set` accessors have no Luau equivalent. If a property is trivial (just wraps a backing field), use a direct field. If it has side effects, use getter/setter methods. Never emit `property()` calls.
-
-3. **Binary serialization → table fields.** Unity often persists data via `BinaryWriter`/`BinaryReader`. Roblox uses DataStore (JSON via Lua tables). Replace `writer.Write(x)` / `reader.Read()` with `data.field = x` / `x = data.field`.
-
-4. **Cross-module exports.** When a module returns `{ ClassA = ClassA, EnumB = EnumB }`, access the export directly: `Module.EnumB`, not `Module.ClassA.EnumB`. The export table is flat — classes don't own sibling exports.
-
-5. **`GetComponent<T>()` on cloned objects.** Unity's `GetComponent` finds a component on a GameObject. In Roblox, cloned Instances don't have "components" — the object IS the thing. Adapt to Roblox's Instance hierarchy (`FindFirstChild`, `:IsA()`, or direct construction).
-
-6. **Singleton accessor functions vs properties.** In C#, `PlayerData.instance` is a static property (getter returns the singleton). The transpiler converts this to a module export `instance = getInstance` — a **function**, not a value. But call sites still emit `PlayerData.instance` (property-style access), which returns the function itself instead of calling it. All singleton accessors must be called: `Module.instance()`, not `Module.instance`. This affects every script that touches the singleton. The transpiler should either (a) emit `Module.instance()` at call sites, or (b) use a metatable `__index` so property-style access works. Until then, audit every `Module.instance` usage — if the module exports `instance = someFunction`, every access must have `()`.
-
-7. **Unity MonoBehaviour lifecycle → Luau explicit calls.** Unity implicitly calls lifecycle methods on every MonoBehaviour in a specific order. Roblox has no equivalent — all lifecycle calls must be explicit in the bootstrap or via RunService connections. The transpiler preserves these methods but the bootstrap must actually call them. **Never invent method names** (e.g., don't call `:Start()` if the transpiled module only has `:OnEnable()`). Always verify the method exists in the transpiled output before calling it.
-
-   | Unity lifecycle method | When Unity calls it | Roblox equivalent |
-   |---|---|---|
-   | `Awake()` | Once, when the object is created (before Start) | Call in constructor `.new()`, or immediately after construction |
-   | `OnEnable()` | When the object becomes active | Call explicitly after construction + wiring. Often the real "start" for managers |
-   | `Start()` | Once, on the first frame the object is active | Call explicitly after `OnEnable()`, or merge into `OnEnable()` if both exist |
-   | `Update()` | Every frame | `RunService.Heartbeat:Connect(function(dt) obj:Update(dt) end)` |
-   | `FixedUpdate()` | Every physics step | `RunService.Stepped:Connect(function(dt) obj:FixedUpdate(dt) end)` |
-   | `LateUpdate()` | Every frame, after all Update calls | `RunService.Heartbeat:Connect()` with a lower priority or after other connections |
-   | `OnDisable()` | When the object is deactivated | Call explicitly during cleanup / state exit |
-   | `OnDestroy()` | When the object is destroyed | Call explicitly, or use `Instance.Destroying` signal |
-   | `OnTriggerEnter/Exit()` | Physics trigger events | `part.Touched` / `part.TouchEnded` signals |
-   | `OnCollisionEnter/Exit()` | Physics collision events | `part.Touched` / `part.TouchEnded` signals |
-
-   **Key pitfall:** The transpiler may rename or merge lifecycle methods inconsistently. Some modules keep `OnEnable`, others rename it to `Start`, others have both. The bootstrap must read each module's actual method names — never assume a standard name exists.
-
-   **Critical: `Update()`/`FixedUpdate()` require explicit Heartbeat wiring** — see Step 4.5d.
-
-8. **C# property getters transpiled as function aliases — the silent killer.** C# properties like `public float speed { get { return _speed; } }` get transpiled as a getter method (`getSpeed()`) plus a class-level alias: `MyClass.speed = MyClass.getSpeed`. This makes `instance.speed` return the *function itself*, not the value. **This must be applied to EVERY class with properties, not just the main class.** If ClassA has `__index` metamethods but ClassB (used by ClassA) doesn't, `classB.worldLength` returns nil even though `getWorldLength()` exists. Every property-style access silently returns a truthy function reference instead of the actual data. This causes cascading failures:
-   - `#instance.segments` → "attempt to get length of a function value"
-   - `if not instance.isRerun` → always false (function is truthy), skipping critical initialization
-   - `instance.score + 1` → "attempt to perform arithmetic on a function value"
-
-   **Fix:** Replace class-level aliases with a `__index` metamethod that calls getters automatically:
-   ```lua
-   local _getters = {}
-   local _setters = {}
-   MyClass.__index = function(self, key)
-       local getter = _getters[key]
-       if getter then return getter(self) end
-       return MyClass[key]
-   end
-   MyClass.__newindex = function(self, key, value)
-       local setter = _setters[key]
-       if setter then setter(self, value) return end
-       rawset(self, key, value)
-   end
-   -- Then register: _getters.speed = MyClass.getSpeed
-   -- And setters:   _setters.speed = function(self, v) self._speed = v end
-   ```
-   This makes `instance.speed` transparently call `getSpeed(self)` and `instance.speed = 5` call the setter. The transpiler MUST emit this pattern for any class with C# properties — class-level aliases (`MyClass.prop = MyClass.getProp`) are fundamentally broken because Lua resolves them on the *class table*, not the instance.
-
-9. **Inspector-serialized ScriptableObject references are nil at runtime.** In Unity, a MonoBehaviour field like `public ThemeData tutorialThemeData` is populated by dragging a ScriptableObject asset onto it in the Inspector. At runtime, the field has a valid reference. In Roblox, the transpiler converts this to `self.tutorialThemeData = config.tutorialThemeData` — but the config never has this value because there's no Inspector. The field stays nil, and any code path that reads it crashes. **Fix:** For data references that point to ScriptableObjects now converted to `_Data` ModuleScripts, wire them through the database lookup: `self.tutorialThemeData = ThemeDatabase.GetThemeData("Tutorial")`. For Inspector refs to prefabs/GameObjects, resolve through the Templates folder in ReplicatedStorage. The bootstrap or the module constructor must do this wiring — the transpiler cannot, because the mapping from GUID to name requires the scene file.
-
-10. **State-managed scene objects require explicit wiring.** Unity state machines (e.g., `LoadoutState`/`GameState`) toggle scene objects' visibility as part of state transitions — a menu backdrop is shown during the loadout screen and hidden when gameplay starts. These scene object references come from Inspector serialization (`public GameObject menuEnvironment`), so they're nil in Roblox. Unlike data references (#9), these are **3D objects already in workspace** that need to be found by name and passed through config. **Fix:** The bootstrap must `workspace:FindFirstChild("ObjectName")` for each state-managed scene object and pass it to the state's config table. The state's `Enter()`/`Exit()` calls `GameObjectUtil.SetActive(obj, true/false)` which toggles `Transparency` and `CanCollide` — the object stays in workspace, never gets reparented. **Never use `obj.Parent = nil` to hide objects** — this nulls the parent and causes cascading errors when other code reads `.Parent`. To identify which objects need wiring: look for `public GameObject` fields on state classes that aren't prefabs or UI — they're scene environment objects toggled by `SetActive(true/false)` in `Enter()`/`Exit()`.
-
-11. **SetActive must use GameObjectUtil, never Parent assignment.** Unity's `GameObject.SetActive(bool)` toggles visibility. The transpiler must convert `obj.SetActive(false)` → `GameObjectUtil.SetActive(obj, false)`, which sets `Transparency=1` and `CanCollide=false`. **Never emit** `obj.Parent = nil` or `obj.Parent = ReplicatedStorage` as a visibility toggle — this detaches the object from the scene tree, and any subsequent code that reads `obj.Parent` (including the MeshLoader replacement pattern) gets nil, causing silent failures or crashes. The bridge module `GameObjectUtil` must be required at the top of any module that calls SetActive.
-
-**Timing model preservation:**
-- If Unity uses `trackManager.worldDistance` to measure jump/slide progress, the Roblox port must too
-- If Unity scales durations by `(1 + speedRatio)`, the Roblox port must too
-- Do NOT simplify world-distance timing into time-based timing — it changes gameplay feel
-
-**Porting procedural content / runtime spawning systems:**
-
-Many Unity games generate gameplay content at runtime — spawned enemies, level chunks, projectile pools, procedural terrain, collectible placements. This is the #1 system that **does not survive transpilation** because it depends on Inspector-serialized prefab references, Addressables async loading, and object pooling — none of which have Roblox equivalents. The transpiled code keeps the scoring/movement logic but the spawning methods become empty shells with nil references.
-
-**Why it breaks:** Prefab references are Inspector-serialized AssetReferences or Addressable keys (nil in Roblox). Object pooling libraries are not transpiled. ScriptableObject data that maps themes/levels to prefab lists contains raw GUIDs. The transpiled manager keeps `Update()` ticking but spawn methods have zero functional code.
-
-**What spatial data does NOT survive conversion:**
-- **Path/spline data** (child Transforms defining waypoints or curves) — the converter strips non-rendered objects (`Transparency=1, CanCollide=false`). If the Unity game uses child Transforms as waypoints for movement paths, those waypoints become invisible anchored Parts with no distinguishing features. **Do not write auto-discovery code** that walks a Model's children looking for waypoints — it will find rendering geometry instead.
-- **Normalized position values** (e.g., obstacle spawn positions stored as 0–1 t-values along a path) — these only make sense with the original path geometry. If the path is lost, these values are meaningless.
-- **Collider-only geometry** (trigger volumes, invisible walls) — stripped or made transparent. If gameplay depends on trigger placement within prefabs, that spatial data must be manually extracted.
-
-**What DOES survive:**
-- **Template Models** in ReplicatedStorage/Templates preserve their Unity prefab names and visible mesh hierarchy. The converter names them from the prefab's root GameObject name.
-- **UnityLayer attributes** set by the converter on scene-placed instances (e.g., layer 8 for collectibles, layer 9 for obstacles). Use `part:GetAttribute("UnityLayer")` for collision classification — do NOT invent custom tagging systems (BoolValues, CollectionService tags) that duplicate what the converter already provides. **Important:** UnityLayer attributes are set on scene instances, NOT on prefab templates in ReplicatedStorage/Templates. When cloning templates at runtime, the spawning code must set `UnityLayer` on the cloned parts explicitly (e.g., `desc:SetAttribute("UnityLayer", 9)` for obstacles, `8` for collectibles). Do not rely on auto-discovering templates by scanning for UnityLayer — use explicit template name lists instead.
-- **ScriptableObject data** converted to `_Data.lua` ModuleScripts — but contains raw GUIDs that must be resolved to Template names.
-
-**Porting pattern:**
-
-1. **Identify templates.** The pipeline produces Models in `ReplicatedStorage/Templates` from Unity prefabs. Each Model keeps its Unity prefab name. **Never auto-discover templates** by scanning for child structure patterns or name substrings — use the known prefab names from the Unity project. Build a lookup table mapping names (or Unity GUIDs from the data modules) to template references.
-
-2. **Extract per-template metadata from Unity prefab YAML.** Read `.prefab` files to determine: template dimensions/length, sub-object spawn positions, which sub-templates can appear within a template. Hardcode this metadata in a Luau table — it cannot be derived at runtime because the spatial data (waypoints, normalized positions) is lost during conversion.
-
-3. **Write spawn logic that `:Clone()`s templates** and positions them in world space. Replace Unity's `Instantiate()` with `:Clone()` + `Parent = workspace`. Resolve ScriptableObject GUID references to Template names (see semantic gap #9).
-
-4. **Implement cleanup.** When spawned content moves past a threshold distance from the player, `:Destroy()` it. No need to port Unity's object pooling — Roblox's instance creation is fast enough. If the clone has a `TransformAnimator`, call `animator:Destroy()` before destroying the clone to unregister from the shared Heartbeat.
-
-   **Wire transform animations on spawned clones.** Check ReplicatedStorage for `*_TransformAnimConfig` modules that match template names (see Step 4.5g item 3). After cloning and positioning a template, attach a `TransformAnimator.new(clone, config)`. Without this, converted collectibles and obstacles that had spin/bob/tilt animations in Unity will be static in Roblox.
-
-5. **Wire into the game loop.** Spawning checks must run every frame via the Heartbeat connection, not as a one-time setup.
-
-6. **Create ground/environment surfaces explicitly if needed.** Unity games often have invisible ground planes, procedurally generated floors, or terrain that doesn't convert as renderable geometry. If the game world appears to have no floor, create a simple Part as a ground surface. But only do this when the Unity game's ground is genuinely missing — if Unity generates ground at runtime, port the generation system rather than substituting a static surface.
-
-**Movement model — account for lost spatial data:**
-- If Unity moves objects along spline paths (waypoints as child Transforms), those waypoints are lost. Determine the *effective* movement from the Unity code: is it straight-line, curved, grid-based? Port the effective movement, not the spline interpolation mechanism.
-- If Unity uses path interpolation (`GetPointAt(t)`) but the path is a straight line, replace with direct position arithmetic. If the path is genuinely curved, the curve control points must be manually extracted and hardcoded.
-
-**Movement direction — match the converter's coordinate system:**
-- The converter places objects at their Unity world positions with 1:1 coordinate mapping. Unity's forward axis is +Z. The converter preserves this, so converted scene objects are arranged along +Z.
-- The game loop's movement direction **must match** the axis the converted objects are placed along. If the converter placed track segments at increasing +Z positions, the character must move in the +Z direction — not -Z.
-- **Character facing:** If the character should face +Z (forward in Unity), set `CFrame.Angles(0, math.pi, 0)` since Roblox's default front face is -Z.
-- **Camera placement:** Use absolute world-space offsets (e.g., `characterPos + Vector3.new(0, height, -behindDistance)`) rather than rotation-relative offsets (e.g., `charCF.LookVector * distance`). Rotation-relative offsets break when the character has a fixed facing rotation, because the LookVector points in the character's local forward — which may be opposite to the world movement direction.
-
-**Diagnostic:** If a converted game "runs" (score increments, character animates) but the world is empty — no spawned content, no obstacles, no collectibles — the spawning system was not ported. Check the manager's spawn arrays: if they stay empty, spawning is broken.
-
-#### Step 4.5i: Bootstrap Wiring
-
-Write a `GameBootstrap.lua` (LocalScript in StarterPlayerScripts) that:
-- Creates instances of each module — **always pass `{}` even if no config is needed** (constructors expect a table, not nil)
-- Wires cross-references **after** construction (same as Unity's Inspector references — components are created first, then linked)
-- Registers states with the StateMachine bridge
-- Starts the state machine with the initial state
-- Does NOT contain game logic — it's pure wiring
-- **Verify method names match — CRITICAL.** The transpiler converts each C# file independently, so method names may diverge between modules. For example, `SpawnPoint.cs` may call `player.UpdateSpawnpoint()` while the transpiled PlayerController has `SetSpawnCFrame()`. Luau silently returns nil for missing methods — no error, no warning. The call appears to succeed but does nothing. **Before writing any cross-module call in the bootstrap or any game script**, `grep` the target module for the exact method name. Common mismatches: `UpdateX` vs `SetX`, `OnTriggerEnter` vs `HandleTrigger`, `GetComponent` vs direct property access. Fix mismatches in ALL callers — never assume the transpiled name is correct without checking.
-- To determine what to wire: read the `.unity` scene file for serialized field references (e.g., `characterController: {fileID: XXXX}` tells you TrackManager needs a reference to CharacterInputController)
-- **Uses the player's Roblox avatar** as the game character when appropriate (e.g., endless runners, platformers). Wait for `player.Character`, get `HumanoidRootPart`, disable default movement (`WalkSpeed=0`, `JumpPower=0`, `JumpHeight=0`). If Step 4.5c chose "scale character down", call `character:ScaleTo(SCALE)` **before** anchoring (scaling requires a brief physics settle — `task.wait(0.1)` after scaling). **Never call `Humanoid:ApplyDescription()` or `Humanoid:ApplyDescriptionReset()` from a LocalScript** — these are server-only APIs and will error on the client, crashing the bootstrap. Then anchor HRP, set initial `CFrame` using the computed `GROUND_Y`, and pass both `transform` and `groundY` to the character controller. Only create a placeholder Part if the game uses a non-humanoid avatar.
-- **Wires input** via `UserInputService.InputBegan` — the transpiler does NOT create input bindings. Map Unity's `Input.GetKeyDown` keycodes to Roblox `Enum.KeyCode` and dispatch to controller methods (`ChangeLane`, `Jump`, `Slide`, etc.).
-- **Wires collision signals** for any module that defines `OnTriggerEnter`, `OnTriggerExit`, `OnCollisionEnter`, or `OnCollisionExit`. Unity's engine calls these implicitly on any MonoBehaviour attached to a GameObject with a collider. Roblox requires explicit collision wiring. **Choose the right mechanism based on how the part moves:**
-  - **Physics-driven parts** (unanchored, moved by forces): use `.Touched`/`.TouchEnded` signals.
-  - **CFrame-driven parts** (anchored, moved by setting CFrame each frame): `.Touched` is **unreliable** — Roblox's physics engine doesn't fire touch events for parts moved via CFrame. Use `workspace:GetPartsInPart(part, overlapParams)` in a per-frame `Heartbeat` loop instead. This is the common case for converted games where the character controller directly sets position.
-
-  For the per-frame overlap pattern, use an `alreadyHit` set to prevent duplicate triggers per object, and filter out the character's own parts via `OverlapParams.FilterDescendantsInstances`. **Skip fully transparent parts** (`Transparency >= 1.0`) — Unity obstacle prefabs contain shadow planes and invisible collision boxes that don't have colliders in Unity, but `GetPartsInPart` picks them up in Roblox. Without this filter, the player takes damage from invisible geometry. **The bootstrap only wires the signal — the transpiled method decides what to do.** Never add game-specific collision filtering in the bootstrap.
-
-**Player spawn disambiguation.** Unity scenes often have both a "Player" prefab (the character model with camera, weapon slot, etc.) AND a spawn marker part also named "Player." The converter places both in Workspace. When searching for the spawn position, the bootstrap must distinguish between them:
-- The Player **prefab Model** is typically at or near the origin and contains child objects (Camera, WeaponSlot, etc.). It's a Model, not a BasePart.
-- The Player **spawn marker** is a BasePart at the actual starting position.
-- `workspace:FindFirstChild("Player")` returns whichever comes first in the tree — often the prefab Model at origin, not the spawn marker. Use `workspace:GetDescendants()` with filtering: skip any "Player" BasePart whose parent is also a Model named "Player" (that's the prefab, not the spawn marker).
-- **Never let PlayerController independently search for spawn position.** The bootstrap should be the single source of truth — it finds the correct spawn marker and passes it to the controller via the controller's spawn-setting method. The controller should only fall back to `character:GetPivot()` if no spawn was explicitly set.
-
-**Scene object classification — menu vs gameplay environment.**
-Unity scenes contain objects meant for different contexts: menu backgrounds, editor-only preview instances, and gameplay environment (road-side buildings, terrain). The converter places non-prefab scene objects into Workspace. Prefab instances (nodes with `source_prefab_name` set by `resolve_prefab_instances()`) are automatically excluded from Workspace — they already exist as template Models in ReplicatedStorage/Templates and are cloned at runtime by game scripts. Only gameplay environment objects should remain visible during gameplay.
-
-- **Menu/UI scene objects** (e.g., title screen backdrops, menu cameras, character preview platforms): hide by setting `Transparency=1, CanCollide=false` on all descendant BaseParts. Identify these by name patterns from the Unity scene hierarchy — they often contain "Menu", "UI", "Background", "Title" in their name. Read the Unity scene YAML to confirm which root GameObjects are menu-only.
-- **Editor preview instances** (prefab instances placed in the scene for the developer to see in the editor, but spawned dynamically at runtime): the converter now automatically excludes these from Workspace (they have `source_prefab_name` set). If any slip through (e.g., non-prefab copies), hide them manually.
-- **Gameplay environment** (buildings, terrain, decorations along the play area): keep visible. These form the visual backdrop of the game. Decoration positions are baked into Unity prefabs — preserve them faithfully (see Scale & Positioning).
-- **Broken visual artifacts** (objects that render as white boxes or gray rectangles in Roblox due to missing textures, failed mesh loading, or stripped effects like LightCones/Glow planes): remove from both Workspace and Templates to prevent them from appearing in spawned segments.
-
-The bootstrap should handle cleanup by name — iterate over known menu object names and hide them, rather than using broad pattern matching that might catch gameplay objects.
-
-**Module export unwrapping — CRITICAL.** The transpiler is inconsistent about how modules export their classes. Some return the class directly (`return MyClass`), others wrap it in a table (`return { MyClass = MyClass, SomeEnum = SomeEnum }`). The bootstrap **must not assume** which style a module uses. Before writing `require()` calls, inspect each module's `return` statement. Use a defensive unwrap helper:
-
-```lua
-local function unwrap(mod, name)
-    if type(mod) == "table" and mod[name] then return mod[name] end
-    return mod
-end
-
-local SomeModule = unwrap(require(ReplicatedStorage:WaitForChild("SomeModule")), "SomeModule")
-```
-
-Why: if you write `local Foo = require(...)` and the module returns `{ Foo = Foo }`, then `Foo.new()` calls the wrapper table (which has no `.new`), producing "attempt to call a nil value". This is silent until runtime and affects every module whose return style doesn't match the bootstrap's assumption.
-
-**Implement the platform divergence decisions from Steps 4.5b–f.** For each pillar where the Unity game diverges from Roblox's defaults, the bootstrap must apply the appropriate override. Apply the scale conversion decision from Step 4.5c.
-
-#### Output location
-
-Write all scripts to `<output_dir>/scripts/`:
-- One file per module (e.g., `TrackManager.lua`, `CharacterController.lua`, `GameState.lua`)
-- `GameBootstrap.lua` — the entry point that wires everything
-- These replace the raw transpiled versions for core systems
-- **No `_meta.json` needed for script types.** The converter auto-detects script type from source: files ending with `return <identifier>` → ModuleScript, files using client APIs (`Players.LocalPlayer`, `UserInputService`, etc.) → LocalScript, everything else → Script. Override via `_meta.json` only when auto-detection is wrong.
-
-#### Decision point
-
-Present each rewritten module to the user for review. Show:
-- Which Unity C# class(es) it was derived from
-- The ownership graph: what references it holds, what references it
-- Which bridge modules it uses
-- Any timing model decisions (world-distance vs time-based)
-- Ask: Accept, Edit, or Regenerate?
-
-#### CRITICAL: Unity→Roblox Visibility Rule
-
-**No renderer = invisible. This is non-negotiable.**
-
-Unity and Roblox have opposite defaults for object visibility:
-- **Unity:** Objects are invisible unless they have a renderer component (MeshRenderer, SkinnedMeshRenderer, SpriteRenderer). A typical Unity scene has dozens of invisible objects — script containers, empty transforms, trigger volumes, audio sources, managers — and they are never seen by the player.
-- **Roblox:** Every Part is visible by default. A Part with no mesh renders as an opaque gray block.
-
-The pipeline MUST set `Transparency = 1` on every converted Part that lacks a renderer component. Without this, the Roblox game will be filled with opaque gray rectangles that block the player's view. This is the #1 visual correctness issue in Unity→Roblox conversion.
-
-The full visibility rules (all enforced in `conversion_helpers.py:node_to_part()`):
-1. **No renderer and no mesh** → `Transparency = 1, CanCollide = false` (script containers, empty transforms, manager objects)
-2. **Trigger colliders** (`isTrigger = true`) → `Transparency = 1` (invisible collision volumes)
-3. **Inactive GameObjects** (`m_IsActive = 0`) → `Transparency = 1, CanCollide = false`
-4. **Disabled renderers** (`m_Enabled = 0` on MeshRenderer) → `Transparency = 1`
-5. **UI subtrees** (Canvas hierarchies) → filtered out of 3D hierarchy entirely, converted to ScreenGui
-
-If opaque gray blocks appear in the converted game, check which Unity object they came from and verify it falls into one of these categories.
-
-6. **Opaque material with `_Color.a = 0`** → the material mapper must **ignore** `_Color` alpha when the material's rendering mode is Opaque (`_Mode = 0`). Unity's Standard shader discards `_Color.a` in Opaque mode, and many opaque materials ship with `a=0` by default. If the converter blindly applies `1.0 - _Color.a` as `base_part_transparency`, textured MeshParts become fully invisible despite having a valid MeshRenderer and SurfaceAppearance. **If a MeshPart has a SurfaceAppearance with textures but is still invisible**, check the source `.mat` file: if `_Mode: 0` (Opaque) and `_Color: {... a: 0}`, the transparency was set incorrectly by the material mapper. The fix is in `material_mapper.py` — only apply alpha transparency when `parsed.render_mode != 0`.
-
-**Mesh and material verification — skinned meshes appearing as skeletons or gray blobs.**
-Three converter-level issues can cause MeshParts to render incorrectly:
-
-1. **SurfaceAppearance without ColorMap makes parts white.** SurfaceAppearance completely overrides Part.Color3 for rendering. If a material has metalness/roughness texture maps but NO albedo texture (color_map), adding a SurfaceAppearance with only MetalnessMap/RoughnessMap produces a white part — the Color3 value is ignored. **Only create SurfaceAppearance when `rdef.color_map` is present.** Materials with only metalness/roughness maps should rely on Color3 alone. This is handled in `conversion_helpers.py:apply_materials()`.
-
-2. **Missing SurfaceAppearance.** The pipeline only creates a SurfaceAppearance when the material has a color_map (albedo texture). Vertex-color-only materials create an empty `RobloxMaterialDef` that depends on vertex color baking to fill in the `color_map` later. If baking fails or the mesh path doesn't match the `vc_baked_textures` lookup key, the MeshPart ends up with no SurfaceAppearance at all — rendering as untextured gray or exposing internal bone geometry. **After assembly, scan the .rbxl for MeshParts that have a MeshId but no SurfaceAppearance child.** If the Unity source has an albedo texture for that mesh's material, the SurfaceAppearance was dropped and must be restored manually.
-
-3. **Split meshes not uploaded.** `mesh_splitter.py` splits multi-material meshes into per-material OBJ files in `split_meshes/`, but the uploader (`roblox_uploader.py`) only scans the `meshes/` directory. Split submeshes never get uploaded or assigned asset IDs. The .rbxl ends up referencing the original unsplit mesh asset, which may include raw skeleton data. **If a mesh was split** (check for `_sub0.obj` files in `split_meshes/`), verify the uploaded asset still renders correctly — the single-asset fallback may include bone geometry that was separated out by the split.
-
-When a MeshPart renders as skeleton bones or wireframe instead of a solid mesh: check the .rbxl for that MeshPart's SurfaceAppearance (must have a ColorMap texture), compare the MeshId asset with any prior working conversion, and verify the uploaded GLB doesn't contain exposed armature data.
-
-#### Key principles
-
-- **Faithful port over workarounds** — if Unity generates content at runtime (procedural levels, spawned obstacles, dynamic UI), the Roblox port must generate it at runtime too. Never substitute a Unity runtime system with a static Roblox-side workaround (e.g., don't replace procedural track generation with a hand-placed baseplate). The game should work the same way — if there's no static ground in Unity, there should be no static ground in Roblox.
-- **Architecture preservation over code translation** — the goal is a Roblox game that is wired the same way the Unity game was, not a line-by-line translation
-- **Port the system, not the symptom** — when something is missing or broken, trace back to what Unity system produces it and port that system. A missing floor means the track spawner needs porting, not that a floor needs adding.
-- Bridge modules (`bridge/`) are reusable — never modify them for one game
-- Game-specific scripts are output artifacts — they live in `<output_dir>/scripts/`, not in this repo
-- Focus on the 3-5 scripts that define the core game loop; leave utility scripts as-is from transpilation
-- When in doubt about a design decision, check what the Unity code actually does
+Read order: overview → architecture-map → divergence-and-scale → universal-rules → animation → runtime-content → transpiler-gaps → module-rewrite.
 
 ### Step 5: Assembly
+
+**Read `references/phase-5-assembly.md`** — covers terrain handling, LFS requirement, MCP alternative, and decimation decisions.
+
+Teaser: LFS pointer files block terrain extraction — tell the user to `git lfs pull`. Studio + MCP produces smoother terrain than the runtime loader.
 
 ```bash
 python3 convert_interactive.py assemble <unity_project_path> <output_dir> 2>/dev/null
 ```
 
-**Terrain handling:** The assembly phase auto-detects Unity TerrainData assets (binary `.asset` files containing heightmaps). If found, it:
-1. Extracts the heightmap (uint16 array), terrain dimensions, and terrain layer names
-2. Downsamples to a 65×65 grid for performance
-3. Generates a `TerrainLoader` ServerScript that uses `Terrain:FillBlock()` with elevation-based materials (Sand < 5 studs, Grass < 20, Ground < 50, Rock ≥ 50)
-4. Adds a water base surrounding the terrain
-5. Saves `terrain_data.json` to the output directory for optional MCP-based terrain painting
-
-**LFS requirement:** If the terrain `.asset` file is a Git LFS pointer (starts with `version https://git-lfs`), the converter will warn but cannot extract terrain data. The user must run `git lfs install && git lfs pull` to download the actual binary.
-
-**MCP-based alternative:** When Roblox Studio is connected via MCP, you can paint terrain directly using `execute_luau` with the generated heightmap data. This produces smoother terrain than the loader script approach because it runs at edit-time rather than at game startup. Read the `terrain_data.json` from the output directory, generate Luau `Terrain:FillBlock()` calls in chunks (max ~10KB per MCP call), and execute them sequentially.
-
-**Decision point:** If mesh decimation significantly reduced meshes, ask about quality adjustment. If terrain was found, confirm it looks correct in Studio.
-
 ### Step 6: Upload & Publish
 
-Upload is a two-stage process:
+**Read `references/phase-6-upload.md`** — covers the two-stage upload model. Read `references/upload-patching.md` only if something goes wrong at the asset-ID patching step.
 
-**Stage 1 — Asset upload via API.** Uploads meshes, textures, and audio to Roblox via Open Cloud. Requires an API key. Patches the .rbxl with uploaded asset IDs.
+Teaser: Open Cloud strips `Script.Source`. The final place MUST be published through Studio (File > Publish to Roblox), not via the API.
 
 ```bash
 python3 convert_interactive.py upload <output_dir> \
@@ -552,30 +140,23 @@ python3 convert_interactive.py upload <output_dir> \
   [--creator-type User|Group] 2>/dev/null
 ```
 
-**Stage 2 — Place publish via Roblox Studio.** The Open Cloud API strips Script.Source from uploaded binary files for security. The final place MUST be published through Roblox Studio to preserve script source code (TerrainLoader, MeshLoader, GameBootstrap, all controllers). Instruct the user to:
-
-1. Open the patched `.rbxl` file in Roblox Studio
-2. Use **File > Publish to Roblox** (NOT "Save to Roblox" — that saves without publishing)
-
-**Never attempt to publish the place via the API** — it will silently produce a broken game with empty scripts.
-
-**Decision point:** If some asset uploads fail — retry, continue without, or abort?
-
 ### Step 7: Final Report
 
 ```bash
 python3 convert_interactive.py report <output_dir> 2>/dev/null
 ```
 
-## Error Handling
+## Error handling
 
-If any phase fails, show the error and ask how to proceed (retry, skip, abort). Never silently swallow errors.
+If any phase fails, surface the error and decide how to proceed based on the factors in the relevant reference file. Never silently swallow errors. Never retry auth/credit failures.
 
 ## Guidelines
 
-- Be concise in summaries but thorough at decision points
-- Use fenced code blocks with language tags for C# or Luau
-- For large lists, summarize counts first, then offer to drill into specifics
-- Remember earlier decisions — don't re-ask for the same category
+- Be concise in summaries; thorough at decision points.
+- Use fenced code blocks with language tags for C# or Luau.
+- For large lists, summarize counts first, then drill into specifics on request.
+- Remember earlier decisions — don't re-ask within a single run.
 
-See `references/` for detailed upload patching strategies and assembly internals.
+## If you skipped a Read
+
+If a phase is failing and you're guessing at a rule, you skipped a Read. Load the relevant phase file before continuing. The rules in `references/` are there because they caused past failures — they are load-bearing, not optional.
