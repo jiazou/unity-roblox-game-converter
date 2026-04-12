@@ -160,10 +160,11 @@ After all ports:
 - [ ] Dest's `MaterialMapping` type unchanged or only extended (no breaking changes)
 - [ ] Dest's dual YAML parsing (PyYAML + regex fallback) preserved
 - [ ] Existing dest material tests still pass
+- [ ] **Idempotent under interactive prerequisite replay** — companion scripts, UNCONVERTED.md, and vertex-color outputs must not assume upload/resolve already ran (interactive mode skips cloud phases during replay)
 
 ### Dependencies
 
-- Phase 2: `vertex_color_baker.py` must be ported first (for vertex color flag consumption).
+- Phase 2: `vertex_color_baker.py` must be ported first (for vertex color flag consumption). ✅ Done.
 - 4.1 is independent but nice-to-have (API mappings don't affect materials).
 
 ---
@@ -242,6 +243,7 @@ Source's AI prompt includes detailed rules not present in dest:
 - [ ] Dest's rule-based strategy unaffected
 - [ ] Dest's concurrent execution preserved (batched by dependency level)
 - [ ] Existing dest transpiler tests still pass
+- [ ] **Dependency ordering and warnings persisted** (via script_manifest.json or conversion_context.json) so the preserved-script rehydration path doesn't lose them
 
 ### Dependencies
 
@@ -296,6 +298,7 @@ Dest is vastly more comprehensive (22× the code). It auto-fixes issues rather t
 - [ ] `check_method_completeness()` available in dest
 - [ ] Comment/string stripping verified in dest (no false positives on commented-out C# code)
 - [ ] Existing dest validator tests still pass
+- [ ] **Dual integration:** new diagnostics run in both the standalone `validate` CLI command (convert_interactive.py:605) AND `write_output`'s validation pass (pipeline.py:1411), not just the fresh-transpile path
 
 ### Dependencies
 
@@ -428,10 +431,13 @@ Test matrix:
 - [ ] Config-table backend (source's approach) works for complex animations
 - [ ] Both backends produce valid Luau that runs in Roblox Studio
 - [ ] Existing dest animation tests still pass
+- [ ] **`_inject_runtime_modules()` updated** to auto-inject `animator_bridge.luau` and `TransformAnimator.luau` when config-table or transform-only backend is selected (currently only injects `animator_runtime.luau`)
+- [ ] **Generated animation scripts persist to disk** in a known subdirectory that `write_output` rehydration handles (current rewrite only knows `scripts/` and `scripts/animations/`)
 
 ### Dependencies
 
-- Phase 2: `AnimatorBridge.luau` runtime must be ported first (config-table backend needs it).
+- Phase 2: `AnimatorBridge.luau` and `TransformAnimator.luau` runtimes must be ported first. ✅ Done.
+- Phase 3 item 11 (extend write_output disk rewrite) should be completed first or concurrently.
 - Independent of 4.1–4.4.
 
 ---
