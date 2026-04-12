@@ -274,15 +274,17 @@ For each module: port, adapt imports, run tests.
 
 ### Phase 4: Reconcile Shared Modules
 
-**Goal:** For modules in both repos, take the best of both.
+**Goal:** For modules in both repos, take the best of both. **See [MERGE_PLAN_PHASE4.md](MERGE_PLAN_PHASE4.md) for the detailed plan** with per-module diffs, step-by-step actions, acceptance criteria, and execution order.
 
-1. **api_mappings** — merge mapping tables (union). Run dedup.
-2. **material_mapper** — compare shader support. Port any missing shaders/texture ops from source.
-3. **code_transpiler** — compare prompts and confidence scoring. Port better prompt engineering.
-4. **luau_validator** — port any unique fix patterns from source's code_validator.
-5. **animation_converter** — compare. Source has root motion extraction + blend trees. Port missing features.
-6. **ui_translator** — compare. Port missing element types.
-7. **scene_parser** — source may handle edge cases dest doesn't. Diff and port.
+Summary:
+
+1. **api_mappings** (Low) — union merge of mapping tables, dedup. Dest is superset; port source-only entries.
+2. **material_mapper** (High) — port 14+ missing shaders, 6 missing texture ops, unconverted feature tracking, vertex color detection into dest's cleaner type system.
+3. **code_transpiler** (Medium) — port dependency-aware context building (topological sort + dependency Luau injection) and C# pattern analysis warnings into dest's concurrent dual-strategy transpiler.
+4. **luau_validator** (Low) — port `check_method_completeness()` and verify comment/string stripping. Dest's 7.5K LOC validator already covers source's other checks.
+5. **animation_converter** (High) — implement dual-backend selection: TweenService (dest, simple anims) vs config-table + runtime (source, blend trees/root motion). Port root motion extraction, blend tree parsing, R15 bone mapping.
+6. **ui_translator** (Medium) — port font mapping, TextAnchor→alignment, sprite-vs-solid distinction, partial anchor warnings.
+7. **scene_parser** (Low) — port animator controller GUID extraction and verify edge case parity.
 
 ### Phase 5: Port Tests
 
