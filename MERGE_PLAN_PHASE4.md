@@ -9,6 +9,14 @@
 
 Phase 4 reconciles 7 modules that exist in both repos. The guiding principle: **keep the dest's architecture and types, port the source's missing capabilities.** Every ported capability must conform to the dest's `core/roblox_types.py` and `core/unity_types.py` type system.
 
+### Cross-Cutting Constraints (from CEO + Codex review, 2026-04-12; updated per eng review)
+
+1. **Validation ordering:** All generated Luau (animation configs, bridge modules, companion scripts, ScriptableObject modules) must pass through `luau_validator` before `write_output` finalizes. Current orchestration validates before these scripts are appended — this must be fixed as part of Phase 4, not deferred. Affects 4.2 (companion scripts), 4.4 (validator integration), and 4.5 (animation configs). **Owner: 4.4** — the validation ordering fix lives in the luau_validator task. 4.4 must modify the Pipeline orchestration to add a "post-processing validation" step between the processing and assembly phases.
+2. **Asset ID substitution contract:** All modules that emit asset references (UI image GUIDs, material texture paths, animation clip references) must use a consistent GUID placeholder format (`rbxassetid://<unity-guid>`) that the upload phase can resolve in a single pass. Each module must not invent its own placeholder scheme. **Owner: 4.2** — material_mapper is the largest texture emitter. 4.2 must define the canonical format and add a test asserting all emitted asset references conform. Currently no module follows this contract (source uses local file paths for textures, `rbxassetid://{filename}` for uploads).
+3. **Error resilience:** Every new codepath that processes external data (YAML, images, FBX) must handle corrupt/missing/unexpected input gracefully — log the failure, skip the item, record in UNCONVERTED.md. Never crash on bad input data. Applies to ALL modules equally — 4.5 and 4.6 need the same resilience criteria as 4.2 (see per-module acceptance criteria).
+4. **Deterministic output (per eng review):** All module outputs must be deterministic across runs given the same input. Specifically: code_transpiler dependency cycle-breaking must use a stable sort (alphabetical by script name), not arbitrary dict ordering. Non-deterministic transpilation makes debugging impossible.
+5. **Rollback strategy (per eng review):** Each 4.x item should be a separate PR with CI validation before merge into the dest. Tag a rollback point commit before Phase 4 begins. Run integration test checkpoints after 4.2 and 4.5 (the two High-complexity items) before proceeding to remaining items.
+
 ### Effort Summary
 
 | Module | Complexity | Approach | Estimated Diff |
@@ -53,6 +61,7 @@ Dest is a strict superset in structure (it adds `UTILITY_FUNCTIONS`, which sourc
 - [ ] No duplicate keys
 - [ ] Existing dest entries unchanged
 - [ ] `UTILITY_FUNCTIONS` untouched (source has no equivalent)
+- [ ] **Ported mappings verified against runtime:** Each new `API_CALL_MAP` entry's target Roblox API or utility function is accessible in generated Luau — i.e., the required `SERVICE_IMPORTS` entry exists, or the target is a `UTILITY_FUNCTIONS` helper that gets auto-injected
 
 ### Dependencies
 
@@ -87,14 +96,14 @@ Source classifies shaders via `_identify_shader()` with a `ShaderInfo` dataclass
 **Action:** Expand dest's shader handling:
 1. Add a `ShaderCategory` enum to dest: `BUILTIN`, `URP`, `HDRP`, `LEGACY`, `PARTICLE`, `SPRITE`, `UI`, `UNLIT`, `MOBILE`, `SKYBOX`, `CUSTOM`, `UNKNOWN`.
 2. Port source's shader identification patterns into dest's `_identify_shader()` (or equivalent). Map each shader to its category + transparency + vertex-color flags.
-3. **Important:** Source does NOT fall back to Standard-like extraction for unknown shaders. `_identify_shader()` returns `unknown`, and `_convert_material()` returns no `roblox_def`. Decide whether dest should add a fallback or preserve source's strict behavior.
+3. **Decision (CEO review):** Unknown shaders fall back to Standard-like extraction with a warning in UNCONVERTED.md. Add `_fallback_to_standard()` that attempts `_MainTex`, `_BumpMap`, `_MetallicGlossMap` extraction as best-effort approximation. Log: "Unknown shader '{name}' — applied Standard fallback. Visual fidelity may differ."
 
 **Shaders to add (verified in source):**
 - Legacy Diffuse/Specular/Bumped variants
 - Particle premultiply/multiply variants
 - HDRP heuristic detection
 - Unlit/Mobile/Skybox variants
-- Data-driven custom shader detection via `_CUSTOM_SHADER_PATTERNS` regex + companion script resolution
+- Data-driven custom shader detection via `_CUSTOM_SHADER_PATTERNS` regex + companion script resolution. **Note (per eng review):** Current patterns (CurvedUnlitAlpha, CurvedUnlitCloud, CurvedRotation, UnlitBlinking) are Trash Dash-specific. Per project CLAUDE.md rule ("game-specific fixes stay in output only, not converter"), these should be made configurable via a project-level config rather than hardcoded. Port the *mechanism* (regex table + companion script resolution), populate with general examples, allow per-project extension.
 - **Note:** The earlier plan listed `Particles/Standard Surface`, `Sprites/Diffuse`, `UI/Default Font`, `Nature/Tree Soft Occlusion` — these are NOT explicitly enumerated in source. Source handles them via category heuristics, not named entries.
 
 #### 4.2.2 Port Texture Operations
@@ -115,6 +124,8 @@ Source defines 10 texture operation types via a `TextureOperation` dataclass wit
 | `heightmap_to_normal` | Generates normal map from heightmap | `_ParallaxMap` present, no `_BumpMap` |
 
 Each operation is a pure function: `(input_image, params) → output_image`. Port as individual functions in a new `texture_ops.py` helper or inline in `material_mapper.py`.
+
+**Performance note (per eng review):** Port texture ops to accept `PIL.Image` instances, not file paths, so the caller opens once and pipes through multiple ops. Also, `pre_tile` must clamp `tile_x * tile_y` or compute target dimensions *before* allocating the tiled image — a 4K texture at 4× tiling allocates ~1GB before the max_res clamp kicks in.
 
 #### 4.2.3 Port Unconverted Feature Tracking
 
@@ -161,6 +172,10 @@ After all ports:
 - [ ] Dest's dual YAML parsing (PyYAML + regex fallback) preserved
 - [ ] Existing dest material tests still pass
 - [ ] **Idempotent under interactive prerequisite replay** — companion scripts, UNCONVERTED.md, and vertex-color outputs must not assume upload/resolve already ran (interactive mode skips cloud phases during replay)
+- [ ] **Unknown shader fallback:** Unrecognized shaders produce a best-effort Standard-like `MaterialMapping` with a warning in UNCONVERTED.md, not a silent skip
+- [ ] **Texture operation error resilience:** Every texture operation (`bake_ao`, `threshold_alpha`, `composite_detail`, etc.) gracefully handles missing/corrupt/channelless input images — skip the op, log the failure, record in UNCONVERTED.md. Never crash on bad image data. Specifically handle: missing file, LFS pointer, no alpha channel, unexpected channel count, oversized images.
+- [ ] **Deterministic texture output names:** Generated textures (from bake_ao, composite_detail, etc.) use deterministic names derived from material name + operation, so re-runs produce identical output
+- [ ] **`referenced_guids` filtering (per eng review):** When `referenced_guids` is provided, only materials matching those GUIDs are processed. Unreferenced materials are skipped with a log entry. In multi-scene mode, `referenced_guids` is the union of all scenes' referenced material GUIDs (computed during discovery phase), not per-scene.
 
 ### Dependencies
 
@@ -195,7 +210,7 @@ Source's key advantage: `_build_dependency_graph()` + `_topological_sort()` + `_
 
 **Action:**
 1. Add `_build_dependency_graph(script_infos)` to dest — analyzes class references (NOT `using` directives — source uses class name references, not imports) to build a DAG.
-2. Add `_topological_sort(graph)` — source uses DFS with arbitrary cycle breaking, not Kahn's algorithm. Port source's actual implementation.
+2. Add `_topological_sort(graph)` — source uses DFS with arbitrary cycle breaking, not Kahn's algorithm. Port source's actual implementation. **Fix during port (per eng review):** Source's cycle-breaking is non-deterministic (depends on dict iteration order). Make it deterministic by sorting neighbors alphabetically before DFS. Add acceptance criterion: dependency ordering is identical across runs given the same input.
 3. Modify dest's AI transpilation path to process scripts in dependency order.
 4. When building the AI prompt for script N, include the Luau output of already-transpiled dependencies plus transitive signatures (source's scoped context building).
 5. Port large-project manifest fallback — when project is too large for full context, source builds a condensed manifest instead.
@@ -233,7 +248,7 @@ Source's AI prompt includes detailed rules not present in dest:
 
 **Action:** Compare dest's AI prompt with source's. Port the prompt rules that improve transpilation quality. These are the "secret sauce" of the source's AI approach.
 
-**Note on script type classification:** Source's `_classify_script_type()` has client-indicator tables (Camera.main, Input, etc.) but currently only returns `Script` or `ModuleScript` — it never returns `LocalScript` despite the detection logic. If dest already handles LocalScript classification, this is a non-issue. If not, the source logic can be completed during porting.
+**Note on script type classification (resolved per eng review):** Source's `_classify_script_type()` has client-indicator tables (Camera.main, Input, etc.) but currently only returns `Script` or `ModuleScript` — it never returns `LocalScript` despite the detection logic. **Action: resolve before implementation begins.** Diff dest's script classification against source's. If dest returns LocalScript for camera/input scripts, keep dest's behavior. If dest also lacks LocalScript classification, decide whether to complete the logic or keep the ModuleScript default. This is a design decision that affects the bootstrap architecture — do not leave it as "verify during porting."
 
 ### Acceptance Criteria
 
@@ -350,13 +365,15 @@ The plan's original analysis missed this entirely. Source has a complete separat
 
 **Action:** Port this pipeline. It handles a common case (door animations, moving platforms, rotating objects) that the Animator pipeline doesn't cover.
 
-#### 4.5.1 Port Root Motion Extraction (Unintegrated — Requires Wiring)
+**Note (per eng review):** `convert_transform_animations()` scans both scene nodes and prefab nodes (source line 921–932). Verify that the dest's prefab parser node/component interface is compatible with the ported scanning logic. If prefab nodes have a different structure, the prefab scan will silently produce zero results.
 
-Root motion helpers exist in source but are **never called** by any pipeline entry point. They are aspirational code.
+#### 4.5.1 Port Root Motion Extraction (⚠ NEW FEATURE, not a port)
+
+Root motion helpers exist in source but are **never called** by any pipeline entry point. They are aspirational, unproven code. **Per eng review (Codex challenge):** This is new feature development, not a port of proven functionality. The code calls `assimp export` CLI (not pyassimp), assumes root bone is named `Hips` (only true for Humanoid rigs), and `generate_root_motion_config()` was never validated against a real Roblox runtime. Treat this accordingly.
 
 **Action:**
-1. Port `FbxRootMotion` dataclass and `extract_fbx_root_motion()` to dest.
-2. **Actually wire them in** — source never did this. Add root motion extraction to the animation pipeline when `apply_root_motion` is true on an Animator component.
+1. Port `FbxRootMotion` dataclass and `extract_fbx_root_motion()` to dest as **dormant helpers** (matching source behavior).
+2. **Wiring is a stretch goal**, not a blocking requirement. If time permits, add root motion extraction to the animation pipeline when `apply_root_motion` is true. This requires a spike: test with a real FBX file in Roblox Studio to verify the output format works.
 3. Generate a root motion application script (source's `generate_root_motion_config()` adapted to dest's output style).
 4. Note: requires `assimp` (optional dependency) and assumes root bone is named `Hips`.
 
@@ -378,22 +395,42 @@ Source's `UNITY_TO_R15_BONE_MAP` maps Unity Humanoid bone names to Roblox R15 pa
 
 #### 4.5.4 Implement Backend Selection
 
-**Action:** Add a backend selection heuristic:
+**Action:** Add a backend selection heuristic. Decision tree (refined per CEO review):
 
 ```
-IF controller has blend trees OR controller has >5 parameters:
-    → Config-table backend (source approach)
-    → Requires AnimatorBridge runtime (ported in Phase 2)
-ELSE:
-    → TweenService backend (dest approach)
-    → Self-contained, no runtime dependency
+FOR each Animator component:
+  controller = parse_controller_file(...)
+
+  IF controller parsing fails (binary format, corrupt YAML):
+      → Log warning, skip this Animator entirely
+      → Record in UNCONVERTED.md
+
+  IF controller has ANY blend trees (even one state with BlendTree):
+      → Config-table backend
+      → Reason: TweenService cannot interpolate between multiple animations by parameter
+
+  ELSE IF controller has >3 parameters WITH Float or Int types:
+      → Config-table backend
+      → Reason: parameter-driven transitions are state-machine-heavy, config-table handles natively
+
+  ELSE IF controller has root motion enabled (m_ApplyRootMotion = true):
+      → Config-table backend
+      → Reason: root motion requires frame-by-frame position/rotation extraction
+
+  ELSE:
+      → TweenService backend
+      → Self-contained, no runtime dependency
 ```
+
+**Logging (per CEO review):** Log the backend selection decision for each Animator to the conversion report: `"Animator '{name}': selected {backend} backend (reason: {reason})"`. This is critical for debugging "why does this animation look wrong."
 
 Implementation:
-1. Add a `backend: Literal["tween", "config_table"]` field to the animation conversion result.
+1. Add a `backend: Literal["tween", "config_table"]` field and `backend_reason: str` to the animation conversion result.
 2. In `convert_animations()`, analyze each controller's complexity before choosing backend.
 3. Config-table backend: use source's `generate_animator_config()` adapted to dest's types.
 4. TweenService backend: use dest's existing `generate_tween_script()` / `generate_state_machine_script()`.
+5. **Scene-scoped naming (per CEO review):** Generated animation module names must be prefixed with the scene name to avoid collisions across scenes/prefabs. E.g., `Level1_PlayerAnimConfig.luau`, not `PlayerAnimConfig.luau`. This prevents silent overwrites when multiple scenes have GameObjects with the same name. **Data flow (per eng review):** `convert_animations()` currently iterates all nodes across all scenes in a flat loop with no scene-name awareness. Implementation must either process scenes one at a time (passing scene name as a parameter) or add a `scene_name: str` field to the node data structure so it survives flattening. Same applies to `convert_transform_animations()`.
+6. **Backend choice persistence (per eng review):** The selected backend (`"tween"` or `"config_table"`) and reason string for each Animator must be persisted to `conversion_context.json` (under an `animation_backends` key). The preserved-script rehydration path reads this to determine which runtime modules to inject (`animator_bridge.luau` vs inline TweenService). Without persistence, re-running the assemble phase after script edits would lose the backend decision and potentially inject the wrong runtime.
 
 #### 4.5.5 Reconcile Data Structures
 
@@ -426,10 +463,17 @@ Test matrix:
 - [ ] Root motion extraction ported AND wired into pipeline (source had it unwired)
 - [ ] Blend tree parsing added to controller parser (via `m_Motion` refs, not `m_BlendTree`)
 - [ ] R15 bone mapping available (currently: rejection filter; future: keyframe remapping)
-- [ ] Backend selection heuristic implemented and documented
+- [ ] Backend selection heuristic implemented with precise decision tree (blend trees → config-table; >3 Float/Int params → config-table; root motion → config-table; else → TweenService)
+- [ ] Backend selection decision logged per-Animator in conversion report with reason string
 - [ ] TweenService backend (dest's existing) still works for simple animations
 - [ ] Config-table backend (source's approach) works for complex animations
 - [ ] Both backends produce valid Luau that runs in Roblox Studio
+- [ ] **Scene-scoped naming:** Generated animation module names prefixed with scene name (e.g., `Level1_PlayerAnimConfig.luau`) to prevent collisions across scenes/prefabs
+- [ ] **Binary .controller graceful failure:** If controller YAML parsing fails (binary format, corrupt file), skip with warning and UNCONVERTED.md entry — never crash
+- [ ] **Clip resolution graceful failure:** If .anim file not found by filename search, skip that clip with warning — never crash
+- [ ] **Corrupt .anim resilience (per eng review):** Malformed keyframe data (wrong type, missing fields, NaN values) → skip that curve, log warning, continue with remaining curves. Never crash on bad animation data.
+- [ ] **assimp CLI failure resilience (per eng review):** If root motion extraction fails (assimp not installed, CLI timeout, missing FBX), skip root motion for that animator with warning — do not block the entire animation pipeline.
+- [ ] **Transform-only prefab scanning (per eng review):** Transform-only animation detection works for both scene nodes AND prefab nodes.
 - [ ] Existing dest animation tests still pass
 - [ ] **`_inject_runtime_modules()` updated** to auto-inject `animator_bridge.luau` and `TransformAnimator.luau` when config-table or transform-only backend is selected (currently only injects `animator_runtime.luau`)
 - [ ] **Generated animation scripts persist to disk** in a known subdirectory that `write_output` rehydration handles (current rewrite only knows `scripts/` and `scripts/animations/`)
@@ -538,8 +582,8 @@ Source warns when a RectTransform uses mixed stretch + offset anchoring (e.g., `
 **Critical:** Source inverts Y position and pivot in its RectTransform conversion, but the module header comment says "no GUI Y inversion is needed." This contradiction means porting the math blindly can vertically flip layouts. Before porting:
 1. Read source's actual Y-inversion logic in `translate_rect_transform()`
 2. Compare with dest's coordinate handling
-3. Test with a real Unity Canvas to determine which is correct
-4. Document the decision
+3. **Decision (CEO review):** Use `unity-fps-output/` as the reference project — its UI elements have known positions. Convert with source's transform, open in Studio, verify UI element positions match the original Unity layout. If flipped, use dest's transform instead.
+4. Document the decision with before/after evidence
 
 ### Acceptance Criteria
 
@@ -547,6 +591,8 @@ Source warns when a RectTransform uses mixed stretch + offset anchoring (e.g., `
 - [ ] TextAnchor → TextXAlignment + TextYAlignment mapping complete
 - [ ] Sprite-vs-solid-color distinction for Images
 - [ ] Partial anchor warning emitted
+- [ ] **RectTransform resilience (per eng review):** Malformed RectTransform properties (missing anchors, invalid pivot values, NaN positions) → skip that element with warning, record in UNCONVERTED.md. Never crash on bad UI data.
+- [ ] **Canvas-less UI nodes (per eng review):** UI elements without a parent Canvas → skip with warning, not crash
 - [ ] Existing dest UI tests still pass
 
 ### Dependencies
@@ -611,24 +657,37 @@ The sub-items have few hard dependencies between them. Recommended order optimiz
 │ Can start immediately (no dependencies):                │
 │   4.1 api_mappings        (Low, ~1hr)                   │
 │   4.3 code_transpiler     (Medium, ~3hr)  [no hard dep] │
-│   4.4 luau_validator      (Low, ~1hr)                   │
 │   4.6 ui_translator       (Medium, ~2hr)  [⚠ Y-invert] │
 │   4.7 scene_parser        (Low, ~1hr)                   │
 └─────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Start after Phase 2 + 4.7:                              │
-│   4.2 material_mapper     (High, ~5hr)                  │
-│        └─ needs vertex_color_baker from Phase 2         │
-│        └─ nice-to-have: scene_parser GUID tracking      │
+│ Start after 4.7 (hard dependency):                      │
 │   4.5 animation_converter (High, ~6hr)                  │
+│        └─ HARD DEP: scene_parser controller GUIDs (4.7) │
 │        └─ needs AnimatorBridge.luau + TransformAnimator  │
-│           from Phase 2                                   │
-│        └─ nice-to-have: scene_parser controller GUIDs   │
+│           from Phase 2 ✅                                │
 │        └─ includes new transform-only pipeline (4.5.0)  │
 └─────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────┐
+│ Start after 4.5 + Phase 3 rehydration:                  │
+│   4.2 material_mapper     (High, ~5hr)                  │
+│        └─ needs vertex_color_baker from Phase 2 ✅       │
+│   4.4 luau_validator      (Low, ~1hr)                   │
+│        └─ LATE: must run after all script-generating     │
+│           modules (4.2, 4.5) are integrated, so         │
+│           validation ordering fix covers all generated   │
+│           Luau (see cross-cutting constraint #1)         │
+└─────────────────────────────────────────────────────────┘
 ```
+
+**Ordering rationale (CEO + Codex review):**
+- 4.7 → 4.5 is a **hard dependency**: animation_converter consumes `referenced_animator_controller_guids` from scene_parser.
+- 4.4 moved late: luau_validator integration must happen after all script-generating modules (4.2 companion scripts, 4.5 animation configs) are integrated, so the validation ordering fix (cross-cutting constraint #1) covers all generated Luau.
+- Phase 3 rehydration/persistence is a **prerequisite** for Phase 4 modules that generate scripts — without script_manifest.json, generated scripts will be lost on preserved-script assemble.
 
 ---
 
@@ -639,6 +698,12 @@ Each reconciliation item should have:
 1. **Existing dest tests pass** — run before and after. Zero regressions.
 2. **Ported source test cases** — for capabilities that came from source, port the relevant test assertions (not the test scaffolding — adapt to dest's test structure).
 3. **Integration smoke test** — after all 7 items complete, run a full pipeline conversion on a test Unity project to verify modules compose correctly.
+4. **Cross-module integration tests (per eng review):** Automated tests for critical module boundaries:
+   - `scene_parser` → `animation_converter`: controller GUID extraction feeds animator discovery
+   - `material_mapper` → `rbxlx_writer`: MaterialMapping consumption produces valid RBXLX
+   - `code_transpiler` → `code_validator`: transpiled Luau passes validation without regressions
+   - End-to-end: parse scene → transpile scripts → validate → assemble output (minimal, no upload)
+5. **Rehydration path test (per eng review):** At least one test that exercises the preserved-script assemble flow: transpile → edit scripts on disk → re-assemble → verify edits survive and correct runtime modules are injected.
 
 ---
 
@@ -649,9 +714,61 @@ Each reconciliation item should have:
 | Material mapper port breaks `scene_converter` / `rbxlx_writer` integration | Add `MaterialMapping` field changes behind optional fields with defaults. Run integration test before merging. |
 | Unknown shaders silently produce no `roblox_def` | Source does NOT fall back to Standard extraction for unknown shaders. Decide explicitly: add a fallback in dest, or preserve strict behavior and log a warning. |
 | Animation dual-backend adds maintenance burden | Backend selection is deterministic (based on controller complexity). Document the heuristic clearly. Consider removing config-table backend later if TweenService proves sufficient. |
-| Root motion code is unintegrated in source | Must be wired into pipeline during port — don't assume it works just because the functions exist. Add integration tests. |
+| Root motion code is unintegrated in source | Port as dormant helpers. Wiring is a stretch goal requiring a real FBX validation spike. Do not treat as equivalent to porting proven code. |
 | Only base animator layer parsed | Multi-layer support is out of scope. Document this limitation. May cause missing animations for controllers with override/additive layers. |
 | UI Y-inversion contradiction | Source code inverts Y but header comment says no inversion needed. Must test with real Unity Canvas before porting math. Wrong choice flips all layouts vertically. |
 | Dependency-ordered transpilation slows down concurrent execution | Batch by dependency level preserves concurrency within levels. Measure wall-clock time before/after. |
 | `scene_parser` classID coverage split across two files | Must diff both `scene_parser.py` AND `unity_yaml_utils.py` against dest — checking only the parser misses delegated component coverage. |
 | Union merge of api_mappings introduces conflicting entries | Keep dest's value when both repos map the same key differently. Log conflicts for manual review. |
+| Non-deterministic dependency cycle breaking (eng review) | Source's DFS cycle break depends on dict ordering. Fix: alphabetical sort before DFS. |
+| Integration regression across 4.x items (eng review) | Each 4.x item is a separate PR with CI. Integration checkpoints after 4.2 and 4.5. Tag rollback point before Phase 4. |
+| Custom shader patterns are game-specific (eng review) | Port the mechanism (regex table + companion scripts), not the Trash Dash patterns. Make table configurable per-project. |
+| Orchestration/glue code changes underestimated (eng review) | +600/+500 LOC estimates don't include changes to pipeline.py, scene_converter.py, rbxlx_writer.py, write_output. Budget an additional ~200 LOC for integration wiring. |
+
+---
+
+## Eng Review Log (2026-04-12)
+
+**Reviewer:** Claude Opus 4.6 + Codex (outside voice)  
+**Branch:** refactor/skill-to-code  
+**Scope mode:** HOLD SCOPE  
+
+### Section 1: Architecture Review
+- 1 issue found: Animation backend choice must persist to ConversionContext for rehydration path. **Applied.**
+- Asset ID placeholder format inconsistency noted, non-blocking.
+
+### Section 2: Code Quality Review
+- `_convert_material()` (385 lines) and `_process_textures()` (370 lines) are monolithic. Natural decomposition happens during port — not a separate task.
+- Broad `Exception` catch in texture processing should not carry forward. Plan already addresses via resilience criterion.
+- Result dataclass naming inconsistency (anims vs animators) — minor, fix during port.
+- All 4 modules have complete type annotations, no `Any`, no mutable defaults. Clean.
+
+### Section 3: Test Review
+- 440 unit tests across 9 files. Strong unit coverage, zero integration coverage.
+- **Added to plan:** Cross-module integration tests (4 specific module boundaries) and rehydration path test.
+
+### Section 4: Performance Review
+- Repeated `Image.open()` calls in texture processing. **Added** guidance to port ops accepting PIL.Image instances.
+- `pre_tile` memory bomb (4K × 4× = 1GB). **Added** clamp-before-allocate requirement.
+- No other performance concerns.
+
+### Outside Voice (Codex): 15 findings, 7 applied
+Applied to plan:
+1. Cross-cutting constraints now have explicit **owners** (4.4 owns validation ordering, 4.2 owns asset ID contract)
+2. Scene-scoped naming data flow path specified (scene_name parameter or field)
+3. Root motion reclassified as new feature / stretch goal (not a port)
+4. Custom shader patterns: port mechanism, not game-specific patterns
+5. Dependency cycle-breaking: deterministic alphabetical sort required
+6. Error resilience parity: 4.5 and 4.6 now have same-level resilience criteria as 4.2
+7. `referenced_guids` filtering acceptance criterion added
+8. Rollback strategy: separate PRs, CI gates, integration checkpoints
+
+Acknowledged but not requiring plan changes:
+- Dual-backend long-term maintenance (already in risk table with sunset clause)
+- Y-inversion tolerance (concrete test protocol recommended, added to 4.6.7)
+- `check_method_completeness` contract (diagnostic-only, low impact)
+- Effort estimates for orchestration glue (added to risk table)
+
+### Status: DONE
+
+Plan is ready for implementation. Total changes: 19 plan updates across CEO review (11) + eng review (8). All cross-cutting constraints have owners. All acceptance criteria are verifiable. Execution order is sound with integration checkpoints.
