@@ -166,123 +166,99 @@ The source's `conversion_helpers.py` (2087 LOC) is a large module that handles o
 - [ ] Refine plan with team feedback
 - [ ] Finalize implementation order
 
-### Phase 1: Two-Mode Entry Points & Documentation
+### Phase 1: Two-Mode Entry Points & Documentation ✅
 
-**Goal:** Establish the two-mode architecture and documentation before porting any modules.
+**Status:** Complete (branch `merge-converters`, merged).
 
-1. **Create `convert_interactive.py`** in `converter/`
-   - Click-based CLI with subcommands: preflight, status, discover, inventory, materials, transpile, validate, assemble, upload, report
-   - Uses the same `ConversionContext` for state persistence
-   - Each subcommand reads/writes `.convert_state.json`
-   - Outputs structured JSON to stdout
-   - Initially delegates to the existing `Pipeline` class for heavy lifting
+Delivered: `convert_interactive.py` (Click CLI with 10 subcommands), `.claude/skills/convert-unity/` skill definition with per-phase reference docs, README/CLAUDE.md/ARCHITECTURE.md updates.
 
-2. **Create `.claude/skills/convert-unity/`** in `converter/`
-   - `SKILL.md` — skill definition with workflow, decision points
-   - `references/upload-patching.md` — detailed game logic porting guidance
+**Post-merge fixes applied:** R1 (_run_through replays upload/resolve), R3 (upload ignores .roblox_ids.json), R4 (--api-key doesn't reach transpiler), C6 (failed upload marked as success), C7 (preflight Python/package checks wrong).
 
-3. **Update `README.md`** to clearly document both modes:
-   - Quick start for CLI: `python u2r.py convert ...`
-   - Quick start for Claude Code: `/convert-unity <project> <output>`
-   - Feature comparison table (CLI vs skill)
+### Phase 2: Port New Standalone Modules ✅
 
-4. **Update `CLAUDE.md`** to reflect:
-   - Both entry points and when to use each
-   - Updated architecture with new modules
-   - Phase descriptions for both modes
+**Status:** Complete (branch `merge-converters-phase2`, merged).
 
-5. **Update `ARCHITECTURE.md`** with:
-   - Two-mode diagram
-   - Module inventory (existing + planned)
+Delivered: All 7 standalone Python modules ported (bridge_injector, vertex_color_baker, sprite_extractor, mesh_splitter, scriptable_object_converter, rbxl_binary_writer, report_generator), 9 bridge Luau files ported to `runtime/` (.lua → .luau, Physics.lua → physics_queries.luau, AnimatorBridge.lua → animator_bridge.luau), config.py updated.
 
-### Phase 2: Port New Standalone Modules
-
-**Goal:** Add source-only modules that have no dest equivalent. These are standalone (no cross-module imports) so they can be ported independently.
-
-Order (least to most dependencies):
-
-1. **`bridge_injector.py`** → `converter/converter/bridge_injector.py`
-   - Adapt: change bridge file path from `bridge/` to `runtime/`
-   - Add bridge Luau files to `runtime/` (rename `.lua` → `.luau`)
-
-2. **`vertex_color_baker.py`** → `converter/converter/vertex_color_baker.py`
-   - Standalone — no type changes needed
-   - Add `assimp` to optional dependencies in pyproject.toml
-
-3. **`sprite_extractor.py`** → `converter/converter/sprite_extractor.py`
-   - Standalone — uses Pillow (already a dependency)
-
-4. **`mesh_splitter.py`** → `converter/converter/mesh_splitter.py`
-   - Standalone — uses trimesh (already a dependency)
-
-5. **`scriptable_object_converter.py`** → `converter/converter/scriptable_object_converter.py`
-   - Standalone — uses PyYAML (already a dependency)
-
-6. **`rbxl_binary_writer.py`** → `converter/roblox/rbxl_binary_writer.py`
-   - Standalone — uses lz4 (add to dependencies)
-
-7. **`report_generator.py`** → `converter/converter/report_generator.py`
-   - Adapt to use `ConversionContext` stats
-
-8. **Port bridge Luau files** to `converter/runtime/`:
-   - `Input.lua` → `Input.luau`
-   - `Time.lua` → `Time.luau`
-   - `MonoBehaviour.lua` → `MonoBehaviour.luau`
-   - `Coroutine.lua` → `Coroutine.luau`
-   - `GameObjectUtil.lua` → `GameObjectUtil.luau`
-   - `StateMachine.lua` → `StateMachine.luau`
-   - `TransformAnimator.lua` → `TransformAnimator.luau`
-   - Reconcile `AnimatorBridge.lua` with `animator_runtime.luau`
-   - Reconcile `Physics.lua` with `physics_bridge.luau`
-
-For each module: port, adapt imports, run tests.
+**Post-merge fixes applied (86392e6):**
+- assemble `--retranspile` flag: skip transpilation when already completed to preserve hand-edited Luau
+- pipeline.write_output: rehydrate scripts from disk when transpilation was skipped
+- upload: added `write_output` to rebuild phase list (was missing scripts)
+- Scene paths: project-relative paths instead of basename-only for disambiguation
+- Cross-project contamination guard: hard-fail when persisted context comes from a different Unity project
 
 ### Phase 3: Integrate New Modules into Pipeline
 
-**Goal:** Wire the new modules into the existing `Pipeline` class.
+**Goal:** Wire the Phase 2 modules into the existing `Pipeline` class. All integrations must work in three flows: (a) full `u2r.py` CLI, (b) interactive `assemble` with fresh transpilation, (c) interactive `assemble` with `--retranspile=false` (script rehydration path). The `upload` command's rebuild path (`parse → … → write_output`) must also include every new step.
 
-1. **Add bridge injection** after `transpile_scripts` phase
-   - Scan transpiled Luau for API patterns
-   - Auto-inject matching runtime modules
+> **Key lesson from Phase 1-2:** `PipelineState` does not survive across interactive commands. Any feature that only populates in-memory state will disappear on preserved-script assemble and upload rebuild. Features must either persist artifacts to disk or integrate into `write_output` where both the fresh-transpile and rehydration paths converge.
 
-2. **Add vertex color baking** to asset processing
-   - After asset extraction, before upload
-   - Bake meshes that use vertex colors
+1. **Add bridge injection** inside `write_output`, after scripts are populated in `rbx_place`
+   - Must run after both the fresh-transpile path AND the disk-rehydration path (pipeline.py ~L934)
+   - Scan `self.state.rbx_place.scripts` for API patterns, inject matching runtime modules
+   - Dedupe against existing `RbxScript.name` entries to avoid double-injection (bridge_injector dedupes by filename, but RbxScript uses basename-only names)
+   - Place near existing require-injection/reclassification/runtime-injection logic (~L1023)
 
-3. **Add sprite extraction** to asset extraction
+2. **Add vertex color baking** after `convert_materials`, before `convert_scene`
+   - ~~Original plan said "between convert_materials and upload_assets"~~ — actual phase order has `upload_assets` before `convert_materials`, so that placement was impossible
+   - After materials mapped, bake vertex colors for meshes that need it
+   - Reads `uses_vertex_colors` flag from `MaterialMapping` (added in Phase 4.2)
+
+3. **Add sprite extraction** to `extract_assets`
    - Scan .meta files for spritesheet TextureImporters
+   - No interactive-mode complications (extract_assets always runs)
 
-4. **Add mesh splitting** to mesh processing
-   - Before decimation, split multi-material meshes
+4. **Add mesh splitting** to `convert_scene`
+   - When MeshRenderer has `len(m_Materials) > 1`, split before creating RbxParts
+   - No interactive-mode complications (convert_scene always runs in assemble)
 
-5. **Add scriptable object conversion** to transpilation phase
-   - Scan for .asset files, generate ModuleScript data tables
+5. **Add scriptable object conversion** to `transpile_scripts` AND persist to disk
+   - Generate ModuleScript data tables from .asset files during transpilation
+   - **Critical:** Also persist generated `.luau` files to `scripts/` on disk, so `write_output`'s rehydration path picks them up when transpilation is skipped
+   - Alternative: run as a separate sub-step in `write_output` that generates from source .asset files regardless of transpile state
 
-6. **Add binary writer** to upload flow
-   - Convert .rbxlx → .rbxl before Open Cloud upload
+6. **Add binary writer** as optional post-`write_output` step
+   - Convert .rbxlx → .rbxl after the place file is written
+   - **Do NOT wire into the interactive `upload` command** — upload rebuilds `rbx_place` in-memory and uses `execute_luau`, not file upload. Binary writing only matters for direct Open Cloud place-upload (future capability in `cloud_api.py`)
 
-7. **Add report generation** as final phase
+7. **Replace inline report generation** in `write_output` and `convert_interactive.py:report()`
+   - The ported `report_generator.py` should replace the existing ad hoc JSON writers in pipeline.py (~L1500) and convert_interactive.py:report(), not add a third reporting path
+   - Must use project-relative scene paths (not basename-only)
 
 8. **Port `generate_bootstrap_script()`** from conversion_helpers
    - Generates GameBootstrap.lua lifecycle script
+   - Must integrate into `write_output` (depends on final `rbx_place.scripts` set)
 
 9. **Port `extract_serialized_field_refs()`** from conversion_helpers
    - Finds MonoBehaviour fields referencing assets
+   - Can run before `write_output`, but results consumed by script/package generation must be persisted to `conversion_context.json` (not left only in `PipelineState`)
 
 10. **Port `generate_prefab_packages()`** from conversion_helpers
     - Creates per-prefab packages for ReplicatedStorage/Templates
+    - Must persist package metadata to disk or integrate into `write_output`, so upload rebuilds and preserved-script assemble runs don't diverge
+
+11. **Extend `write_output` disk rewrite to handle new subdirectories**
+    - Current rewrite only handles `scripts/` and `scripts/animations/`
+    - Must also handle `animation_data/`, `packages/`, and ScriptableObject module paths added by this phase and Phase 4
+
+12. **Add script metadata persistence**
+    - Current rehydration infers script type heuristically from content (pipeline.py ~L942) and uses only the file stem (~L941), losing directory identity
+    - Add a `script_manifest.json` (or extend `conversion_context.json`) that records `{filename, script_type, parent_path}` at transpilation time, so rehydration is lossless
+    - All new Phase 3/4 generated scripts must follow this same project-identity pattern (matching the cross-project guard precedent from the Phase 2 fix)
 
 ### Phase 4: Reconcile Shared Modules
 
 **Goal:** For modules in both repos, take the best of both. **See [MERGE_PLAN_PHASE4.md](MERGE_PLAN_PHASE4.md) for the detailed plan** with per-module diffs, step-by-step actions, acceptance criteria, and execution order.
 
+> **Key lesson from Phase 1-2:** Interactive mode can skip `transpile_scripts` entirely. Any reconciliation work that only populates `PipelineState` or `state.transpilation_result` will be invisible to the preserved-script assemble and upload rebuild paths. Reconciled modules must persist their outputs or integrate at `write_output` time.
+
 Summary:
 
 1. **api_mappings** (Low) — union merge of mapping tables, dedup. Dest is superset; port source-only entries.
-2. **material_mapper** (High) — port 14+ missing shaders, 6 missing texture ops, unconverted feature tracking, vertex color detection into dest's cleaner type system.
-3. **code_transpiler** (Medium) — port dependency-aware context building (topological sort + dependency Luau injection) and C# pattern analysis warnings into dest's concurrent dual-strategy transpiler.
-4. **luau_validator** (Low) — port `check_method_completeness()` and verify comment/string stripping. Dest's 7.5K LOC validator already covers source's other checks.
-5. **animation_converter** (High) — implement dual-backend selection: TweenService (dest, simple anims) vs config-table + runtime (source, blend trees/root motion). Port root motion extraction, blend tree parsing, R15 bone mapping.
+2. **material_mapper** (High) — port 14+ missing shaders, 6 missing texture ops, unconverted feature tracking, vertex color detection into dest's cleaner type system. **Added criterion:** Must be idempotent under interactive prerequisite replay — companion scripts, UNCONVERTED.md, and vertex-color outputs must not assume upload/resolve already ran.
+3. **code_transpiler** (Medium) — port dependency-aware context building (topological sort + dependency Luau injection) and C# pattern analysis warnings into dest's concurrent dual-strategy transpiler. **Added criterion:** Dependency ordering and warnings must be persisted (via script manifest or conversion_context.json) so the preserved-script path doesn't lose them.
+4. **luau_validator** (Low) — port `check_method_completeness()` and verify comment/string stripping. **Revised integration:** New diagnostics must run in both the standalone `validate` CLI command AND `write_output`'s validation pass, not just the fresh-transpile path.
+5. **animation_converter** (High) — implement dual-backend selection: TweenService (dest, simple anims) vs config-table + runtime (source, blend trees/root motion). Port root motion extraction, blend tree parsing, R15 bone mapping. **Added sub-items:** (a) Update `_inject_runtime_modules()` to auto-inject `animator_bridge.luau` and `TransformAnimator.luau` when config-table or transform-only backend is selected (currently only `animator_runtime.luau` is injected). (b) Generated animation scripts must persist to disk in a known subdirectory that `write_output` rehydration handles.
 6. **ui_translator** (Medium) — port font mapping, TextAnchor→alignment, sprite-vs-solid distinction, partial anchor warnings.
 7. **scene_parser** (Low) — port animator controller GUID extraction and verify edge case parity.
 
@@ -291,6 +267,19 @@ Summary:
 1. Port tests for all new modules
 2. Merge test cases for reconciled shared modules
 3. Ensure all tests pass in the dest repo structure
+4. **Three-flow regression tests** (learned from Phase 1-2 bugfixes):
+   - `assemble` preserves hand-edited scripts when `--retranspile` is absent
+   - `assemble --retranspile` overwrites hand-edited scripts with fresh output
+   - `upload` rebuild includes scripts in the generated place (the exact regression fixed in 86392e6)
+5. **Workflow contract tests:**
+   - `transpile` → `validate` workflow (transpile currently doesn't write to disk; validate reads from disk — verify this contract)
+   - Duplicate scene names disambiguated in `discover`, `status`, AND `report`
+   - Cross-project contamination rejected by `_make_pipeline()`
+6. **Rehydration round-trip tests:**
+   - Nested script directory rehydration + correct Script/LocalScript/ModuleScript retention
+   - Script metadata manifest (Phase 3 item 12) correctly restores type and parent_path
+7. **Interactive resume tests:**
+   - `Pipeline.resume()` vs `_run_through()` divergence: resume replays upload/resolve as prerequisites, _run_through skips cloud phases — verify both paths produce consistent output
 
 ### Phase 6: Polish
 
@@ -298,6 +287,8 @@ Summary:
 2. Final README, CLAUDE.md, ARCHITECTURE.md updates
 3. Verify both modes work end-to-end
 4. Clean up any dead code
+5. **Formally close or roadmap deferred fix C2:** upload publishes a fresh rebuild, not the reviewed .rbxlx. Either document as "by design" or add .rbxlx reader if feasible
+6. **Verify dead-path cleanup:** report_generator.py and rbxl_binary_writer.py were ported in Phase 2 with no call sites — Phase 3 should have wired them, but Phase 6 must verify no ported modules remain unreferenced
 
 ---
 
@@ -341,18 +332,18 @@ parse → extract_assets → upload_assets → resolve_assets → convert_materi
 transpile_scripts → convert_animations → convert_scene → write_output
 ```
 
-New modules wire in as follows:
+New modules wire in as follows (updated based on Phase 1-2 learnings):
 
 | New Module | Where in Pipeline | Integration Detail |
 |---|---|---|
 | `sprite_extractor` | Inside `extract_assets` | After asset manifest built, scan for spritesheet .meta files |
 | `mesh_splitter` | Inside `convert_scene` | When MeshRenderer has `len(m_Materials) > 1`, split before creating RbxParts |
-| `vertex_color_baker` | Between `convert_materials` and `upload_assets` | After materials mapped, bake vertex colors for meshes that need it |
-| `scriptable_object_converter` | Inside `transpile_scripts` | After C# transpilation, also convert .asset files to ModuleScripts |
-| `bridge_injector` | Inside `write_output` | After scripts added to RbxPlace, scan Luau and inject bridge modules |
+| `vertex_color_baker` | After `convert_materials`, before `convert_scene` | ~~Originally "between convert_materials and upload_assets"~~ — actual phase order has upload_assets before convert_materials. Corrected placement. |
+| `scriptable_object_converter` | Inside `transpile_scripts` + persist to disk | Generate ModuleScripts AND write `.luau` files to `scripts/` so rehydration path picks them up when transpilation is skipped |
+| `bridge_injector` | Inside `write_output` (after script materialization) | After scripts populated from either fresh transpile OR disk rehydration. Dedupe against existing RbxScript names. |
 | `code_validator` | Inside `write_output` | After `luau_validator.validate_and_fix()`, run structural validation |
-| `rbxl_binary_writer` | Inside `write_output` | After .rbxlx written, optionally convert to binary .rbxl |
-| `report_generator` | End of `write_output` or new phase | Generate JSON report from ConversionContext stats |
+| `rbxl_binary_writer` | Optional post-`write_output` step | NOT wired into interactive `upload` (which uses execute_luau). For future direct Open Cloud place-upload. |
+| `report_generator` | Replaces inline reporting in `write_output` + `report()` | Single reporting path — replaces ad hoc JSON in pipeline.py and convert_interactive.py |
 
 ### State Format Decision
 
@@ -423,33 +414,41 @@ Optional (documented but not required):
 ## Dependency Graph
 
 ```
-Phase 1 (docs + entry points — no code deps):
-  README, CLAUDE.md, ARCHITECTURE.md, convert_interactive.py, .claude/skills/
-
-Phase 2 (standalone modules — all parallelizable):
-  2.1 bridge_injector (depends on 2.8 for bridge file paths)
-  2.2 vertex_color_baker
-  2.3 sprite_extractor
-  2.4 mesh_splitter
-  2.5 scriptable_object_converter
-  2.6 rbxl_binary_writer
-  2.7 report_generator
-  2.8 bridge Luau files (no code deps)
+Phase 1 ✅ (docs + entry points)
+Phase 2 ✅ (standalone modules + bridge Luau files)
 
 Phase 3 (pipeline integration — depends on Phase 2):
-  All wiring into pipeline.py
+  3.1  bridge_injector → write_output (after script materialization)
+  3.2  vertex_color_baker → after convert_materials, before convert_scene
+  3.3  sprite_extractor → inside extract_assets
+  3.4  mesh_splitter → inside convert_scene
+  3.5  scriptable_object_converter → transpile_scripts + persist to disk
+  3.6  rbxl_binary_writer → optional post-write_output (NOT in upload path)
+  3.7  report_generator → replace inline reporting
+  3.8  generate_bootstrap_script → inside write_output
+  3.9  extract_serialized_field_refs → before write_output, persist results
+  3.10 generate_prefab_packages → inside write_output or persist metadata
+  3.11 extend write_output disk rewrite for new subdirectories
+  3.12 add script metadata persistence (script_manifest.json)
 
 Phase 4 (reconciliation — can overlap with Phase 3):
   4.1 api_mappings (independent)
-  4.2 material_mapper (largest effort, independent)
-  4.3 code_transpiler (depends on 4.1 for API_CALL_MAP)
-  4.4 animation_converter (independent)
-  4.5 luau_validator patterns (independent)
+  4.2 material_mapper (largest effort, independent; needs idempotence under replay)
+  4.3 code_transpiler (depends on 4.1; must persist dependency info)
+  4.4 luau_validator patterns (independent; dual integration: validate cmd + write_output)
+  4.5 animation_converter (independent; needs runtime injection update + script persistence)
   4.6 ui_translator (independent)
+  4.7 scene_parser (independent)
 
-Phase 5 (tests — do alongside each phase)
+Phase 5 (tests — do alongside each phase, expanded):
+  + three-flow regression tests (CLI, interactive-fresh, interactive-rehydrated)
+  + workflow contract tests (transpile→validate, cross-project guard)
+  + rehydration round-trip tests
+  + resume path divergence tests (Pipeline.resume vs _run_through)
 
-Phase 6 (polish — last)
+Phase 6 (polish — last):
+  + close/roadmap deferred C2 (upload rebuild vs reviewed .rbxlx)
+  + verify no ported modules remain unreferenced
 ```
 
 ---
@@ -458,22 +457,29 @@ Phase 6 (polish — last)
 
 | Risk | Mitigation |
 |---|---|
-| `Physics.lua` vs `physics_bridge.luau` — different API surfaces | Compare carefully; may need to keep both or merge into superset |
-| `AnimatorBridge.lua` vs `animator_runtime.luau` — different animation approaches | Source uses config-table-driven state machines; dest uses TweenService. May need to support both |
-| Binary writer integration — dest uses Luau Execution API for headless publishing | Binary writer is complementary (for direct Open Cloud upload). Both should coexist |
+| `Physics.lua` vs `physics_bridge.luau` — different API surfaces | ✅ Resolved: ported as `physics_queries.luau` alongside `physics_bridge.luau` |
+| `AnimatorBridge.lua` vs `animator_runtime.luau` — different animation approaches | ✅ Resolved: ported as `animator_bridge.luau` alongside `animator_runtime.luau`. Phase 4.5 adds backend selection. |
+| Binary writer integration — dest uses Luau Execution API for headless publishing | Binary writer is optional post-write_output step for future direct place-upload. NOT wired into interactive upload. |
 | `conversion_helpers.py` decomposition — 2087 LOC of orchestration logic | Most already exists in dest's scene_converter + component_converter. Only port the 3-4 functions that don't exist |
 | Test count growth (source ~1200 + dest ~950) | Run full suite incrementally; fix failures as they arise |
 | Import path changes — source uses flat `modules.X`, dest uses `converter.X`, `unity.X`, `roblox.X` | Systematic find-replace during each port step |
+| **NEW: Script rehydration lossy for Phase 3/4 additions** | Rehydration infers type heuristically, uses only stem, drops directory identity. Add script_manifest.json (Phase 3 item 12) before wiring new script-generating modules. |
+| **NEW: bridge_injector double-injection** | bridge_injector dedupes by filename but RbxScript.name is basename-only. Must dedupe against existing RbxScript entries during write_output integration. |
+| **NEW: Pipeline.resume() vs _run_through() divergence** | resume() replays upload/resolve; _run_through() skips cloud phases. New Phase 3/4 integrations that depend on upload/resolve must handle both paths. |
+| **NEW: Dead-path drift** | report_generator.py and rbxl_binary_writer.py ported in Phase 2 with zero call sites. Phase 3 must wire them; Phase 6 must verify. |
 
 ---
 
 ## Success Criteria
 
-- [ ] Both `python u2r.py convert ...` and `/convert-unity ...` produce correct .rbxlx output
-- [ ] All existing dest tests pass (947+)
+- [x] Both `python u2r.py convert ...` and `/convert-unity ...` produce correct .rbxlx output (Phase 1)
+- [x] Runtime Luau files from both repos coexist in `runtime/` (Phase 2)
+- [x] Interactive mode supports resume via `conversion_context.json` (Phase 1, fixed in Phase 2)
+- [ ] All existing dest tests pass (1020+)
 - [ ] All ported source tests pass
-- [ ] README clearly documents both modes with examples
-- [ ] CLAUDE.md accurately describes the merged architecture
-- [ ] New modules (bridge_injector, vertex_color_baker, sprite_extractor, mesh_splitter, scriptable_object_converter, rbxl_binary_writer) are integrated and tested
-- [ ] Runtime Luau files from both repos coexist in `runtime/`
-- [ ] Interactive mode supports resume via `.convert_state.json`
+- [ ] New modules (bridge_injector, vertex_color_baker, sprite_extractor, mesh_splitter, scriptable_object_converter, rbxl_binary_writer) are integrated into pipeline and tested (Phase 3)
+- [ ] No ported module remains unreferenced (report_generator and rbxl_binary_writer currently have zero call sites)
+- [ ] Three-flow regression tests pass: CLI, interactive-fresh, interactive-rehydrated (Phase 5)
+- [ ] Script rehydration is lossless via script_manifest.json (Phase 3 item 12)
+- [ ] README clearly documents both modes with examples (Phase 6)
+- [ ] CLAUDE.md accurately describes the merged architecture (Phase 6)
