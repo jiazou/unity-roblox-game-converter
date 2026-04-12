@@ -280,6 +280,9 @@ Summary:
    - Script metadata manifest (Phase 3 item 12) correctly restores type and parent_path
 7. **Interactive resume tests:**
    - `Pipeline.resume()` vs `_run_through()` divergence: resume replays upload/resolve as prerequisites, _run_through skips cloud phases — verify both paths produce consistent output
+8. **Visual regression tests** (added per CEO review):
+   - Convert the FPS reference project (`unity-fps-output/`), open in Roblox Studio, verify: materials render correctly (colors, textures, transparency), UI elements positioned correctly (not flipped), scripts execute without errors, animations play on correct backends
+   - Compare against baseline screenshots where feasible
 
 ### Phase 6: Polish
 
