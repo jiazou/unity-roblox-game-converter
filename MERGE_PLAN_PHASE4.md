@@ -3,31 +3,34 @@
 > Referenced from [MERGE_PLAN.md](MERGE_PLAN.md) Phase 4.  
 > Each sub-section is a self-contained work item with acceptance criteria.
 
+> **⚠ Phase 3 reconciliation pass applied 2026-04-24.** Several plan assumptions were invalidated by Phase 3 landed outcomes (see [inline-over-runtime-wrappers.md](https://github.com/jiazou/unity2rbxlx/blob/main/converter/docs/design/inline-over-runtime-wrappers.md) and [merge-plan-phase-3-augmented.md](https://github.com/jiazou/unity2rbxlx/blob/main/converter/docs/design/merge-plan-phase-3-augmented.md) in the dest repo). Key changes: §4.4 rewritten (the 7477-LOC `luau_validator.py` was deleted and replaced by a `luau-analyze` + AI reprompt loop); §4.5 rewritten (the dual-backend / `animator_bridge.luau` + `TransformAnimator.luau` injection model was rejected — those bridges were removed and their features consolidated into `animator_runtime.luau`); §4.2.4 companion-scripts clause replaced (contradicts the inline-over-runtime-wrappers policy); §4.2.5 split into schema-now / wiring-deferred. See **Phase 3 Reconciliation Log (2026-04-24)** at the end of this file for the full list.
+
 ---
 
 ## Overview
 
-Phase 4 reconciles 7 modules that exist in both repos. The guiding principle: **keep the dest's architecture and types, port the source's missing capabilities.** Every ported capability must conform to the dest's `core/roblox_types.py` and `core/unity_types.py` type system.
+Phase 4 reconciles 7 modules that exist in both repos. The guiding principle: **keep the dest's architecture and types, port the source's missing capabilities.** Every ported capability must conform to the dest's `core/roblox_types.py` and `core/unity_types.py` type system. Ports must also honor the dest's **inline-over-runtime-wrappers** policy (adopted 2026-04-14): Unity APIs are translated at transpile time via `API_CALL_MAP` / `UTILITY_FUNCTIONS`, not by emitting per-script `require()` calls to runtime wrapper modules. New runtime modules are justified only when the Unity feature is a genuinely stateful subsystem (e.g., animator state machine, pathfinding).
 
-### Cross-Cutting Constraints (from CEO + Codex review, 2026-04-12; updated per eng review)
+### Cross-Cutting Constraints (from CEO + Codex review, 2026-04-12; updated per eng review; reconciled with Phase 3 outcomes 2026-04-24)
 
-1. **Validation ordering:** All generated Luau (animation configs, bridge modules, companion scripts, ScriptableObject modules) must pass through `luau_validator` before `write_output` finalizes. Current orchestration validates before these scripts are appended — this must be fixed as part of Phase 4, not deferred. Affects 4.2 (companion scripts), 4.4 (validator integration), and 4.5 (animation configs). **Owner: 4.4** — the validation ordering fix lives in the luau_validator task. 4.4 must modify the Pipeline orchestration to add a "post-processing validation" step between the processing and assembly phases.
+1. **Validation ordering:** All generated Luau that contains executable code (animation data modules with logic, ScriptableObject modules that expose functions, stub scripts) must pass the same `luau-analyze` syntax gate used by the transpiler before `write_output` finalizes. Pure data-table modules (controller keyframe exports, plain config dicts) are exempt — assert via a unit test that they contain no executable constructs. **Owner: 4.4** (now a diagnostic/reporting task, not a validator port — see §4.4). 4.4 must extend the existing `luau-analyze` invocation in `code_transpiler.py` to also cover generated scripts produced by 4.2/4.5 before they reach `rbx_place.scripts`.
 2. **Asset ID substitution contract:** All modules that emit asset references (UI image GUIDs, material texture paths, animation clip references) must use a consistent GUID placeholder format (`rbxassetid://<unity-guid>`) that the upload phase can resolve in a single pass. Each module must not invent its own placeholder scheme. **Owner: 4.2** — material_mapper is the largest texture emitter. 4.2 must define the canonical format and add a test asserting all emitted asset references conform. Currently no module follows this contract (source uses local file paths for textures, `rbxassetid://{filename}` for uploads).
 3. **Error resilience:** Every new codepath that processes external data (YAML, images, FBX) must handle corrupt/missing/unexpected input gracefully — log the failure, skip the item, record in UNCONVERTED.md. Never crash on bad input data. Applies to ALL modules equally — 4.5 and 4.6 need the same resilience criteria as 4.2 (see per-module acceptance criteria).
 4. **Deterministic output (per eng review):** All module outputs must be deterministic across runs given the same input. Specifically: code_transpiler dependency cycle-breaking must use a stable sort (alphabetical by script name), not arbitrary dict ordering. Non-deterministic transpilation makes debugging impossible.
 5. **Rollback strategy (per eng review):** Each 4.x item should be a separate PR with CI validation before merge into the dest. Tag a rollback point commit before Phase 4 begins. Run integration test checkpoints after 4.2 and 4.5 (the two High-complexity items) before proceeding to remaining items.
+6. **Inline-over-runtime-wrappers policy (Phase 3 landed):** Ports must not emit per-script `require()` calls to new runtime wrapper modules reimplementing Unity APIs. Runtime modules are reserved for stateful subsystems (`animator_runtime.luau`, `nav_mesh_runtime.luau`, `event_system.luau`, `physics_bridge.luau`, `cinemachine_runtime.luau`). A regression test (`converter/tests/test_no_rejected_bridges.py`) guards the nine rejected bridges + `bridge_injector.py` from reappearing. If a ported source capability depends on a rejected bridge, re-home it to `api_mappings.UTILITY_FUNCTIONS` (inline helper) or to the relevant runtime module directly.
 
 ### Effort Summary
 
 | Module | Complexity | Approach | Estimated Diff |
 |--------|-----------|----------|---------------|
 | 4.1 api_mappings | Low | Union merge | +50 lines |
-| 4.2 material_mapper | **High** | Feature port into dest scaffold | +600 lines |
-| 4.3 code_transpiler | Medium | Port prompt engineering + context building | +150 lines |
-| 4.4 luau_validator | Low | Port unique patterns | +80 lines |
-| 4.5 animation_converter | **High** | Dual-backend + transform-only pipeline + root motion wiring | +500 lines |
+| 4.2 material_mapper | **High** | Feature port into dest scaffold (companion-scripts clause dropped per inline policy) | +500 lines |
+| 4.3 code_transpiler | Medium | Port prompt engineering + context building (syntax gate already in place via luau-analyze) | +150 lines |
+| 4.4 (diagnostic) | Low | Post-transpile method-completeness audit feeding `report_generator` (not a validator port) | +60 lines |
+| 4.5 animation_converter | **High** | Extend `animator_runtime.luau` data path (blend trees + controller richness); keep inline TweenService for simple/transform-only clips. No new runtime bridges. | +400 lines |
 | 4.6 ui_translator | Medium | Port missing capabilities + layout (⚠ Y-inversion audit) | +120 lines |
-| 4.7 scene_parser | Low | Diff for edge cases + `unity_yaml_utils` classID parity | +50 lines |
+| 4.7 scene_parser | Low | Diff for edge cases + `unity_yaml_utils` classID parity + `referenced_animator_controller_guids` field | +50 lines |
 
 ---
 
@@ -73,15 +76,16 @@ None — fully independent.
 
 ### Current State
 
-| | Source | Dest |
+| | Source | Dest (2026-04-24) |
 |---|---|---|
-| LOC | 1,734 | 727 |
-| Supported shaders | 15+ (Standard, Legacy Diffuse/Specular/Bumped, Particle premultiply/multiply, URP, HDRP heuristic, Unlit/Mobile/Skybox, custom w/ companion scripts) | 6 (Standard, Standard Specular, URP/Lit, URP/SimpleLit, Lit, SimpleLit) |
+| LOC | 1,734 | 783 |
+| Supported shaders | 15+ (Standard, Legacy Diffuse/Specular/Bumped, Particle premultiply/multiply, URP, HDRP heuristic, Unlit/Mobile/Skybox, custom w/ companion scripts) | 10 entries in `_SUPPORTED_SHADERS` (Standard, Standard Specular, URP/Lit, URP/SimpleLit, Lit, SimpleLit, plus HDRP variants) |
 | Texture operations | 7 real ops (copy, extract_channel w/ optional invert, bake_ao, threshold_alpha, pre_tile, composite_detail, blend_normal_detail, heightmap_to_normal; `to_grayscale` for emissive masks; resize is implicit in other ops) | 4 (copy, extract_r, extract_a, invert_a) |
-| Unconverted tracking | Yes (severity levels + workarounds) | No |
+| Unconverted tracking | Yes (severity levels + workarounds) | Partial (`warnings` list on `MaterialMapping`) |
 | Vertex color detection | Yes (feeds vertex_color_baker) | No |
 | Return type | `MaterialMapResult` (custom) | `dict[str, MaterialMapping]` |
 | YAML parsing | PyYAML only | PyYAML + regex fallback for old formats |
+| `referenced_guids` filtering | Yes | **Already landed** (Phase 3 — `map_materials()` filters by `referenced_guids` set) |
 
 ### Assessment
 
@@ -94,9 +98,12 @@ The dest has cleaner types (`MaterialMapping` dataclass integrates with `scene_c
 Source classifies shaders via `_identify_shader()` with a `ShaderInfo` dataclass and `_CUSTOM_SHADER_PATTERNS` regex table. Dest uses a `_SUPPORTED_SHADERS` frozenset.
 
 **Action:** Expand dest's shader handling:
-1. Add a `ShaderCategory` enum to dest: `BUILTIN`, `URP`, `HDRP`, `LEGACY`, `PARTICLE`, `SPRITE`, `UI`, `UNLIT`, `MOBILE`, `SKYBOX`, `CUSTOM`, `UNKNOWN`.
+1. Add a `ShaderCategory` enum to dest: `BUILTIN`, `URP`, `HDRP`, `LEGACY`, `PARTICLE`, `SPRITE`, `UI`, `UNLIT`, `MOBILE`, `SKYBOX`, `CUSTOM`, `UNKNOWN`. Add a `shader_category: ShaderCategory` field on `MaterialMapping` so downstream code (reporting, QA) can filter by category.
 2. Port source's shader identification patterns into dest's `_identify_shader()` (or equivalent). Map each shader to its category + transparency + vertex-color flags.
-3. **Decision (CEO review):** Unknown shaders fall back to Standard-like extraction with a warning in UNCONVERTED.md. Add `_fallback_to_standard()` that attempts `_MainTex`, `_BumpMap`, `_MetallicGlossMap` extraction as best-effort approximation. Log: "Unknown shader '{name}' — applied Standard fallback. Visual fidelity may differ."
+3. **Unknown-shader fallback — formalize what the dest already does.** `material_mapper.py:222-229` currently accepts any shader and runs the full extraction with fallback texture slot names — that's already a de facto Standard fallback. The Phase 4 work is to **formalize and surface** it:
+   - Extract the fallback path into a named `_apply_standard_fallback()` helper so it's grep-able and testable.
+   - When `ShaderCategory == UNKNOWN` (including `Shader Graphs/*` and `Custom/*` which currently don't even warn), record an `UnconvertedFeature` entry with severity=LOW and message `"Unknown shader '{name}' — applied Standard fallback. Visual fidelity may differ; consider adding '{name}' to _SUPPORTED_SHADERS if the fallback looks wrong."` The current silent-on-custom-shader behavior hides real coverage gaps from the report.
+   - Decision is settled by dest code (the fallback already exists). No separate CEO re-review needed against the 10-shader baseline.
 
 **Shaders to add (verified in source):**
 - Legacy Diffuse/Specular/Bumped variants
@@ -143,17 +150,24 @@ Source has several capabilities the earlier draft missed entirely:
 - **Emission tint/strength extraction** — proper `_EmissionColor` parsing with intensity separation
 - **Normal-scale baking** — applies `_BumpScale` to normal map intensity
 - **Texture offset handling** — respects `_MainTex_ST` offset (not just tiling)
-- **Companion Luau scripts** — generates per-material helper scripts for runtime property adjustment
-- **`referenced_guids` filtering** — only processes materials actually referenced by the scene, not all materials in the project
-- **Aggregate outputs** — `MaterialMapResult` carries `generated_textures`, `companion_scripts`, `unconverted_md_path`, and per-category conversion counts
+- **Aggregate outputs** — `MaterialMapResult` carries `generated_textures`, `unconverted_md_path`, and per-category conversion counts
 
-**Action:** Port each capability. The companion Luau scripts and `referenced_guids` filtering are the highest-value items — they reduce asset bloat and enable runtime material adjustment.
+**Action:** Port each capability as static material data (extra fields on `MaterialMapping` or generated texture outputs). Do NOT emit per-material companion Luau scripts — they conflict with the inline-over-runtime-wrappers policy (adopted 2026-04-14). If a material property genuinely needs runtime adjustment (animated emission, scrolling UV), the adjustment belongs in the scene-level script that owns the part — not in a per-material require'd helper.
 
-#### 4.2.5 Port Vertex Color Detection
+**Explicitly dropped from scope (vs earlier draft):**
+- Per-material companion Luau scripts for runtime property adjustment.
+- `companion_scripts` aggregate field on `MaterialMapResult`-equivalent output.
 
-Source's `ShaderInfo.uses_vertex_colors` flag feeds into `vertex_color_baker.py` (Phase 2 module).
+**Already landed (no work needed):**
+- `referenced_guids` filtering — present in `map_materials()` and pipeline.py ~L750. Acceptance criterion below reframed as "preserve existing behavior."
 
-**Action:** During shader identification, set a `uses_vertex_colors` flag on `MaterialMapping` (add field if needed). The vertex color baker (already ported in Phase 2) reads this flag.
+#### 4.2.5 Vertex Color Detection — Schema (4.2.5a) vs Wiring (4.2.5b)
+
+Source's `ShaderInfo.uses_vertex_colors` flag feeds into `vertex_color_baker.py`. In the dest, the baker is ported but **NOT wired** into the pipeline (per Phase 3 augmented plan item 2: deferred pending a test project with vertex-color-only materials).
+
+**4.2.5a — schema (land in Phase 4):** During shader identification, set a `uses_vertex_colors: bool = False` field on `MaterialMapping`. Populate during `_identify_shader()`. Landing the schema now is cheap and unblocks future wiring without a downstream consumer change.
+
+**4.2.5b — baker wiring (deferred post-Phase 4):** Wire `vertex_color_baker` into the pipeline between `convert_materials` and `convert_scene`, reading the `uses_vertex_colors` flag. Blocked on a test project that exercises vertex-color-only materials so the integration can be validated end-to-end. Track as a follow-up in `TODO.md`.
 
 #### 4.2.6 Validate Integration
 
@@ -164,18 +178,19 @@ After all ports:
 
 ### Acceptance Criteria
 
-- [ ] All 15+ source shader categories recognized and classified
+- [ ] All 15+ source shader categories recognized and classified (dest currently has 10 in `_SUPPORTED_SHADERS`)
 - [ ] All 8 discrete texture operations available
 - [ ] `UNCONVERTED.md` generated for materials with unconvertible features
-- [ ] Vertex color flag propagated to vertex_color_baker
+- [ ] `MaterialMapping.uses_vertex_colors: bool` field added and populated (4.2.5a). Wiring to `vertex_color_baker` (4.2.5b) is deferred.
 - [ ] Dest's `MaterialMapping` type unchanged or only extended (no breaking changes)
 - [ ] Dest's dual YAML parsing (PyYAML + regex fallback) preserved
 - [ ] Existing dest material tests still pass
-- [ ] **Idempotent under interactive prerequisite replay** — companion scripts, UNCONVERTED.md, and vertex-color outputs must not assume upload/resolve already ran (interactive mode skips cloud phases during replay)
+- [ ] **No new per-material runtime wrapper scripts emitted** — the inline-over-runtime-wrappers regression test (`converter/tests/test_no_rejected_bridges.py`) and any new assertions added for 4.2 must pass. Material data flows as static fields on `MaterialMapping` + generated textures only.
+- [ ] **Idempotent under interactive prerequisite replay** — UNCONVERTED.md and generated texture outputs must not assume upload/resolve already ran (interactive mode skips cloud phases during replay)
 - [ ] **Unknown shader fallback:** Unrecognized shaders produce a best-effort Standard-like `MaterialMapping` with a warning in UNCONVERTED.md, not a silent skip
 - [ ] **Texture operation error resilience:** Every texture operation (`bake_ao`, `threshold_alpha`, `composite_detail`, etc.) gracefully handles missing/corrupt/channelless input images — skip the op, log the failure, record in UNCONVERTED.md. Never crash on bad image data. Specifically handle: missing file, LFS pointer, no alpha channel, unexpected channel count, oversized images.
 - [ ] **Deterministic texture output names:** Generated textures (from bake_ao, composite_detail, etc.) use deterministic names derived from material name + operation, so re-runs produce identical output
-- [ ] **`referenced_guids` filtering (per eng review):** When `referenced_guids` is provided, only materials matching those GUIDs are processed. Unreferenced materials are skipped with a log entry. In multi-scene mode, `referenced_guids` is the union of all scenes' referenced material GUIDs (computed during discovery phase), not per-scene.
+- [ ] **`referenced_guids` filtering — already landed.** `map_materials()` in the dest already filters by `referenced_guids`. Phase 4 acceptance: preserve existing behavior; add a test asserting that in multi-scene mode `referenced_guids` is the union of all scenes' referenced material GUIDs, not per-scene.
 
 ### Dependencies
 
@@ -188,15 +203,16 @@ After all ports:
 
 ### Current State
 
-| | Source | Dest |
+| | Source | Dest (2026-04-24) |
 |---|---|---|
-| LOC | 988 | 2,083 |
-| Strategy | AI-only (Claude) | Dual: rule-based (600+ regex patterns) + AI fallback |
+| LOC | 988 | 1,658 |
+| Strategy | AI-only (Claude) | AI-first with `luau-analyze` syntax gate + AI reprompt loop (up to 2 retries) |
 | Concurrency | Sequential | ThreadPoolExecutor (up to 10 concurrent) |
 | Dependency ordering | Yes (topological sort, dependency Luau as context) | Not evident |
-| Caching | File-based (transpile_cache_dir) | SHA256-based |
+| Caching | File-based (transpile_cache_dir) | SHA256-based, invalidated on syntax error |
 | Pattern analysis | 6 warning categories (inheritance, LINQ, networking, generics, pooling, async) | Preprocessing (multiline, conditionals, out params, null-coalescing) |
 | Confidence scoring | LLM-judged | Pattern match ratio |
+| Syntax validation | — | `luau-analyze` post-transpile (replaces the removed `luau_validator.py`) |
 
 ### Assessment
 
@@ -240,13 +256,12 @@ Patterns to port:
 Source's AI prompt includes detailed rules not present in dest:
 - Inspector config wiring instructions
 - Property metamethod guidance
-- Bridge-module import patterns (`AnimatorBridge`, etc.)
 - Binary serialization rewrite rules
 - Explicit `UNCONVERTED` stub generation for unhandled patterns
 - `require()` validation (ensures generated requires point to real modules)
 - Editor/test script exclusion heuristics
 
-**Action:** Compare dest's AI prompt with source's. Port the prompt rules that improve transpilation quality. These are the "secret sauce" of the source's AI approach.
+**Action:** Compare dest's AI prompt with source's. Port the prompt rules that improve transpilation quality. Do NOT port source's "bridge-module import patterns" rule (e.g., `require(AnimatorBridge)`) — those bridges were rejected by the inline-over-runtime-wrappers policy and the prompt must steer the AI toward inline translations via `api_mappings` / `UTILITY_FUNCTIONS` instead. For animator-specific needs, the prompt should point at the consolidated `animator_runtime.luau` module (the one remaining runtime).
 
 **Note on script type classification (resolved per eng review):** Source's `_classify_script_type()` has client-indicator tables (Camera.main, Input, etc.) but currently only returns `Script` or `ModuleScript` — it never returns `LocalScript` despite the detection logic. **Action: resolve before implementation begins.** Diff dest's script classification against source's. If dest returns LocalScript for camera/input scripts, keep dest's behavior. If dest also lacks LocalScript classification, decide whether to complete the logic or keep the ModuleScript default. This is a design decision that affects the bootstrap architecture — do not leave it as "verify during porting."
 
@@ -266,89 +281,101 @@ Source's AI prompt includes detailed rules not present in dest:
 
 ---
 
-## 4.4 luau_validator — Port Unique Patterns
+## 4.4 Transpile Diagnostics — Method-Completeness Audit
+
+> **Scope rewritten 2026-04-24.** The 7,477-LOC `luau_validator.py` assumed by the earlier draft was **deleted on 2026-04-18** (commit 594238c) and replaced by a `luau-analyze` + AI reprompt loop in `code_transpiler.py` (see `converter/docs/design/inline-over-runtime-wrappers.md`). The earlier 4.4 task ("port check_method_completeness() into dest's 7477 LOC luau_validator") no longer matches any code in the dest repo. §4.4 is now a diagnostic/reporting task.
 
 ### Current State
 
-| | Source (code_validator) | Dest (luau_validator) |
+| | Source (code_validator) | Dest (post-2026-04-18) |
 |---|---|---|
-| LOC | 340 | 7,477 |
-| Fix categories | 5 (block balance, C# residue, parens, braces, method completeness) | 22 major fix functions |
-| Error codes | E001–E030, W001–W031 | — (applies fixes, returns list of fix descriptions) |
-| Approach | Report-only (returns ValidationResult) | Fix-and-report (returns fixed source + fix list) |
+| Syntax validation | Regex-based report-only validator | `luau-analyze` CLI invoked in `code_transpiler.py:1508`; AI reprompt loop up to 2 retries (`code_transpiler.py:1584`) |
+| C# residue cleanup | Regex rules | AI prompt + reprompt loop |
+| Method completeness audit | `check_method_completeness()` — compares C# method names against Luau function definitions, honors `-- UNCONVERTED` / `-- TODO` markers | **Not present** |
+| Approach | Report-only (ValidationResult) | AI reprompt until `luau-analyze` passes; no regex-based fixup layer |
 
 ### Assessment
 
-Dest is vastly more comprehensive (22× the code). It auto-fixes issues rather than just reporting them. Source's unique value is limited to a few specific checks dest may lack.
+The dest's `luau-analyze` gate catches syntax errors at transpile time, so the structural fix functions from the deleted regex validator are no longer the right integration surface. What **does** remain useful from source is the diagnostic layer: given a successfully-transpiled script, have all of the C# methods been either translated to Luau functions or explicitly marked `UNCONVERTED`? That's a **coverage audit**, not a syntax check, and it belongs next to the existing report generator.
 
 ### Steps
 
-1. **Diff source's checks against dest's 22 categories.** For each source check, find the dest equivalent:
+#### 4.4.1 Port `check_method_completeness()` as a diagnostic
 
-   | Source Check | Dest Equivalent | Gap? |
-   |---|---|---|
-   | Block keyword balance (`function`/`if`/`for`/`while`/`repeat` vs `end`/`until`) | `_fix_missing_ends_in_blocks`, `_remove_excess_end_keywords`, `_fix_missing_function_end` | **No** — dest handles this with auto-fix |
-   | C# residue (`using`, `class`, `namespace`, access modifiers, braces, semicolons, `new`) | `_fix_csharp_remnants` | **No** — dest strips these |
-   | Parenthesis/bracket balance | `_fix_structural_syntax` | **No** |
-   | Curly braces (distinguish C# blocks from Luau tables) | `_fix_csharp_remnants` + `_fix_structural_syntax` | **No** |
-   | **Method completeness** (`check_method_completeness`) | **No direct equivalent** | **Yes** — port this |
-   | Ternary if detection (don't flag `if...then...else` on one line) | `_fix_ternary_in_line` | **No** — dest already converts these |
+Port the function from source's `code_validator.py` into a new module (e.g., `converter/converter/transpile_audit.py`) or directly into `report_generator.py`. It must:
 
-2. **Port `check_method_completeness()`.** This compares C# method names against Luau function definitions and checks for `-- UNCONVERTED` / `-- TODO` comments as intentional coverage markers. Useful as a post-validation audit.
-   - Add as a new function in dest's `luau_validator.py`.
-   - Call after `validate_and_fix()` to produce warnings (not fixes — this is diagnostic).
-   - Return list of missing method names for the conversion report.
+1. Extract the set of C# method names from each source `.cs` file (signature-level, skip `// UNCONVERTED` / `// TODO` / commented-out bodies).
+2. Extract the set of Luau function definitions (including local functions and methods on tables) from the transpiled `.luau` output.
+3. Honor `-- UNCONVERTED` / `-- TODO` comments as intentional coverage markers.
+4. Return a per-script list of missing method names — surfaced as **warnings**, not fixes.
 
-3. **Consider porting the structured reporting model.** Source returns `ValidationIssue` objects with line, column, severity, and stable error/warning codes (E001–E030, W001–W031). Dest currently returns fix descriptions as plain strings. The structured model is valuable for:
-   - Machine-readable validation reports
-   - Consistent error codes across runs
-   - Line-level precision for flagging issues in the conversion report
-   
-   **Action:** Evaluate whether dest's report generator or interactive mode would benefit from structured validation data. If yes, add `ValidationIssue` and `ValidationResult` types and have `check_method_completeness()` return them.
+Port source's `_strip_comments_and_strings()` helper at the same time so commented-out C# methods don't produce false positives.
 
-4. **Check source's comment/string stripping logic.** Source has a `_strip_comments_and_strings()` helper to avoid false positives. Verify dest has equivalent logic in its pattern matching. If dest does regex matching on raw source without stripping, port the stripping utility.
+#### 4.4.2 Wire diagnostics into `report_generator` + `luau-analyze` gate extension
+
+1. Call the audit after the transpiler returns, before `write_output` assembles `rbx_place.scripts`. Append per-script missing-method warnings to `TranspiledScript.warnings` and surface them in the final JSON report via `report_generator.augment_report`.
+2. Extend the existing `luau-analyze` invocation in `code_transpiler.py` to also cover Luau scripts generated by 4.2 (if any remain after the companion-script drop) and 4.5 (generated animation data scripts that contain executable code). Pure data-table modules are exempt — add a unit test that asserts the relevant generated scripts contain no executable constructs, so the exemption stays honest.
+
+#### 4.4.3 Pair the audit with a prompt addition (required, not optional)
+
+The dest's transpiler prompt currently tells the AI *"Convert the ENTIRE script faithfully. Do not skip methods"* (`code_transpiler.py:1165`) and *"Do NOT stub or skip complex methods"* (`code_transpiler.py:1169`). But there's no convention for **intentional** skips (unsafe reflection, editor-only APIs, `#if UNITY_EDITOR` blocks). Without that convention, the audit will flag every deliberate skip as a silent drop.
+
+**Action:** Extend the system prompt with a single rule:
+
+> "If you cannot faithfully translate a C# method (reflection, unsafe code, editor-only APIs, features with no Roblox equivalent), emit it as a stub Luau function with `-- UNCONVERTED: {short reason}` as the body. Do NOT silently drop methods — the transpile audit will flag drops as regressions."
+
+The audit then honors `-- UNCONVERTED` / `-- TODO` markers as intentional coverage markers and only flags methods that are **missing entirely** — the genuine silent-drop failure mode.
+
+Do NOT port source's structured error-code model (E001–E030 / W001–W031). It's speculative — no CI check or downstream consumer parses those codes today. Keep diagnostics as warning strings on `TranspiledScript.warnings`.
 
 ### Acceptance Criteria
 
-- [ ] `check_method_completeness()` available in dest
-- [ ] Comment/string stripping verified in dest (no false positives on commented-out C# code)
-- [ ] Existing dest validator tests still pass
-- [ ] **Dual integration:** new diagnostics run in both the standalone `validate` CLI command (convert_interactive.py:605) AND `write_output`'s validation pass (pipeline.py:1411), not just the fresh-transpile path
+- [ ] `check_method_completeness()` exists as a diagnostic in the dest (not a fix function)
+- [ ] Missing-method warnings appear in the transpiler's `TranspiledScript.warnings` and in the final JSON report, with format `"Method '{name}' missing from transpile output (not stubbed, not marked UNCONVERTED)"`
+- [ ] Comment/string stripping honors commented-out C# (no false positives)
+- [ ] **Transpiler system prompt updated** with the UNCONVERTED-stub convention (4.4.3). A test-transpile of a representative script containing editor-only or reflection code produces stubs with `-- UNCONVERTED:` markers, not silent drops.
+- [ ] Generated Luau scripts from 4.2/4.5 that contain executable code pass the `luau-analyze` gate before `write_output` finalizes (Cross-Cutting Constraint #1)
+- [ ] A unit test asserts that 4.5 "controller data" modules are data-only (no executable constructs) — documents the exemption
+- [ ] **Dual integration:** the audit runs both in the standalone `validate` CLI command (`convert_interactive.py`) AND during `write_output`'s finalization, so preserved-script rehydration paths see the same diagnostics
+- [ ] **No structured error-code model introduced.** Diagnostics are warning strings; source's E001–E030 codes are not ported (no downstream consumer).
 
 ### Dependencies
 
-None — fully independent.
+- 4.2 and 4.5 must land first (the audit needs generated scripts to validate). Concretely: sequence 4.4 after 4.2 and 4.5, not before.
+- 4.3 prompt engineering (§4.3.3) should land the UNCONVERTED-stub rule as part of its prompt pass, so 4.4 has a signal to honor. If 4.3 lands before 4.4, include the stub rule in 4.3's prompt changes; otherwise 4.4 adds it.
+- No dependency on a resurrected `luau_validator.py` — **do not recreate that module.** The regression-style protection is implicit in `test_no_rejected_bridges.py`'s spirit: don't reintroduce deleted architecture.
 
 ---
 
-## 4.5 animation_converter — Dual-Backend Support (High Complexity)
+## 4.5 animation_converter — Extend `animator_runtime` Data Path (High Complexity)
+
+> **Scope rewritten 2026-04-24.** The earlier "dual-backend (TweenService vs config-table + AnimatorBridge.luau runtime)" framing is invalidated by Phase 3: `animator_bridge.luau` was **deleted** and its unique features (blend trees, `Play()`, `GetFloat`/`GetBool`/`GetInt`, Any-state transitions, lazy track loading, `Destroy()`) were **merged into `animator_runtime.luau`** — verified by `converter/tests/test_no_rejected_bridges.py::test_animator_runtime_has_consolidated_features`. `TransformAnimator.luau` was also deleted (its CFrame/Size curve animation is handled inline by generated TweenService scripts). The regression test forbids those two files from reappearing. §4.5 is now "extend the one remaining animator runtime (`animator_runtime.luau`) with blend-tree and controller-richness data; keep inline TweenService for simple and transform-only clips; do not introduce new runtime wrapper files."
 
 ### Current State
 
-| | Source | Dest |
+| | Source | Dest (2026-04-24) |
 |---|---|---|
-| LOC | 1,236 | 1,335 |
-| Runtime approach | Config-table driven (`AnimatorBridge.lua`) | TweenService sequences + state machine scripts |
-| Blend tree support | Yes (1D) | No |
-| Root motion | Yes (`extract_fbx_root_motion`) | No |
-| Bone mapping | `UNITY_TO_R15_BONE_MAP` (humanoid) | Not evident |
-| State machine | Config tables consumed by runtime | Inline Luau state machine (self-contained) |
-| Output format | ModuleScript config tables + runtime bridge | Standalone Script with TweenService code |
+| LOC | 1,236 | 1,342 |
+| Runtime approach | Config-table driven (`AnimatorBridge.lua` — deleted in dest) | Single runtime: `animator_runtime.luau` (consolidated); inline TweenService for simple + transform-only clips |
+| Blend tree support | Yes (1D) | Partial — classID 206 detected in controller parse, but no config-table output yet |
+| Root motion | Yes (`extract_fbx_root_motion`, unwired helpers) | No |
+| Bone mapping | `UNITY_TO_R15_BONE_MAP` (humanoid — rejection filter only) | Not present |
+| State machine | Config tables consumed by runtime | `animator_runtime.luau` interprets controller/keyframe data modules; TweenService inline for simpler cases |
+| Output format | ModuleScript config tables + runtime bridge | Controller + clip data modules consumed by `animator_runtime.luau`; TweenService scripts inline |
 | Controller parsing | `.controller` YAML → `AnimatorControllerData` | `.controller` YAML → `AnimatorController` |
 | Clip parsing | `.anim` YAML → `AnimationClipInfo` | `.anim` YAML → `AnimClip` |
 | JSON export | No | Yes (`export_controller_json`, `export_clip_keyframes`) |
+| `_inject_runtime_modules` | — | Injects `animator_runtime.luau` only (pipeline.py ~L2081) |
 
 ### Assessment
 
-These are fundamentally different animation strategies:
+The dest already runs a **single-runtime + inline-TweenService** model. The right Phase 4 work is not "add a second backend" but "make the existing `animator_runtime`-fed data richer," alongside keeping inline TweenService for clips that don't need the runtime at all.
 
-- **Source approach:** Generates lightweight config tables; heavy lifting happens in the `AnimatorBridge.lua` runtime. Supports blend trees (1D only) and has root motion helper code. Also has a **separate Legacy Animation / transform-only pipeline** (`convert_transform_animations()`) that scans scenes, prefabs, and standalone `.anim` files — this is entirely missing from the plan's original analysis.
-- **Dest approach:** Generates self-contained TweenService scripts. No runtime dependency. Simpler for basic animations but can't handle blend trees or root motion.
-
-Neither is strictly better. The right choice depends on animation complexity.
+- **Simple clip / transform-only clip** → inline TweenService (unchanged, dest already handles this).
+- **Controller with blend trees, >3 Float/Int parameters, or complex state machine** → emit a richer controller data module that `animator_runtime.luau` interprets. No new runtime file; `animator_runtime.luau` already has the blend-tree, `Play()`, Any-state, and lazy-track-loading features consolidated from the deleted bridge.
 
 **Key corrections from code audit:**
-- Root motion is **unintegrated helper code** — `extract_fbx_root_motion()` and `generate_root_motion_config()` exist but are never called by `convert_animations()` or `convert_transform_animations()`. They depend on `assimp` and `Hips`-named FBX channels.
+- Root motion is **unintegrated helper code** in source — `extract_fbx_root_motion()` and `generate_root_motion_config()` exist but are never called by `convert_animations()` or `convert_transform_animations()`. They depend on `assimp` and `Hips`-named FBX channels. **Treat as new-feature spike, not a port.**
 - Blend tree resolution uses `m_Motion` file references to separate YAML docs with `m_Childs` / `m_BlendType`, NOT `m_BlendTree` as a direct field.
 - `UNITY_TO_R15_BONE_MAP` is only used to **reject** humanoid clips from transform-only conversion, not to remap keyframes to R15 parts.
 - Only the **base animator layer** is parsed; additional layers are ignored.
@@ -356,14 +383,14 @@ Neither is strictly better. The right choice depends on animation complexity.
 
 ### Steps
 
-#### 4.5.0 Port Legacy Animation / Transform-Only Pipeline
+#### 4.5.0 Transform-Only Animation Pipeline (Inline TweenService, No `TransformAnimator.luau`)
 
 The plan's original analysis missed this entirely. Source has a complete separate pipeline for non-Animator animations:
 - `is_transform_only_anim()` — detects clips that only animate position/rotation/scale (no bones)
 - `convert_transform_animations()` — scans scenes, prefabs, and standalone `.anim` files for transform-only clips
-- `generate_transform_anim_config()` — generates Luau config tables for `TransformAnimator` runtime
+- `generate_transform_anim_config()` — generated Luau config tables for the (now-deleted) `TransformAnimator.luau` runtime
 
-**Action:** Port this pipeline. It handles a common case (door animations, moving platforms, rotating objects) that the Animator pipeline doesn't cover.
+**Action:** Port the detection + scanning logic (`is_transform_only_anim`, `convert_transform_animations`). Emit **inline TweenService scripts** for each detected clip — not config tables requiring a runtime wrapper. `TransformAnimator.luau` was deleted under the inline-over-runtime-wrappers policy; its curve-based CFrame/Size animation work is handled by generated TweenService scripts in the dest today. Follow that pattern.
 
 **Note (per eng review):** `convert_transform_animations()` scans both scene nodes and prefab nodes (source line 921–932). Verify that the dest's prefab parser node/component interface is compatible with the ported scanning logic. If prefab nodes have a different structure, the prefab scan will silently produce zero results.
 
@@ -377,14 +404,14 @@ Root motion helpers exist in source but are **never called** by any pipeline ent
 3. Generate a root motion application script (source's `generate_root_motion_config()` adapted to dest's output style).
 4. Note: requires `assimp` (optional dependency) and assumes root bone is named `Hips`.
 
-#### 4.5.2 Port Blend Tree Support
+#### 4.5.2 Port Blend Tree Support (Data for `animator_runtime.luau`)
 
-Blend trees are a source-only capability. They require the config-table + runtime approach because TweenService can't interpolate between multiple animations based on a parameter.
+Blend trees require the runtime-data approach because TweenService can't interpolate between multiple animations based on a parameter. The dest's `animator_runtime.luau` already has blend-tree support (per `test_no_rejected_bridges.py:94-99`: the runtime exposes `_startBlendTree`, `_updateBlendTree`, `_lazyLoadTrack`). What's missing is the **data-side** work: parsing blend trees out of the controller YAML and emitting them in the controller data module that `animator_runtime.luau` consumes.
 
 **Action:**
-1. Port `BlendTree` and `BlendTreeEntry` dataclasses to dest.
+1. Port `BlendTree` and `BlendTreeEntry` dataclasses to dest (extending `AnimatorController` / `AnimState`).
 2. Add blend tree parsing to dest's `parse_controller_file()` — resolve via `m_Motion` file references to separate YAML documents containing `m_Childs` / `m_BlendType` (NOT a direct `m_BlendTree` field on the state).
-3. When a blend tree is detected, switch that animator to the config-table backend (see 4.5.4).
+3. Emit blend-tree data in the existing controller data module format consumed by `animator_runtime.luau`. Do NOT add a new runtime file — `animator_runtime.luau` is the single runtime.
 4. Note: only 1D blend trees are supported; 2D blend trees are out of scope.
 
 #### 4.5.3 Port R15 Bone Mapping
@@ -393,9 +420,9 @@ Source's `UNITY_TO_R15_BONE_MAP` maps Unity Humanoid bone names to Roblox R15 pa
 
 **Action:** Port the bone mapping dict to dest. Current use: rejection filter for transform-only pipeline. Future use: could enable actual humanoid keyframe remapping (new capability neither repo has).
 
-#### 4.5.4 Implement Backend Selection
+#### 4.5.4 Implement Output Mode Selection
 
-**Action:** Add a backend selection heuristic. Decision tree (refined per CEO review):
+**Action:** Add an output-mode selection heuristic. Decision tree (refined per CEO review; re-homed to single-runtime model 2026-04-24):
 
 ```
 FOR each Animator component:
@@ -406,31 +433,34 @@ FOR each Animator component:
       → Record in UNCONVERTED.md
 
   IF controller has ANY blend trees (even one state with BlendTree):
-      → Config-table backend
-      → Reason: TweenService cannot interpolate between multiple animations by parameter
+      → "runtime-data" mode (emit controller data module for animator_runtime.luau)
+      → Reason: TweenService cannot interpolate between multiple animations by parameter;
+                animator_runtime.luau already handles blend trees (_startBlendTree, _updateBlendTree)
 
   ELSE IF controller has >3 parameters WITH Float or Int types:
-      → Config-table backend
-      → Reason: parameter-driven transitions are state-machine-heavy, config-table handles natively
+      → "runtime-data" mode
+      → Reason: parameter-driven transitions are state-machine-heavy; animator_runtime handles them natively
 
   ELSE IF controller has root motion enabled (m_ApplyRootMotion = true):
-      → Config-table backend
-      → Reason: root motion requires frame-by-frame position/rotation extraction
+      → "runtime-data" mode (or skip if 4.5.1 root-motion spike hasn't landed)
+      → Reason: root motion requires frame-by-frame position/rotation extraction via animator_runtime
 
   ELSE:
-      → TweenService backend
-      → Self-contained, no runtime dependency
+      → "inline-tween" mode (generate self-contained TweenService script)
+      → Self-contained; animator_runtime.luau is not required for this clip
 ```
 
-**Logging (per CEO review):** Log the backend selection decision for each Animator to the conversion report: `"Animator '{name}': selected {backend} backend (reason: {reason})"`. This is critical for debugging "why does this animation look wrong."
+**Both modes share the same single runtime: `animator_runtime.luau`.** The distinction is whether a given Animator requires it (runtime-data mode) or is simple enough to stand alone with inline TweenService. There is no "second runtime file" — `animator_bridge.luau` and `TransformAnimator.luau` were deleted and are guarded against by `test_no_rejected_bridges.py`.
+
+**Logging (per CEO review):** Log the output-mode decision for each Animator to the conversion report: `"Animator '{name}': selected {mode} mode (reason: {reason})"`. This is critical for debugging "why does this animation look wrong."
 
 Implementation:
-1. Add a `backend: Literal["tween", "config_table"]` field and `backend_reason: str` to the animation conversion result.
-2. In `convert_animations()`, analyze each controller's complexity before choosing backend.
-3. Config-table backend: use source's `generate_animator_config()` adapted to dest's types.
-4. TweenService backend: use dest's existing `generate_tween_script()` / `generate_state_machine_script()`.
+1. Add a `mode: Literal["inline_tween", "runtime_data"]` field and `mode_reason: str` to the animation conversion result.
+2. In `convert_animations()`, analyze each controller's complexity before choosing mode.
+3. Runtime-data mode: extend the existing controller/clip data exporter (the one `animator_runtime.luau` already consumes) with blend-tree and richer parameter data from 4.5.2.
+4. Inline-tween mode: use dest's existing `generate_tween_script()` / `generate_state_machine_script()` unchanged.
 5. **Scene-scoped naming (per CEO review):** Generated animation module names must be prefixed with the scene name to avoid collisions across scenes/prefabs. E.g., `Level1_PlayerAnimConfig.luau`, not `PlayerAnimConfig.luau`. This prevents silent overwrites when multiple scenes have GameObjects with the same name. **Data flow (per eng review):** `convert_animations()` currently iterates all nodes across all scenes in a flat loop with no scene-name awareness. Implementation must either process scenes one at a time (passing scene name as a parameter) or add a `scene_name: str` field to the node data structure so it survives flattening. Same applies to `convert_transform_animations()`.
-6. **Backend choice persistence (per eng review):** The selected backend (`"tween"` or `"config_table"`) and reason string for each Animator must be persisted to `conversion_context.json` (under an `animation_backends` key). The preserved-script rehydration path reads this to determine which runtime modules to inject (`animator_bridge.luau` vs inline TweenService). Without persistence, re-running the assemble phase after script edits would lose the backend decision and potentially inject the wrong runtime.
+6. **Mode persistence (per eng review, re-scoped):** The selected `mode` (`"inline_tween"` or `"runtime_data"`) and `mode_reason` for each Animator must be persisted to `conversion_context.json` (under an `animation_modes` key). The preserved-script rehydration path reads this to decide whether to request `animator_runtime.luau` injection for that Animator's scripts. Without persistence, re-running the assemble phase after script edits would lose the mode decision and potentially fail to inject `animator_runtime.luau` when needed. There is **no bridge-selection toggle** anymore — only an injection-needed flag.
 
 #### 4.5.5 Reconcile Data Structures
 
@@ -445,44 +475,45 @@ Source and dest parse the same YAML but into different dataclasses. Since dest's
 | `AnimatorParameter` | `AnimParameter` | Verify type enum matches |
 | `FbxRootMotion` | (new) | Add to dest |
 
-#### 4.5.6 Validate Both Backends
+#### 4.5.6 Validate Both Modes
 
 Test matrix:
-| Scenario | Expected Backend | Key Validation |
+| Scenario | Expected Mode | Key Validation |
 |---|---|---|
-| Simple position tween (1 clip, no controller) | TweenService | Keyframes play correctly |
-| Transform-only .anim (door/platform) | Transform-only pipeline | TransformAnimator runtime drives movement |
-| State machine (3 states, Bool transitions) | TweenService | State transitions fire on parameter change |
-| Blend tree (1D, walk/run blend) | Config-table | Blending interpolates based on parameter |
-| Root motion (character locomotion) | Config-table | Character moves with animation (newly wired) |
-| Complex controller (>5 params, blend trees + transitions) | Config-table | Full state machine works |
+| Simple position tween (1 clip, no controller) | inline_tween | Keyframes play correctly |
+| Transform-only .anim (door/platform) | inline_tween (via 4.5.0 TweenService emitter) | Generated TweenService script drives movement; no runtime file required |
+| State machine (3 states, Bool transitions) | inline_tween | State transitions fire on parameter change |
+| Blend tree (1D, walk/run blend) | runtime_data | `animator_runtime.luau`'s `_startBlendTree` interpolates based on parameter |
+| Root motion (character locomotion) | runtime_data | Character moves with animation (only if 4.5.1 spike lands) |
+| Complex controller (>5 params, blend trees + transitions) | runtime_data | `animator_runtime.luau` runs the full state machine |
 
 ### Acceptance Criteria
 
-- [ ] Legacy Animation / transform-only pipeline ported and working
-- [ ] Root motion extraction ported AND wired into pipeline (source had it unwired)
+- [ ] Transform-only pipeline ported and emits inline TweenService scripts (no `TransformAnimator.luau` reintroduced)
 - [ ] Blend tree parsing added to controller parser (via `m_Motion` refs, not `m_BlendTree`)
+- [ ] Blend tree data surfaces in the existing controller data module format consumed by `animator_runtime.luau` (no new runtime file)
 - [ ] R15 bone mapping available (currently: rejection filter; future: keyframe remapping)
-- [ ] Backend selection heuristic implemented with precise decision tree (blend trees → config-table; >3 Float/Int params → config-table; root motion → config-table; else → TweenService)
-- [ ] Backend selection decision logged per-Animator in conversion report with reason string
-- [ ] TweenService backend (dest's existing) still works for simple animations
-- [ ] Config-table backend (source's approach) works for complex animations
-- [ ] Both backends produce valid Luau that runs in Roblox Studio
+- [ ] Output-mode heuristic implemented with precise decision tree (blend trees → runtime_data; >3 Float/Int params → runtime_data; root motion → runtime_data; else → inline_tween)
+- [ ] Output-mode decision logged per-Animator in conversion report with reason string
+- [ ] Inline-tween mode (dest's existing) still works for simple animations
+- [ ] Runtime-data mode feeds `animator_runtime.luau` correctly for complex controllers
+- [ ] Both modes produce valid Luau that runs in Roblox Studio
 - [ ] **Scene-scoped naming:** Generated animation module names prefixed with scene name (e.g., `Level1_PlayerAnimConfig.luau`) to prevent collisions across scenes/prefabs
 - [ ] **Binary .controller graceful failure:** If controller YAML parsing fails (binary format, corrupt file), skip with warning and UNCONVERTED.md entry — never crash
 - [ ] **Clip resolution graceful failure:** If .anim file not found by filename search, skip that clip with warning — never crash
 - [ ] **Corrupt .anim resilience (per eng review):** Malformed keyframe data (wrong type, missing fields, NaN values) → skip that curve, log warning, continue with remaining curves. Never crash on bad animation data.
 - [ ] **assimp CLI failure resilience (per eng review):** If root motion extraction fails (assimp not installed, CLI timeout, missing FBX), skip root motion for that animator with warning — do not block the entire animation pipeline.
 - [ ] **Transform-only prefab scanning (per eng review):** Transform-only animation detection works for both scene nodes AND prefab nodes.
-- [ ] Existing dest animation tests still pass
-- [ ] **`_inject_runtime_modules()` updated** to auto-inject `animator_bridge.luau` and `TransformAnimator.luau` when config-table or transform-only backend is selected (currently only injects `animator_runtime.luau`)
-- [ ] **Generated animation scripts persist to disk** in a known subdirectory that `write_output` rehydration handles (current rewrite only knows `scripts/` and `scripts/animations/`)
+- [ ] Existing dest animation tests still pass, including `test_no_rejected_bridges.py::test_animator_runtime_has_consolidated_features` (the consolidated feature set must remain intact)
+- [ ] **`_inject_runtime_modules()` injection trigger:** When any Animator in the output selects `runtime_data` mode, `animator_runtime.luau` is auto-injected (it already is today — verify the trigger is reachable for the new mode flag). Do NOT reintroduce `animator_bridge.luau` or `TransformAnimator.luau` injection — those files are deleted and the regression test forbids their return.
+- [ ] **Generated animation data modules persist to disk** in a known subdirectory that `write_output` rehydration handles (current rewrite handles `scripts/` and `scripts/animations/` — verify the subdir used for controller data modules is covered, or extend the rewrite).
 
 ### Dependencies
 
-- Phase 2: `AnimatorBridge.luau` and `TransformAnimator.luau` runtimes must be ported first. ✅ Done.
-- Phase 3 item 11 (extend write_output disk rewrite) should be completed first or concurrently.
-- Independent of 4.1–4.4.
+- `animator_runtime.luau` (already in dest) is the single consumer for runtime-data mode. `AnimatorBridge.luau` and `TransformAnimator.luau` were deleted and must NOT be reintroduced (guarded by `test_no_rejected_bridges.py`).
+- Phase 3 item 11 (extend `write_output` disk rewrite) should be completed or extended to cover the controller-data module subdirectory.
+- 4.7 (scene_parser controller GUID extraction) is a **hard prerequisite** — `animator_runtime` needs to know which controllers to parse.
+- 4.4 runs **after** 4.5 (the method-completeness audit and `luau-analyze` gate must cover any executable Luau generated by 4.5).
 
 ---
 
@@ -650,44 +681,59 @@ None — fully independent. But completing this before 4.5 (animation) is helpfu
 
 ## Execution Order
 
-The sub-items have few hard dependencies between them. Recommended order optimizes for risk reduction (hardest first) and dependency satisfaction:
+The sub-items have few hard dependencies between them. Recommended order optimizes for risk reduction (hardest first) and dependency satisfaction. Updated 2026-04-24 per Phase 3 reconciliation.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
+│ Pass 0 — Plan rewrite (applied 2026-04-24):             │
+│   Remove deleted/superseded assumptions, correct        │
+│   baselines, rename §4.4/§4.5 to match current arch.    │
+│   See "Phase 3 Reconciliation Log" at end of file.      │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────┐
 │ Can start immediately (no dependencies):                │
 │   4.1 api_mappings        (Low, ~1hr)                   │
-│   4.3 code_transpiler     (Medium, ~3hr)  [no hard dep] │
+│   4.3 code_transpiler     (Medium, ~3hr)                │
+│        └─ luau-analyze gate already in place            │
 │   4.6 ui_translator       (Medium, ~2hr)  [⚠ Y-invert] │
 │   4.7 scene_parser        (Low, ~1hr)                   │
+│        └─ adds referenced_animator_controller_guids     │
 └─────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Start after 4.7 (hard dependency):                      │
-│   4.5 animation_converter (High, ~6hr)                  │
+│   4.5 animation_converter (High, ~5hr)                  │
 │        └─ HARD DEP: scene_parser controller GUIDs (4.7) │
-│        └─ needs AnimatorBridge.luau + TransformAnimator  │
-│           from Phase 2 ✅                                │
-│        └─ includes new transform-only pipeline (4.5.0)  │
+│        └─ single runtime target: animator_runtime.luau  │
+│           (AnimatorBridge.luau and TransformAnimator     │
+│            .luau were deleted — do NOT reintroduce)     │
+│        └─ includes transform-only pipeline (4.5.0) as    │
+│           inline TweenService, not a runtime wrapper    │
 └─────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Start after 4.5 + Phase 3 rehydration:                  │
-│   4.2 material_mapper     (High, ~5hr)                  │
-│        └─ needs vertex_color_baker from Phase 2 ✅       │
-│   4.4 luau_validator      (Low, ~1hr)                   │
-│        └─ LATE: must run after all script-generating     │
-│           modules (4.2, 4.5) are integrated, so         │
-│           validation ordering fix covers all generated   │
-│           Luau (see cross-cutting constraint #1)         │
+│   4.2 material_mapper     (High, ~4.5hr)                │
+│        └─ static material work + 4.2.5a schema add      │
+│        └─ companion-scripts clause DROPPED              │
+│        └─ 4.2.5b (baker wiring) deferred post-Phase 4   │
+│   4.4 transpile diagnostics (Low, ~1hr)                 │
+│        └─ method-completeness audit feeds               │
+│           report_generator                              │
+│        └─ extends luau-analyze gate to cover executable │
+│           Luau generated by 4.2/4.5                     │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Ordering rationale (CEO + Codex review):**
+**Ordering rationale (CEO + Codex review; reconciled 2026-04-24):**
 - 4.7 → 4.5 is a **hard dependency**: animation_converter consumes `referenced_animator_controller_guids` from scene_parser.
-- 4.4 moved late: luau_validator integration must happen after all script-generating modules (4.2 companion scripts, 4.5 animation configs) are integrated, so the validation ordering fix (cross-cutting constraint #1) covers all generated Luau.
-- Phase 3 rehydration/persistence is a **prerequisite** for Phase 4 modules that generate scripts — without script_manifest.json, generated scripts will be lost on preserved-script assemble.
+- 4.4 moved late (post-4.2 and post-4.5): the method-completeness audit and `luau-analyze` gate must cover any executable Luau generated by those modules. Cross-cutting constraint #1 is now scoped to executable Luau only — pure data-table modules are exempt.
+- Phase 3 rehydration/persistence (conversion_plan.json) is a **prerequisite** for Phase 4 modules that generate scripts.
+- 4.5 no longer depends on `AnimatorBridge.luau` / `TransformAnimator.luau` — those were deleted and the single target is `animator_runtime.luau`.
 
 ---
 
@@ -713,7 +759,8 @@ Each reconciliation item should have:
 |---|---|
 | Material mapper port breaks `scene_converter` / `rbxlx_writer` integration | Add `MaterialMapping` field changes behind optional fields with defaults. Run integration test before merging. |
 | Unknown shaders silently produce no `roblox_def` | Source does NOT fall back to Standard extraction for unknown shaders. Decide explicitly: add a fallback in dest, or preserve strict behavior and log a warning. |
-| Animation dual-backend adds maintenance burden | Backend selection is deterministic (based on controller complexity). Document the heuristic clearly. Consider removing config-table backend later if TweenService proves sufficient. |
+| Accidental reintroduction of deleted bridges | `converter/tests/test_no_rejected_bridges.py` is CI-enforced and will fail any PR that restores `animator_bridge.luau`, `TransformAnimator.luau`, `bridge_injector.py`, `mesh_splitter.py`, or the other seven rejected wrappers. Don't disable it. |
+| §4.5 output-mode selection adds maintenance burden | Mode selection is deterministic (based on controller complexity). Document the heuristic clearly. Inline-tween and runtime-data both target the same single runtime (`animator_runtime.luau`); there is no parallel backend to sunset. |
 | Root motion code is unintegrated in source | Port as dormant helpers. Wiring is a stretch goal requiring a real FBX validation spike. Do not treat as equivalent to porting proven code. |
 | Only base animator layer parsed | Multi-layer support is out of scope. Document this limitation. May cause missing animations for controllers with override/additive layers. |
 | UI Y-inversion contradiction | Source code inverts Y but header comment says no inversion needed. Must test with real Unity Canvas before porting math. Wrong choice flips all layouts vertically. |
@@ -722,8 +769,9 @@ Each reconciliation item should have:
 | Union merge of api_mappings introduces conflicting entries | Keep dest's value when both repos map the same key differently. Log conflicts for manual review. |
 | Non-deterministic dependency cycle breaking (eng review) | Source's DFS cycle break depends on dict ordering. Fix: alphabetical sort before DFS. |
 | Integration regression across 4.x items (eng review) | Each 4.x item is a separate PR with CI. Integration checkpoints after 4.2 and 4.5. Tag rollback point before Phase 4. |
-| Custom shader patterns are game-specific (eng review) | Port the mechanism (regex table + companion scripts), not the Trash Dash patterns. Make table configurable per-project. |
-| Orchestration/glue code changes underestimated (eng review) | +600/+500 LOC estimates don't include changes to pipeline.py, scene_converter.py, rbxlx_writer.py, write_output. Budget an additional ~200 LOC for integration wiring. |
+| Custom shader patterns are game-specific (eng review) | Port the regex-table mechanism only. Make the table configurable per-project. Do NOT port the Trash Dash companion-script pattern — that contradicts the inline-over-runtime-wrappers policy. |
+| 4.2.5a schema add without 4.2.5b baker wiring appears as dead field | Acceptable — the field is cheap, unblocks future wiring, and matches the deferred Phase 3 item 2. Track 4.2.5b in `TODO.md` for when a test project with vertex-color-only materials is available. |
+| Orchestration/glue code changes underestimated (eng review) | +500/+400 LOC estimates don't include changes to pipeline.py, scene_converter.py, rbxlx_writer.py, write_output. Budget an additional ~200 LOC for integration wiring. |
 
 ---
 
@@ -769,6 +817,62 @@ Acknowledged but not requiring plan changes:
 - `check_method_completeness` contract (diagnostic-only, low impact)
 - Effort estimates for orchestration glue (added to risk table)
 
-### Status: DONE
+### Status: DONE (at eng review time)
 
 Plan is ready for implementation. Total changes: 19 plan updates across CEO review (11) + eng review (8). All cross-cutting constraints have owners. All acceptance criteria are verifiable. Execution order is sound with integration checkpoints.
+
+---
+
+## Phase 3 Reconciliation Log (2026-04-24)
+
+**Reviewer:** Claude Opus 4.7 + Codex (outside voice, session `019dbcb0-cf86-7460-816f-88755d89263a`)
+**Dest repo:** `unity2rbxlx/` @ main (commit `385c669`)
+**Trigger:** Phase 1-3 landed with re-scoping that invalidated several Phase 4 assumptions.
+
+### Load-bearing invalidations (sourced from dest repo)
+
+1. **`converter/converter/luau_validator.py` was DELETED** on 2026-04-18 (commit `594238c`). The 8,633-LOC regex validator was replaced by a `luau-analyze` + AI reprompt loop in `code_transpiler.py:1508`. See `converter/docs/design/inline-over-runtime-wrappers.md`.
+2. **Nine runtime bridges + `bridge_injector.py` were REJECTED** under the inline-over-runtime-wrappers policy (adopted 2026-04-14). The rejected set: `Input.luau`, `Time.luau`, `Coroutine.luau`, `physics_queries.luau`, `GameObjectUtil.luau`, `MonoBehaviour.luau`, `StateMachine.luau`, `animator_bridge.luau`, `TransformAnimator.luau`, and the Python `bridge_injector.py` + `mesh_splitter.py` modules. A CI-enforced regression test (`converter/tests/test_no_rejected_bridges.py`) prevents reappearance.
+3. **`animator_bridge.luau`'s unique features were MERGED into `animator_runtime.luau`.** Blend trees (`_startBlendTree`, `_updateBlendTree`), `Play()`, `GetFloat`/`GetBool`/`GetInt`, Any-state transitions, lazy track loading, and `Destroy()` now live in the single consolidated runtime. Verified by `test_no_rejected_bridges.py::test_animator_runtime_has_consolidated_features`.
+4. **`mesh_splitter.py` was rejected**, superseded by scene_converter's sub-mesh hierarchy path.
+5. **`vertex_color_baker.py` is NOT wired** into the pipeline (Phase 3 augmented plan item 2: deferred pending a test project with vertex-color-only materials).
+6. **`generate_bootstrap_script`, `extract_serialized_field_refs`, `generate_prefab_packages`** are superseded or deferred (Phase 3 augmented plan items 8/9/10).
+
+### Baseline corrections applied
+
+| Module | Plan baseline (stale) | Actual (2026-04-24) |
+|---|---|---|
+| `luau_validator.py` | 7,477 LOC, 22 fix functions | **Deleted** |
+| `code_transpiler.py` | 2,083 LOC | 1,658 LOC |
+| `material_mapper.py` | 727 LOC, 6 shaders | 783 LOC, 10 entries in `_SUPPORTED_SHADERS` |
+| `MaterialMapping.uses_vertex_colors` | — | Field missing (4.2.5a adds it) |
+| `ParsedScene.referenced_animator_controller_guids` | — | Field missing (4.7 adds it) |
+| `referenced_guids` filtering in `map_materials()` | To be ported | **Already landed** in Phase 3 |
+
+### Plan changes applied
+
+- **Cross-Cutting Constraint #1 (validation ordering)** rewritten: scoped to executable Luau only; routed through `luau-analyze` gate instead of the deleted `luau_validator`.
+- **Cross-Cutting Constraint #6 (new)** added: inline-over-runtime-wrappers policy with regression-test reference.
+- **§4.2.4** companion-script clause dropped; replaced with static-extraction guidance consistent with the inline policy.
+- **§4.2.5** split into 4.2.5a (schema add — land in Phase 4) and 4.2.5b (baker wiring — deferred post-Phase 4).
+- **§4.2 acceptance criteria** updated: `referenced_guids` filtering reframed as "preserve existing behavior"; added "no new per-material runtime wrapper scripts" requirement.
+- **§4.3.3** prompt-engineering guidance updated: do NOT port source's bridge-module import patterns; steer AI toward inline translations via `api_mappings` / `UTILITY_FUNCTIONS`.
+- **§4.4** rewritten: no longer a validator port. Now a method-completeness diagnostic feeding `report_generator`, plus an extension of the existing `luau-analyze` gate to cover executable Luau generated by 4.2/4.5.
+- **§4.5** rewritten: single-runtime model (`animator_runtime.luau` only). "Config-table vs TweenService" reframed as "runtime-data mode vs inline-tween mode," both targeting the same runtime. `AnimatorBridge.luau` / `TransformAnimator.luau` injection requirements removed. Backend-choice persistence simplified to an injection-needed flag.
+- **§4.5.0** transform-only pipeline now emits inline TweenService scripts (not config tables for the deleted `TransformAnimator.luau`).
+- **§4.5.2** blend-tree port now emits data for the existing `animator_runtime.luau` (no new runtime file).
+- **Execution Order** diagram updated to reflect new 4.4 (post-4.2/4.5) and drop the rejected-bridge dependency chain.
+- **Risk Mitigations** table: removed "dual-backend maintenance" risk; added "accidental reintroduction of deleted bridges" (mitigated by regression test); added "4.2.5a field without 4.2.5b baker" risk (accepted).
+
+### Ready for implementation
+
+- **Tier 1 — ready now:** 4.1 api_mappings, 4.7 scene_parser, 4.6 ui_translator, 4.2.5a schema add.
+- **Tier 2 — start after Tier 1 lands:** 4.3 code_transpiler, 4.5 animation_converter (hard-dep on 4.7).
+- **Tier 3 — post 4.2/4.5:** 4.4 diagnostic + `luau-analyze` extension.
+- **Deferred post-Phase 4:** 4.2.5b baker wiring, 4.5.1 root-motion spike.
+
+### Decisions resolved 2026-04-24 (evidence-based)
+
+**Q1: Keep §4.4 — paired with a transpiler prompt change.** Evidence from `converter/converter/code_transpiler.py:1165, 1169`: the dest's AI prompt already forbids method skips (*"Do not skip methods or simplify logic"*), but there is **no detection layer** — a clean `luau-analyze` pass with three missing methods ships today. The audit is the detection layer. It's worth ~60 LOC **if** it's paired with a prompt addition telling the AI to emit `-- UNCONVERTED: {reason}` stubs for intentional skips, so the audit has a signal to honor. See §4.4.3. Source's structured error-code model (E001–E030) is dropped — no downstream consumer.
+
+**Q2: Formalize the existing fallback — dest code already does it informally.** Evidence from `converter/converter/material_mapper.py:222-229`: unknown shaders already run through the full extraction path with multiple fallback texture slot names. The CEO "add a Standard fallback" decision describes behavior that is already present; the Phase 4 work reduces to (a) extracting the fallback into a named `_apply_standard_fallback()` helper, (b) adding a `shader_category` enum/field on `MaterialMapping`, (c) emitting a formal UNCONVERTED.md entry (severity LOW) — **including** for `Shader Graphs/*` and `Custom/*` shaders, which currently suppress the warning entirely and therefore hide real coverage gaps. No CEO re-review needed; the 10-shader baseline doesn't change the decision because particle/sprite/UI/custom shaders still hit the fallback path today. See §4.2.1 step 3.
