@@ -302,27 +302,108 @@ Summary:
 10. **generate_prefab_packages** (High) — deferred Phase 3 item 10. Port with architecture review; depends on the disk rewrite below (4.11).
 11. **Disk rewrite for `animation_data/` + `packages/`** — deferred Phase 3 item 11. Extend `write_output`'s disk-rewrite to handle the new subdirectories so rehydration stays lossless.
 
-### Phase 5: Port Tests
+### Phase 5: Port Tests ✅ (substantively complete; follow-ups in `converter/TODO.md`)
+
+> **Updated 2026-04-27 (re-audit against dest `main` after Phase 4 closed).** The original 8 plan items were folded into Phase 4 PRs and a series of post-Phase-4 Codex review rounds; item 8 (visual regression) was superseded by a more capable nightly CI matrix that landed in the same window. Section title kept as **Port Tests** for cross-doc consistency, even though the actual scope expanded into "tests + regression infrastructure."
+
+#### Original 8 plan items (for cross-reference)
 
 1. Port tests for all new modules
 2. Merge test cases for reconciled shared modules
 3. Ensure all tests pass in the dest repo structure
-4. **Three-flow regression tests** (learned from Phase 1-2 bugfixes):
-   - `assemble` preserves hand-edited scripts when `--retranspile` is absent
-   - `assemble --retranspile` overwrites hand-edited scripts with fresh output
-   - `upload` rebuild includes scripts in the generated place (the exact regression fixed in 86392e6)
-5. **Workflow contract tests:**
-   - `transpile` → `validate` workflow (transpile currently doesn't write to disk; validate reads from disk — verify this contract)
-   - Duplicate scene names disambiguated in `discover`, `status`, AND `report`
-   - Cross-project contamination rejected by `_make_pipeline()`
-6. **Rehydration round-trip tests:**
-   - Nested script directory rehydration + correct Script/LocalScript/ModuleScript retention
-   - Script metadata manifest (Phase 3 item 12) correctly restores type and parent_path
-7. **Interactive resume tests:**
-   - `Pipeline.resume()` vs `_run_through()` divergence: resume replays upload/resolve as prerequisites, _run_through skips cloud phases — verify both paths produce consistent output
-8. **Visual regression tests** (added per CEO review):
-   - Convert the FPS reference project (`unity-fps-output/`), open in Roblox Studio, verify: materials render correctly (colors, textures, transparency), UI elements positioned correctly (not flipped), scripts execute without errors, animations play on correct backends
-   - Compare against baseline screenshots where feasible
+4. Three-flow regression tests (assemble preserves edits / assemble --retranspile overwrites / upload rebuild includes scripts)
+5. Workflow contract tests (transpile→validate; duplicate scene names; cross-project contamination)
+6. Rehydration round-trip tests (nested dirs; script metadata manifest)
+7. Interactive resume tests (`Pipeline.resume()` vs `_run_through()` divergence)
+8. Visual regression tests on `unity-fps-output/` in Roblox Studio
+
+#### What landed during Phase 4 closeout (2026-04-22 — 2026-04-26)
+
+> Two PR-number namespaces appear below: **dest GitHub PR #N** (e.g., dest PR #10 = no-Any gate) and **Phase 4 plan PR N** (e.g., plan PR 5 = items 4.10 + 4.11). They are not interchangeable.
+
+Per-module test ports (items 1 + 2):
+- All Phase 4 reconciliation modules ship with tests: `test_material_mapper.py`, `test_animation_converter.py`, `test_transpile_diagnostics.py`, `test_serialized_field_extractor.py`, `test_prefab_packages.py`, `test_ui_translator.py`, `test_scene_parser.py`, `test_transpiler_dependency.py`, `test_scriptable_object_wiring.py`, `test_sprite_extractor_wiring.py`.
+- `test_phase3_final_gaps.py` covers the three gap-closeout fixes from Phase 3 (commit `a3ac9c3`): skip-binary-rbxl flag threading, scene project-relative path in report, storage_plan script_paths.
+- `test_rehydration_plan.py` covers Phase 3 item 12 (script metadata via `conversion_plan.json`).
+- Pre-existing dest e2e coverage continues to gate every PR: `test_pipeline_e2e.py` (351 LOC, 11 conversion tests across SimpleFPS, 3D-Platformer, RedRunner, Gamekit3D, ChopChop, BossRoom, BoatAttack, SanAndreas) and `test_integration.py` (531 LOC, including `TestRbxlxOutputQuality`, `TestCLIPipeline`, `TestEdgeCases`).
+
+Three-flow regression coverage (item 4 + parts of items 5, 7) — landed in commit `420b01e` ("Add missing regression tests: resume vs _run_through + three-flow phase order"):
+- `test_convert_interactive.py::TestThreeFlowPhaseOrder` — `assemble` runs phases in pipeline order; reruns transpile when scripts cache is missing; rehydrated flow skips only transpile; assemble-retry reruns cloud phases.
+- `test_convert_interactive.py::TestResumeVsRunThroughParity` — verifies resume's prereq replay vs `_run_through`'s cloud-skip don't diverge.
+- `test_convert_interactive.py::TestAssembleWorkflowFidelity` — `assemble` runs `moderate_assets` before `upload` (commit `ed6596d`); missing creds without `--no-upload` fail fast.
+- `test_convert_interactive.py::TestMakePipelineCrossProjectGuard` — cross-project context guard (commit `ba560e2`).
+
+Workflow contract coverage (item 5):
+- `transpile` → `validate`: scripts persisted to disk during transpile (commit `03e6bff`) so `validate` can find them.
+- Cross-project contamination rejected by `_make_pipeline()` — see `TestMakePipelineCrossProjectGuard` above.
+- **Partial:** Duplicate scene names disambiguated only in `report` (`TestReportIncludesSceneRelPath`); the originally-specified `discover` and `status` paths are not yet covered. Open as a follow-up if a multi-scene project trips it.
+
+Rehydration round-trip (item 6):
+- Nested script directory rehydration lossless (commit `0292f79`).
+- Script metadata manifest restoration via `conversion_plan.json` (`storage_plan` + `script_paths`) — covered by `TestStoragePlanScriptPaths`.
+
+Inline-over-runtime / type-strictness gates (added or codified during Phase 4):
+- `test_no_rejected_bridges.py` — zero `require()` of deleted bridges. **Note:** the test landed when the inline-over-runtime policy was adopted (2026-04-17), *before* the 2026-04-22 plan update added cross-cutting constraint #6; the constraint codifies an existing test rather than mandating a new one.
+- `test_no_any_gate.py` + `tools/check_no_any.sh` — forward-only gate against new `Any` annotations, enforced on `pull_request` events via CI (dest PR #10).
+- `test_shared_state_linter.py` — cross-script shared-state linter (dest PR #38, P1 quality fix; lints orphan `:GetAttribute` calls on `TranspilationResult.scripts`).
+
+Method-completeness diagnostic (4.4):
+- `test_transpile_diagnostics.py` (373 LOC) covers `_strip_comments_and_strings`, `check_method_completeness`, lifecycle-hook exemptions, case-insensitive Luau matching, and three rounds of Codex-review fixes (signal-to-noise tuned through dest PR #9 from 0/37 to 1/1 on SimpleFPS).
+
+Visual / behavioural regression infrastructure (supersedes original item 8):
+- `converter/smoke_test.py` (418 LOC) — opens converted `.rbxlx` in Roblox Studio, runs the auto-injected health check, captures screenshot.
+- `u2r.py eval` + `u2r.py eval-diff --fail-on-regression` + committed `eval_baseline.json` — regression check against per-project metrics.
+- `u2r.py visual-compare` (`u2r.py:1341`) — SSIM screenshot comparison (Unity capture vs Roblox capture). Available CLI; not yet wired into nightly CI.
+- `u2r.py audit-assets` — moderation-state regression check.
+- `.github/workflows/test.yml` jobs:
+  - `fast` — PR-time unit tests; no-Any gate runs only on `pull_request` events
+  - `slow-unit-tests` (nightly) — full pytest including `@slow`
+  - `convert-matrix` (nightly) — convert + validate per test project. **Currently `SimpleFPS` only**: the other 8 entries under `test_projects/` are gitlinks without `.gitmodules` mappings, so they're dormant in CI.
+  - `eval-regression` (nightly) — `eval-diff --fail-on-regression` against committed baseline (subsetted to populated projects so dormant gitlinks don't register as MISSING regressions)
+  - `smoke-test` (nightly) — self-hosted macOS+Studio runner; resolves the SimpleFPS submodule alias to a runner-local clone at `$UNITY_SIMPLEFPS_DIR=/Users/jiazou/workspace/unity-3d-simplefps`. Screenshot artifact uploaded.
+  - `nightly-summary` — aggregates results, blocks on any failure
+
+#### Deviations from the original Phase 5 plan
+
+- **Item 8 — visual regression fixture changed.** Original plan specified converting `unity-fps-output/` (which lives in the **source** repo and was not carried into dest). Dest uses `SimpleFPS` (the `test_projects/SimpleFPS` submodule, locally cloned as `unity-3d-simplefps` on the self-hosted runner) plus the structured `eval_baseline.json` regression diff for per-project metrics. The plan's "compare against baseline screenshots where feasible" became `eval-diff --fail-on-regression` (metric-based, not pixel-based, by design — pixel diffs available via `u2r.py visual-compare` but not yet in CI).
+- **Item 5 — partial coverage.** The `discover` and `status` paths for duplicate-scene-name disambiguation are not covered; only `report` is. Listed as follow-up #9 below.
+
+#### Phase 5 follow-ups still open (tracked in `converter/TODO.md`)
+
+| # | P-level | Item | Origin | Blocker |
+|---|---|---|---|---|
+| 1 | P2 | Three-flow `rbx_place` byte-equivalence test | dest PR #32 Codex review P1-6 (deferred) | Needs a real Unity fixture; source-level + behavioural parity already tested (commit `420b01e`) |
+| 2 | P2 | Real-upload smoke (`SurfaceAppearance` round-trip via Templates) | Phase 4 plan PR 5 deferred | Smoke runs with `--no-upload`; needs runner-bound credentials |
+| 3 | P2 | AI-transpilation smoke | convert-matrix + smoke run with `--no-ai` | Needs CI-bound Anthropic key budget |
+| 4 | P2 | Sub-mesh identity in vertex-color baking | Phase 4 plan PR 3 deferred | `bake_vertex_colors_batch` doesn't thread `mesh_file_id` |
+| 5 | P2 | Prefab-scoped animator controller GUID aggregation | Phase 4 plan PR 2a deferred | Scenes reaching controllers only through prefab instances |
+| 6 | P2 | Transform-only prefab scanning | Phase 4 plan PR 2a deferred | One tween script per prefab animator |
+| 7 | P2 | TMP alignment (`m_HorizontalAlignment` / `m_VerticalAlignment` bitfield split) | Phase 4 plan PR 1 deferred | Non-blocking until a TMP-only test project surfaces a layout regression |
+| 8 | P1 | Binary `.anim`/`.controller` parsing | Pre-existing (predates the merge) | Needs UnityPy or a binary YAML parser; affects ~40% of skeletal-anim games |
+| 9 | P2 | `discover` + `status` duplicate-scene-name disambiguation | Original Phase 5 item 5 partial | Surface-level; only opens if a multi-scene project trips it |
+
+Items 1–3 are the only Phase-5-shaped items; 4–7 are runtime/feature gaps that surfaced during testing but live with the corresponding Phase 4 sub-item; 8 predates the merge and is tracked separately. Item 9 is a small CLI-coverage gap.
+
+> **Out of scope for Phase 5.** `scene_converter.py:180` `_mesh_hierarchies: dict[str, list[dict]]` (TODO.md remaining type-strictness item) is a forward-only cleanup, not a test gap, and is intentionally excluded from Phase 5 closure criteria.
+
+#### Definition of Done (Phase 5)
+
+For honesty under the asymmetric DoD, the **checked** CI items below run with `--no-upload --no-resolve --no-ai`. The **unchecked** items 1–3 are the inverse — they exercise the upload, resolve, and AI paths that the standing matrix deliberately skips.
+
+- [x] All ported modules have test files in `converter/tests/` (item 1)
+- [x] Reconciled-shared-module test cases merged (item 2)
+- [x] Three-flow regression tests pass (item 4)
+- [x] Workflow contract tests pass for `transpile→validate`, cross-project guard, scene-rel report path, storage_plan script_paths (item 5, partial — see follow-up #9)
+- [x] Rehydration round-trip tests pass (item 6)
+- [x] Resume-vs-run-through parity tests pass (item 7)
+- [x] No-Any gate prevents new offenders from landing on PR (dest PR #10)
+- [x] Inline-policy gate (`test_no_rejected_bridges.py`) prevents `require()` of deleted bridges
+- [x] Nightly CI runs convert / validate / eval-diff / smoke-test (`--no-upload --no-resolve --no-ai`), with `nightly-summary` blocking on any failure (item 8 — superseded form)
+- [ ] Three-flow `rbx_place` byte-equivalence test (follow-up #1)
+- [ ] Real-upload smoke run on a populated Unity project — exercises upload + resolve paths (follow-up #2)
+- [ ] AI-on convert-matrix run — exercises Claude transpilation path end-to-end (follow-up #3)
+
+Open `[ ]` items above are tracked in `converter/TODO.md` and do not block Phase 6 documentation work.
 
 ### Phase 6: Polish
 
@@ -474,13 +555,26 @@ Phase 4 (reconciliation + deferred-Phase-3 closeout):
     4.10 generate_prefab_packages (depends on 4.11 disk rewrite)
     4.11 disk rewrite for animation_data/+packages/ subdirectories
 
-Phase 5 (tests — do alongside each Phase 4 item):
-  + three-flow regression tests (CLI, interactive-fresh, interactive-rehydrated)
-  + cross-module integration tests (scene_parser→animation, material→rbxlx_writer, transpiler→validator)
-  + rehydration round-trip tests via conversion_plan.json
-  + resume path divergence tests (Pipeline.resume vs _run_through)
-  + test_no_rejected_bridges.py expansion (lint for require() of deleted bridges)
-  + visual regression pass on unity-fps-output/ after Phase 4
+Phase 5 ✅ (substantively complete — folded into Phase 4 PRs + post-Phase-4 Codex review rounds):
+  Landed:
+    + three-flow regression tests (commit 420b01e)
+    + rehydration round-trip tests via conversion_plan.json
+    + resume vs _run_through parity tests
+    + cross-project guard tests (commit ba560e2)
+    + transpile→validate disk-persistence test (commit 03e6bff)
+    + test_no_rejected_bridges.py (predates Phase 4; constraint #6 codified it)
+    + test_no_any_gate.py + check_no_any.sh (dest PR #10, PR-time gate)
+    + smoke_test.py + nightly self-hosted macOS+Studio CI on SimpleFPS
+    + u2r.py eval / eval-diff / visual-compare / audit-assets
+    + nightly convert-matrix + eval-regression with --fail-on-regression
+  Deviations from original plan:
+    + visual regression fixture: SimpleFPS (dest), not unity-fps-output (source-only)
+    + screenshot diff via u2r.py visual-compare available but not yet in nightly CI
+  Open follow-ups (in converter/TODO.md):
+    + three-flow rbx_place byte-equivalence (P2)
+    + real-upload smoke (P2; needs runner credentials)
+    + AI-on convert-matrix (P2; needs Anthropic key budget)
+    + binary .anim/.controller parsing (P1; predates the merge)
 
 Phase 6 (polish — last):
   + close/roadmap deferred C2 (upload rebuild vs reviewed .rbxlx)
@@ -517,12 +611,13 @@ Phase 6 (polish — last):
 - [x] Interactive mode supports resume via `conversion_context.json` (Phase 1, fixed in Phase 2)
 - [x] Script rehydration is lossless via `conversion_plan.json` (Phase 3 item 12, renamed from `script_manifest.json`)
 - [x] Integrated Phase 2 modules into pipeline (Phase 3): sprite_extractor, scriptable_object_converter, rbxl_binary_writer, report_generator. `bridge_injector` and `mesh_splitter` superseded and deleted.
-- [ ] All existing dest tests pass (dest test count grew with Phase 3 additions including `test_phase3_final_gaps.py`, `test_rehydration_plan.py`, `test_no_rejected_bridges.py`)
-- [ ] All ported source tests pass
-- [ ] Phase 4 deferred-Phase-3 items closed: vertex_color_baker wired (4.8), extract_serialized_field_refs (4.9), generate_prefab_packages (4.10), disk rewrite for `animation_data/`+`packages/` (4.11)
-- [ ] Luau syntax gate (`luau-analyze` + AI reprompt) already in place; Phase 4.4 extends its scope to generated Luau from 4.2/4.5/4.9/4.10 and adds `check_method_completeness()` as a coverage diagnostic. No regex validator reintroduction.
-- [ ] Zero `require()` of deleted bridges (`AnimatorBridge`, `Input`, `Time`, `MonoBehaviour`, `Coroutine`, `GameObjectUtil`, `StateMachine`, `physics_queries`, `TransformAnimator`) in transpiled output (Phase 4.1 + 4.3)
-- [ ] Three-flow regression tests pass: CLI, interactive-fresh, interactive-rehydrated (Phase 5)
-- [ ] Visual regression pass on `unity-fps-output/` in Roblox Studio after Phase 4 (Phase 5 success criterion)
+- [x] All existing dest tests pass (`fast` CI job green on `main`; nightly suite includes `@slow`, convert-matrix, eval-regression, smoke-test)
+- [x] All ported source tests pass (per-module test files for every Phase 4 module; see Phase 5 section)
+- [x] Phase 4 deferred-Phase-3 items closed: vertex_color_baker wired (4.8 — Phase 4 PR 3), extract_serialized_field_refs (4.9 — Phase 4 PR 4), generate_prefab_packages (4.10 — Phase 4 PR 5), disk rewrite for `animation_data/`+`packages/` (4.11 — split across Phase 4 PRs 1 and 5)
+- [x] Luau syntax gate (`luau-analyze` + AI reprompt) in place; Phase 4.4 extended scope to 4.2/4.5/4.9/4.10 generated Luau and added `check_method_completeness()` as a coverage diagnostic via `transpile_diagnostics.py` (Phase 4 PR 6 / dest PR #9). No regex validator reintroduction.
+- [x] Zero `require()` of deleted bridges in transpiled output, enforced by `test_no_rejected_bridges.py`
+- [x] Three-flow regression tests pass: CLI, interactive-fresh, interactive-rehydrated (commit `420b01e`)
+- [x] Visual regression infrastructure landed (Phase 5 — superseded form: SimpleFPS smoke test on self-hosted macOS+Studio, plus `eval-diff --fail-on-regression` against committed baseline). Original `unity-fps-output/` fixture not carried into dest.
+- [ ] Phase 5 follow-ups (tracked in `converter/TODO.md`): three-flow `rbx_place` byte-equivalence test, real-upload smoke run, AI-on convert-matrix run
 - [ ] README clearly documents both modes with examples (Phase 6)
 - [ ] CLAUDE.md accurately describes the merged architecture, including the inline-over-runtime-wrappers policy (Phase 6)
