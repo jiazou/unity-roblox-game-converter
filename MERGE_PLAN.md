@@ -304,9 +304,11 @@ Summary:
 
 ### Phase 5: Outstanding Quality Gates & Regression Coverage
 
-**Goal:** close the test, CI, and feature-port gaps that remain after Phase 4. Two themes: (a) regression coverage for paths the standing CI matrix doesn't exercise (real upload, AI transpilation, byte-equivalent rebuild, visual diff); (b) small Phase-4 follow-ups that didn't make their original PR.
+**Goal:** close the test, CI, and feature-port gaps that remain after Phase 4. Two themes: (a) regression coverage for paths the standing CI matrix doesn't exercise (real upload, AI transpilation, byte-equivalent rebuild, visual diff); (b) Phase-4 sub-items that were deferred from their original PR.
 
-Items are independent unless noted. P-levels: **P0** blocks gameplay, **P1** significant quality, **P2** nice-to-have.
+Items are mostly independent; explicit dependencies are noted on each item. P-levels: **P1** = significant quality, **P2** = nice-to-have. No P0 items remain.
+
+> **Out-of-scope items.** The following are tracked separately and not Phase 5 work: persistent prefab/asset cache (perf), standalone `.rbxm` output per prefab (toolbox convenience), `_mesh_hierarchies` type-strictness cleanup at `scene_converter.py:180`. These are forward-looking improvements, not merge follow-ups.
 
 #### 5.1 Three-flow `rbx_place` byte-equivalence test (P2)
 
@@ -317,9 +319,10 @@ The three-flow contract — CLI / interactive-fresh / interactive-rehydrated —
 
 #### 5.2 Real-upload nightly smoke (P2)
 
-The current `smoke-test` job runs `--no-upload --no-resolve --no-ai`. Add a sibling nightly job that exercises the full upload path, including `SurfaceAppearance` round-trip through `ReplicatedStorage.Templates` (deferred in 4.10).
+The current `smoke-test` job runs `--no-upload --no-resolve --no-ai`. Add a sibling nightly job that exercises the full upload path. Two independent verifications:
 
-- Acceptance: nightly job uploads SimpleFPS, resolves mesh assets, validates that templates load with non-placeholder asset IDs, fails on regression.
+- **5.2a Upload + resolve smoke.** Job uploads SimpleFPS, resolves mesh assets, validates that resulting `.rbxlx` contains no placeholder asset IDs, fails on regression.
+- **5.2b SurfaceAppearance round-trip through `ReplicatedStorage.Templates`.** Once 5.2a is green, validate that templates emitted by 4.10 carry the resolved Surface­Appearance asset IDs end-to-end (this is the specific verification deferred in 4.10).
 - Blocker: runner-bound Roblox API credentials + a long-lived universe/place pair for the smoke target.
 
 #### 5.3 AI-on convert-matrix run (P2)
@@ -333,28 +336,29 @@ The current `smoke-test` job runs `--no-upload --no-resolve --no-ai`. Add a sibl
 
 The SSIM screenshot comparison CLI exists at `u2r.py:1341`. Add it as a follow-up step to the `smoke-test` job so per-scene visual drift is caught alongside script-level drift.
 
-- Acceptance: smoke-test job runs `visual-compare` with both Unity and Roblox screenshots, uploads SSIM-annotated diff as a CI artifact, fails on SSIM below a configurable threshold.
+- Acceptance: smoke-test job runs `visual-compare` with both Unity and Roblox screenshots, uploads SSIM-annotated diff as a CI artifact, fails on SSIM below an initial threshold of `0.85` (committed in CI config; tighten over time as visual fidelity improves).
+- Soft dependency: most useful in concert with 5.2 — a `--no-upload` place with magenta-mesh placeholders will diff badly against Unity. 5.4 can land first as `continue-on-error` and tighten gating once 5.2 is green.
 - Blocker: stable Unity-side screenshot capture from the self-hosted runner (Roblox-side already works via the Studio harness).
 
 #### 5.5 `discover` + `status` duplicate-scene-name disambiguation (P2)
 
-Today, only the `report` path disambiguates duplicate scene names (project-relative path instead of basename). Extend the same disambiguation to `discover` and `status` so a multi-scene project shows consistent identifiers across all CLI surfaces.
+Today, only the `report` subcommand of `convert_interactive.py` disambiguates duplicate scene names (project-relative path instead of basename). Extend the same disambiguation to `discover` (`convert_interactive.py:413`) and `status` (`convert_interactive.py:371`) so a multi-scene project shows consistent identifiers across all interactive-skill CLI surfaces.
 
-- Acceptance: a fixture with two scenes sharing a basename produces distinct identifiers in `discover`, `status`, and `report` output; tests added for each.
+- Acceptance: a fixture with two scenes sharing a basename produces distinct identifiers in `discover`, `status`, and `report` output; tests added for each subcommand.
 
 #### 5.6 Binary `.anim` and `.controller` parsing (P1)
 
 Skipped today; affects roughly 40% of games with skeletal animation. Without it, the animation routing engine (4.5) can't classify clips for binary-only projects, and humanoid characters silently fall through to the default Roblox animations.
 
 - Approach: integrate UnityPy for binary YAML, or write a minimal binary parser scoped to `.anim` and `.controller` only.
-- Acceptance: a binary-`.anim` fixture routes correctly through the humanoid-vs-transform-only predicate; conversion report shows the resolved clip; nightly smoke includes the binary fixture.
+- Acceptance: a binary-`.anim` fixture routes correctly through the humanoid-vs-transform-only predicate; conversion report shows the resolved clip; nightly `convert-matrix` job (not the upload smoke) includes the binary fixture.
 - Dependency: enables 5.7 below for binary projects.
 
 #### 5.7 Sub-mesh identity in vertex-color baking (P2)
 
 `bake_vertex_colors_batch` doesn't thread `mesh_file_id` through its signature, so multi-sub-mesh FBX files rasterize the entire file into a single texture instead of the targeted sub-mesh. Plumb the ID and add a multi-sub-mesh fixture.
 
-- Acceptance: an FBX with three sub-meshes and three distinct vertex-color sets bakes to three distinct textures, each correctly assigned to its sub-mesh's `MeshPart` in the output.
+- Acceptance: an FBX with three sub-meshes and three distinct vertex-color sets bakes to three distinct textures, each correctly assigned to its sub-mesh's `MeshPart` in the output. Use SimpleFPS or a smaller dedicated fixture (the test fixture choice is part of this item — confirm SimpleFPS has multi-sub-mesh FBX before committing to it).
 
 #### 5.8 Prefab-scoped animator controller GUID aggregation (P2)
 
@@ -376,22 +380,46 @@ TMP components carry `m_HorizontalAlignment` and `m_VerticalAlignment` as bitfie
 
 - Acceptance: a TMP fixture with explicit horizontal and vertical bitfield values converts to matching `text_x_alignment` / `text_y_alignment` on the output `TextLabel`/`TextButton`.
 
+#### 5.11 C# pattern-analysis warnings (P2)
+
+Phase 4.3.2 — pre-flight diagnostics that flag LINQ, networking, async, custom-inheritance, nested-generics, and pooling patterns before transpilation — was scoped out of Phase 4 PR 4. Add as a separate item if a project ships a class of error that warrants pre-flight surfacing.
+
+- Approach: port source's `_analyze_csharp_patterns()` as a pre-AI pass; surface results as `TranspiledScript.warnings` and inject targeted prompt hints (e.g., "this script uses LINQ extensively — use the provided utility functions").
+- Acceptance: a fixture script using each of the six pattern categories produces a corresponding warning in the conversion report; AI prompt for that script includes a category-specific hint.
+
+#### 5.12 `_classify_script_type` harmonization (P2)
+
+Phase 4.3.4 — reconcile dest's `Script` default with source's `ModuleScript` default for ambiguous classifications. Currently the AI's classification can drop hand-written `LocalScript` hints. Revisit if a project ships cross-classified scripts that need source's behavior.
+
+- Acceptance: a fixture with a script that has both client and server indicators routes to the correct `LocalScript` / `Script` / `ModuleScript` slot deterministically; behavior matches the script-coherence pass downstream.
+
+#### 5.13 Per-prefab variant-chain preservation in templates (P2)
+
+Phase 4.10 PR 5 currently emits the flattened resolved form of each prefab in `ReplicatedStorage.Templates`. The variant chain (variant → variant → base) is not preserved at template level, so runtime-applied variant overrides aren't possible.
+
+- Approach: emit per-variant template modules that reference their parent template, with override deltas applied at clone time by a thin spawner module.
+- Acceptance: a prefab with two variants (e.g., `Crate.prefab` → `RedCrate.prefab` → `LargeRedCrate.prefab`) emits three Templates that compose at clone time; runtime swap from `RedCrate` to `LargeRedCrate` re-applies only the delta.
+
 ---
 
 #### Definition of Done
 
 - [ ] 5.1 Byte-equivalence test green across all three flows
-- [ ] 5.2 Real-upload nightly job green; SurfaceAppearance asset IDs verified non-placeholder
+- [ ] 5.2a Real-upload nightly job green; no placeholder asset IDs in the published `.rbxlx`
+- [ ] 5.2b SurfaceAppearance round-trip verified through `ReplicatedStorage.Templates`
 - [ ] 5.3 AI-on nightly job green with AI errors surfacing as warnings, not crashes
-- [ ] 5.4 `visual-compare` wired into `smoke-test` with SSIM threshold gate
+- [ ] 5.4 `visual-compare` wired into `smoke-test` with SSIM threshold gate (initial `0.85`)
 - [ ] 5.5 `discover` and `status` disambiguate duplicate scene names with regression tests
 - [ ] 5.6 Binary `.anim`/`.controller` parser lands and routes through 4.5's predicate
 - [ ] 5.7 Multi-sub-mesh FBX bakes per-sub-mesh vertex-color textures
 - [ ] 5.8 Prefab-instanced controllers produce scene-scoped names
 - [ ] 5.9 Prefab-scoped tween scripts emitted; deduped across scene instantiations
 - [ ] 5.10 TMP bitfield alignment produces matching `text_x_alignment` / `text_y_alignment`
+- [ ] 5.11 Six C# pattern categories surface as warnings + targeted prompt hints
+- [ ] 5.12 Ambiguous-classification scripts route deterministically across `Script`/`LocalScript`/`ModuleScript`
+- [ ] 5.13 Variant chains compose at clone time via per-variant Template modules
 
-5.1–5.5 are infrastructure work; 5.6 unblocks a class of projects; 5.7–5.10 are feature-port follow-ups. None block Phase 6.
+5.1–5.5 are infrastructure work; 5.6 unblocks a class of projects; 5.7–5.13 are feature follow-ups deferred from Phase 4 PRs. None block Phase 6.
 
 ### Phase 6: Polish
 
@@ -543,12 +571,12 @@ Phase 4 (reconciliation + deferred-Phase-3 closeout):
     4.10 generate_prefab_packages (depends on 4.11 disk rewrite)
     4.11 disk rewrite for animation_data/+packages/ subdirectories
 
-Phase 5 (outstanding quality gates + regression coverage; independent items):
+Phase 5 (outstanding quality gates + regression coverage; mostly independent):
   Infrastructure:
     5.1 three-flow rbx_place byte-equivalence test (P2)
-    5.2 real-upload nightly smoke (P2; needs runner-bound credentials)
+    5.2 real-upload nightly smoke (P2; 5.2a upload+resolve, 5.2b SurfaceAppearance)
     5.3 AI-on convert-matrix run (P2; needs Anthropic key budget)
-    5.4 wire u2r.py visual-compare into nightly CI (P2)
+    5.4 wire u2r.py visual-compare into nightly CI (P2; soft-deps 5.2)
     5.5 discover + status duplicate-scene-name disambiguation (P2)
   Feature ports / unblockers:
     5.6 binary .anim / .controller parsing (P1; enables 5.7 for binary projects)
@@ -556,6 +584,9 @@ Phase 5 (outstanding quality gates + regression coverage; independent items):
     5.8 prefab-scoped animator controller GUID aggregation (P2; pairs with 5.9)
     5.9 transform-only prefab scanning (P2)
     5.10 TextMeshPro alignment bitfield split (P2)
+    5.11 C# pattern-analysis warnings (P2; deferred from 4.3.2)
+    5.12 _classify_script_type harmonization (P2; deferred from 4.3.4)
+    5.13 per-prefab variant-chain preservation in templates (P2; deferred from 4.10)
 
 Phase 6 (polish — last):
   + close/roadmap deferred C2 (upload rebuild vs reviewed .rbxlx)
@@ -598,6 +629,6 @@ Phase 6 (polish — last):
 - [x] Luau syntax gate (`luau-analyze` + AI reprompt) in place; Phase 4.4 extended scope to 4.2/4.5/4.9/4.10 generated Luau and added `check_method_completeness()` as a coverage diagnostic via `transpile_diagnostics.py` (Phase 4 PR 6 / dest PR #9). No regex validator reintroduction.
 - [x] Zero `require()` of deleted bridges in transpiled output, enforced by `test_no_rejected_bridges.py`
 - [x] Three-flow regression tests pass: CLI, interactive-fresh, interactive-rehydrated (commit `420b01e`)
-- [ ] Phase 5 outstanding gates closed (5.1 byte-equivalence, 5.2 real-upload smoke, 5.3 AI-on smoke, 5.4 visual-compare in CI, 5.5 discover/status disambiguation, 5.6 binary `.anim`/`.controller` parsing, 5.7 sub-mesh vertex-color identity, 5.8/5.9 prefab animator aggregation + scanning, 5.10 TMP alignment) — see Phase 5 section
+- [ ] Phase 5 outstanding gates closed: infrastructure (5.1 byte-equivalence, 5.2 real-upload smoke, 5.3 AI-on smoke, 5.4 visual-compare in CI, 5.5 discover/status disambiguation), feature follow-ups (5.6 binary `.anim`/`.controller` parsing, 5.7 sub-mesh vertex-color identity, 5.8/5.9 prefab animator aggregation + scanning, 5.10 TMP alignment, 5.11 C# pattern warnings, 5.12 script-type harmonization, 5.13 variant-chain templates) — see Phase 5 section
 - [ ] README clearly documents both modes with examples (Phase 6)
 - [ ] CLAUDE.md accurately describes the merged architecture, including the inline-over-runtime-wrappers policy (Phase 6)
